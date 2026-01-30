@@ -287,7 +287,7 @@ export function inferType(node, ctx) {
                     return Type.NUMBER;
                 }
             }
-            
+
             // 成员访问：尝试从对象字面量中推断属性类型
             // 检查对象是否是一个已知变量，其值是对象字面量
             if (node.object && node.object.type === "Identifier" && ctx) {

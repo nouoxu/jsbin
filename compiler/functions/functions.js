@@ -557,11 +557,9 @@ export const FunctionCompiler = {
                             // 检查是否是数字类型（包括 NUMBER 和所有 INT/FLOAT 子类型）
                             // 同时也检查用户函数调用（通常返回数字）
                             const isNumberType = argType === Type.NUMBER || argType === Type.INT8 || argType === Type.INT16 || argType === Type.INT32 || argType === Type.INT64 || argType === Type.UINT8 || argType === Type.UINT16 || argType === Type.UINT32 || argType === Type.UINT64 || argType === Type.FLOAT32 || argType === Type.FLOAT64;
-                            
+
                             // 对于函数调用（用户定义函数），假设返回数字类型
-                            const isUserFunctionCall = arg.type === "CallExpression" && 
-                                arg.callee && arg.callee.type === "Identifier" && 
-                                this.ctx.hasFunction(arg.callee.name);
+                            const isUserFunctionCall = arg.type === "CallExpression" && arg.callee && arg.callee.type === "Identifier" && this.ctx.hasFunction(arg.callee.name);
 
                             if (isNumberType || isUserFunctionCall) {
                                 // 数字类型使用 _print_number

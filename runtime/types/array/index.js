@@ -145,7 +145,7 @@ export class ArrayGenerator {
         vm.prologue(0, [VReg.S0, VReg.S1]);
 
         vm.mov(VReg.S1, VReg.A1); // 保存 index
-        
+
         // unbox 数组
         vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
@@ -169,7 +169,7 @@ export class ArrayGenerator {
 
         vm.mov(VReg.S1, VReg.A1); // 保存 index
         vm.mov(VReg.S2, VReg.A2); // 保存 value
-        
+
         // unbox 数组
         vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)

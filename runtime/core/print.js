@@ -468,10 +468,10 @@ export class PrintGenerator {
 
         vm.label("_print_array");
         vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
-        
+
         // 保存原始输入到 S3 供调试用
         vm.mov(VReg.S3, VReg.A0);
-        
+
         // A0 包含输入参数（可能是 boxed 数组 JSValue 或原始指针）
         // 调用 _js_unbox 获取原始指针
         vm.call("_js_unbox");

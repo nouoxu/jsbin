@@ -85,14 +85,14 @@ export const MemberCompiler = {
         if (expr.object.type === "Identifier" && expr.object.name === "Math" && !expr.computed) {
             const propName = expr.property.name || expr.property.value;
             const mathConstants = {
-                "PI": 3.141592653589793,
-                "E": 2.718281828459045,
-                "LN2": 0.6931471805599453,
-                "LN10": 2.302585092994046,
-                "LOG2E": 1.4426950408889634,
-                "LOG10E": 0.4342944819032518,
-                "SQRT2": 1.4142135623730951,
-                "SQRT1_2": 0.7071067811865476
+                PI: 3.141592653589793,
+                E: 2.718281828459045,
+                LN2: 0.6931471805599453,
+                LN10: 2.302585092994046,
+                LOG2E: 1.4426950408889634,
+                LOG10E: 0.4342944819032518,
+                SQRT2: 1.4142135623730951,
+                SQRT1_2: 0.7071067811865476,
             };
             if (mathConstants.hasOwnProperty(propName)) {
                 // 直接编译为数字字面量
@@ -100,7 +100,7 @@ export const MemberCompiler = {
                 return;
             }
         }
-        
+
         if (expr.computed) {
             // 数组元素访问：arr[idx]
             // 暂时直接使用 _array_get（TODO: 支持 TypedArray）

@@ -21,12 +21,12 @@ export class SubscriptGenerator {
 
         vm.mov(VReg.S1, VReg.A1); // 先保存 index
         vm.mov(VReg.S4, VReg.A0); // 先保存原始 JSValue（用于提取 subtype）
-        
+
         // 从 boxed JSValue 提取 subtype (bits 44-47)
         vm.shrImm(VReg.V0, VReg.S4, 44);
         vm.andImm(VReg.V0, VReg.V0, 0xf); // V0 = subtype (0=Array, 1-11=TypedArray)
         vm.mov(VReg.S3, VReg.V0); // S3 = subtype
-        
+
         // Unbox 数组 JSValue -> 原始指针 (提取低 48 位)
         // 注意：使用 48 位掩码以兼容 _js_unbox
         vm.movImm64(VReg.V1, 0x0000ffffffffffffn); // 48 位掩码
@@ -38,9 +38,9 @@ export class SubscriptGenerator {
 
         // ========== TypedArray 路径 ==========
         // subtype 对应关系:
-        // 1=Int8, 2=Uint8, 3=Uint8Clamped, 4=Int16, 5=Uint16, 
+        // 1=Int8, 2=Uint8, 3=Uint8Clamped, 4=Int16, 5=Uint16,
         // 6=Int32, 7=Uint32, 8=Float32, 9=Float64, 10=BigInt64, 11=BigUint64
-        
+
         // Int8Array (subtype 1)
         vm.cmpImm(VReg.S3, 1);
         vm.jne("_subscript_get_check_int16");
