@@ -45,6 +45,31 @@ export const MemberCompiler = {
             return;
         }
 
+        // 检查是否是导入的符号
+        if (this.isImportedSymbol && this.isImportedSymbol(name)) {
+            const importInfo = this.getImportedSymbol(name);
+            if (importInfo) {
+                if (importInfo.type === "function") {
+                    // 导入的函数 - 创建函数引用/闭包
+                    this.vm.movImm(VReg.A0, 16);
+                    this.vm.call("_alloc");
+                    this.vm.movImm(VReg.V1, 0xc105); // CLOSURE_MAGIC
+                    this.vm.store(VReg.RET, 0, VReg.V1);
+                    this.vm.lea(VReg.V1, importInfo.label);
+                    this.vm.store(VReg.RET, 8, VReg.V1);
+                } else if (importInfo.type === "variable") {
+                    // 导入的变量 - 从全局标签加载
+                    this.vm.lea(VReg.RET, importInfo.label);
+                    this.vm.load(VReg.RET, VReg.RET, 0);
+                } else if (importInfo.type === "namespace") {
+                    // 命名空间导入 - 创建对象来保存所有导出
+                    // TODO: 完整实现命名空间对象
+                    this.vm.movImm(VReg.RET, 0);
+                }
+                return;
+            }
+        }
+
         const offset = this.ctx.getLocal(name);
         if (offset !== undefined) {
             // 检查是否是装箱变量
@@ -102,28 +127,52 @@ export const MemberCompiler = {
         }
 
         if (expr.computed) {
-            // 数组元素访问：arr[idx]
-            // 暂时直接使用 _array_get（TODO: 支持 TypedArray）
-            if (expr.property.type === "Literal" && typeof expr.property.value === "number") {
-                // 静态索引：arr[0]
-                const idx = Math.trunc(expr.property.value);
-                this.compileExpression(expr.object);
-                this.vm.mov(VReg.A0, VReg.RET);
-                this.vm.movImm(VReg.A1, idx);
-                this.vm.call("_array_get");
+            // 计算属性访问：arr[idx] 或 str[idx]
+            const objType = this.inferObjectType ? this.inferObjectType(expr.object) : "unknown";
+
+            if (objType === "String") {
+                // 字符串下标访问：str[idx] -> 单字符字符串
+                if (expr.property.type === "Literal" && typeof expr.property.value === "number") {
+                    // 静态索引
+                    const idx = Math.trunc(expr.property.value);
+                    this.compileExpression(expr.object);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.movImm(VReg.A1, idx);
+                    this.vm.call("_str_charAt");
+                } else {
+                    // 动态索引
+                    this.compileExpression(expr.property);
+                    this.vm.push(VReg.RET);
+                    this.compileExpression(expr.object);
+                    this.vm.pop(VReg.V1);
+                    this.numberToIntInPlace(VReg.V1);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.mov(VReg.A1, VReg.V1);
+                    this.vm.call("_str_charAt");
+                }
             } else {
-                // 动态索引：arr[i]
-                this.compileExpression(expr.property);
-                this.vm.push(VReg.RET);
-                this.compileExpression(expr.object);
-                this.vm.pop(VReg.V1);
+                // 数组元素访问：arr[idx]
+                if (expr.property.type === "Literal" && typeof expr.property.value === "number") {
+                    // 静态索引：arr[0]
+                    const idx = Math.trunc(expr.property.value);
+                    this.compileExpression(expr.object);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.movImm(VReg.A1, idx);
+                    this.vm.call("_array_get");
+                } else {
+                    // 动态索引：arr[i]
+                    this.compileExpression(expr.property);
+                    this.vm.push(VReg.RET);
+                    this.compileExpression(expr.object);
+                    this.vm.pop(VReg.V1);
 
-                // 索引可能是浮点数，需要转换为整数
-                this.numberToIntInPlace(VReg.V1);
+                    // 索引可能是浮点数，需要转换为整数
+                    this.numberToIntInPlace(VReg.V1);
 
-                this.vm.mov(VReg.A0, VReg.RET);
-                this.vm.mov(VReg.A1, VReg.V1);
-                this.vm.call("_array_get");
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.mov(VReg.A1, VReg.V1);
+                    this.vm.call("_array_get");
+                }
             }
         } else {
             const propName = expr.property.name || expr.property.value;

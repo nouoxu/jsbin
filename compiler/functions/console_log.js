@@ -143,11 +143,11 @@ export const ConsoleLogCompiler = {
                         this.vm.call("_print_space");
                     }
                 } else if (argType === Type.STRING) {
-                    // 字符串类型
+                    // 字符串类型 - 使用智能打印（处理数据段和堆字符串）
                     if (isLast) {
-                        this.vm.call("_print_str");
+                        this.vm.call("_print_string_smart");
                     } else {
-                        this.vm.call("_print_str_no_nl");
+                        this.vm.call("_print_string_smart_no_nl");
                         this.vm.call("_print_space");
                     }
                 } else if (argType === Type.ARRAY) {

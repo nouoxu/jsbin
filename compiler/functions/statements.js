@@ -67,6 +67,13 @@ export const StatementCompiler = {
                 // 动态库导入声明
                 this.compileImportLibDeclaration(stmt);
                 break;
+            case "ImportDeclaration":
+                // ES6 模块导入 - 在 compileProgram 中已处理，这里跳过
+                break;
+            case "ExportDeclaration":
+                // ES6 模块导出
+                this.compileExportDeclaration(stmt);
+                break;
             case "ClassDeclaration":
                 // 类声明
                 this.compileClassDeclaration(stmt);
@@ -302,26 +309,17 @@ export const StatementCompiler = {
         this.ctx.continueLabel = savedContinue;
     },
 
-    // 编译 for...of 语句
+    // 编译 for...of 语句 - 使用迭代器协议
     compileForOfStatement(stmt) {
         const loopLabel = this.ctx.newLabel("forof");
         const endLabel = this.ctx.newLabel("endforof");
+        const continueLabel = this.ctx.newLabel("forof_continue");
 
         // 保存循环标签
         const savedBreak = this.ctx.breakLabel;
         const savedContinue = this.ctx.continueLabel;
         this.ctx.breakLabel = endLabel;
-        this.ctx.continueLabel = loopLabel;
-
-        // 计算数组，保存到 S0
-        this.compileExpression(stmt.right);
-        this.vm.mov(VReg.S0, VReg.RET);
-
-        // 索引变量 i = 0，保存到 S1
-        this.vm.movImm(VReg.S1, 0);
-
-        // 获取数组长度，保存到 S2
-        this.vm.load(VReg.S2, VReg.S0, 0);
+        this.ctx.continueLabel = continueLabel;
 
         // 获取迭代变量名
         let varName = null;
@@ -334,21 +332,65 @@ export const StatementCompiler = {
             varName = stmt.left.name;
         }
 
-        // 分配迭代变量
-        const varOffset = varName ? this.ctx.allocLocal(varName) : null;
+        // 尝试推断迭代变量的类型
+        let varType = Type.UNKNOWN;
+        // 如果迭代的是数组字面量，尝试从元素推断类型
+        if (stmt.right.type === "ArrayExpression" && stmt.right.elements.length > 0) {
+            varType = inferType(stmt.right.elements[0], this.ctx);
+        }
+        // 如果迭代的是字符串，元素类型是字符串
+        else if (stmt.right.type === "Literal" && typeof stmt.right.value === "string") {
+            varType = Type.STRING;
+        }
+        // 如果迭代的是变量，尝试从变量的初始化表达式推断
+        else if (stmt.right.type === "Identifier") {
+            const initExpr = this.ctx.varInitExprs && this.ctx.varInitExprs[stmt.right.name];
+            if (initExpr && initExpr.type === "ArrayExpression" && initExpr.elements.length > 0) {
+                varType = inferType(initExpr.elements[0], this.ctx);
+            }
+        }
+
+        // 分配迭代变量（带类型信息）
+        const varOffset = varName ? this.ctx.allocLocal(varName, varType) : null;
+
+        // 分配栈空间保存迭代器（因为循环体会使用 S0/S1 等寄存器）
+        const iteratorOffset = this.ctx.allocLocal("__iterator__");
+
+        // 计算可迭代对象
+        this.compileExpression(stmt.right);
+        this.vm.mov(VReg.A0, VReg.RET);
+
+        // 获取迭代器: _get_iterator(iterable)
+        this.vm.call("_get_iterator");
+
+        // 保存迭代器到栈上
+        this.vm.store(VReg.FP, iteratorOffset, VReg.RET);
+
+        // 检查迭代器是否有效
+        this.vm.cmpImm(VReg.RET, 0);
+        this.vm.jeq(endLabel);
 
         this.vm.label(loopLabel);
 
-        // 检查 i < length
-        this.vm.cmp(VReg.S1, VReg.S2);
-        this.vm.jge(endLabel);
+        // 从栈上加载迭代器
+        this.vm.load(VReg.A0, VReg.FP, iteratorOffset);
 
-        // 获取 array[i]
-        this.vm.mov(VReg.V0, VReg.S1);
-        this.vm.shlImm(VReg.V0, VReg.V0, 3);
-        this.vm.addImm(VReg.V0, VReg.V0, 8);
-        this.vm.add(VReg.V0, VReg.S0, VReg.V0);
-        this.vm.load(VReg.RET, VReg.V0, 0);
+        // 调用 iterator.next()
+        this.vm.call("_iterator_next");
+        this.vm.mov(VReg.S1, VReg.RET); // S1 = IteratorResult { value, done }
+
+        // 检查 done: IteratorResult + 40 (偏移到 done 字段)
+        // 注意：IteratorResult 是普通对象，done 在固定位置
+        // 对象布局: [type:8 | count:8 | "value":8 | value:8 | "done":8 | done:8]
+        this.vm.load(VReg.V0, VReg.S1, 40); // done 值 (NaN-boxed boolean)
+
+        // 检查 done 是否为 true (NaN-boxed: 0x7ff8000100000001)
+        this.vm.andImm(VReg.V0, VReg.V0, 1); // 取最低位
+        this.vm.cmpImm(VReg.V0, 1);
+        this.vm.jeq(endLabel);
+
+        // 获取 value: IteratorResult + 24
+        this.vm.load(VReg.RET, VReg.S1, 24);
 
         // 存储到迭代变量
         if (varOffset !== null) {
@@ -358,8 +400,7 @@ export const StatementCompiler = {
         // 编译循环体
         this.compileStatement(stmt.body);
 
-        // i++
-        this.vm.addImm(VReg.S1, VReg.S1, 1);
+        this.vm.label(continueLabel);
         this.vm.jmp(loopLabel);
 
         this.vm.label(endLabel);
@@ -819,5 +860,38 @@ export const StatementCompiler = {
         this.vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 64);
 
         this.ctx = savedCtx;
+    },
+
+    // 编译 ES6 导出声明
+    compileExportDeclaration(stmt) {
+        // export default ...
+        if (stmt.default) {
+            if (stmt.declaration) {
+                // export default function foo() {} 或 export default expression
+                if (stmt.declaration.type === "FunctionDeclaration") {
+                    // 函数声明已在 collectFunctions 中处理
+                } else {
+                    // export default expression - 编译表达式
+                    this.compileExpression(stmt.declaration);
+                }
+            }
+            return;
+        }
+
+        // export function/const/let/var
+        if (stmt.declaration) {
+            if (stmt.declaration.type === "FunctionDeclaration") {
+                // 函数声明已在 collectFunctions 中处理
+            } else if (stmt.declaration.type === "VariableDeclaration") {
+                // 编译变量声明
+                this.compileVariableDeclaration(stmt.declaration);
+            } else if (stmt.declaration.type === "ClassDeclaration") {
+                // 编译类声明
+                this.compileClassDeclaration(stmt.declaration);
+            }
+            return;
+        }
+
+        // export { a, b as c } - 命名导出已在模块处理中完成
     },
 };

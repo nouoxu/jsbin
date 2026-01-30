@@ -2,7 +2,7 @@
 // 将 JavaScript 源码编译为各平台可执行文件
 //
 // 模块化结构:
-// - core/: 上下文、平台、类型、代码生成
+// - core/: 上下文、平台、类型、代码生成、模块管理
 // - expressions/: 表达式编译
 // - functions/: 函数和语句编译
 // - output/: 库文件、包装器、二进制生成
@@ -22,11 +22,12 @@ import { ARM64Assembler } from "../asm/arm64.js";
 import { X64Assembler } from "../asm/x64.js";
 
 // 运行时
-import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator } from "../runtime/index.js";
+import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator } from "../runtime/index.js";
 
 // 编译上下文和平台
 import { CompileContext, CompileOptions, CompileResult } from "./core/context.js";
 import { detectPlatform, getTargetInfo, resolveTarget, listTargets, TARGETS } from "./core/platform.js";
+import { ModuleManager, ModuleExports, getModuleManager, resetModuleManager } from "./core/modules.js";
 
 // 编译器模块
 import { StatementCompiler } from "./functions/statements.js";
@@ -47,6 +48,7 @@ export { detectPlatform, getTargetInfo, resolveTarget, listTargets, TARGETS } fr
 export { CompileContext, CompileOptions, CompileResult } from "./core/context.js";
 export { BinaryGenerator, OutputType, pageAlign, align16, align } from "../binary/binary_format.js";
 export { parseJslibFile, LibraryManager } from "./output/library.js";
+export { ModuleManager, getModuleManager } from "./core/modules.js";
 
 // 目标平台配置
 const Targets = {
@@ -78,6 +80,9 @@ export class Compiler {
         // 库管理器
         this.libManager = new LibraryManager();
 
+        // 模块管理器
+        this.moduleManager = resetModuleManager();
+
         // 待处理的函数表达式
         this.pendingFunctions = [];
         this.labelCounter = 0;
@@ -89,6 +94,13 @@ export class Compiler {
         this.libraryPaths = [];
         this.sourcePath = "";
         this.options = {}; // 编译选项
+
+        // 当前编译的模块路径
+        this.currentModulePath = "";
+        // 当前模块的导出信息
+        this.currentModuleExports = null;
+        // 导入的符号映射: 本地名 -> { modulePath, exportName, label }
+        this.importedSymbols = new Map();
 
         // 兼容旧 API
         this.externalLibs = this.libManager.externalLibs;
@@ -194,6 +206,347 @@ export class Compiler {
         return this.libManager.getDylibIndex(dylibPath);
     }
 
+    // ========== 模块系统 ==========
+
+    /**
+     * 编译导入的模块
+     * @param {string} modulePath - 模块的绝对路径
+     * @returns {ModuleExports} 模块的导出信息
+     */
+    compileModule(modulePath) {
+        // 检查是否已编译
+        if (this.moduleManager.isModuleCompiled(modulePath)) {
+            return this.moduleManager.getModuleExports(modulePath);
+        }
+
+        // 检测循环依赖
+        if (this.moduleManager.isModuleCompiling(modulePath)) {
+            console.warn(`Circular dependency detected: ${modulePath}`);
+            // 返回已有的部分导出信息（如果有的话）
+            return this.moduleManager.getModuleExports(modulePath) || new ModuleExports(modulePath);
+        }
+
+        // 开始编译
+        this.moduleManager.beginCompileModule(modulePath);
+        const modulePrefix = this.moduleManager.generateModulePrefix(modulePath);
+        const moduleExports = new ModuleExports(modulePath);
+
+        // 解析模块
+        const ast = this.moduleManager.parseModuleFile(modulePath);
+
+        // 先递归编译依赖的模块
+        const deps = this.moduleManager.getModuleDependencies(ast, modulePath);
+        for (const dep of deps) {
+            this.compileModule(dep.resolved);
+        }
+
+        // 保存当前编译状态
+        const savedModulePath = this.currentModulePath;
+        const savedModuleExports = this.currentModuleExports;
+        const savedImportedSymbols = this.importedSymbols;
+        const savedCtx = this.ctx;
+
+        // 设置新的编译状态
+        this.currentModulePath = modulePath;
+        this.currentModuleExports = moduleExports;
+        this.importedSymbols = new Map();
+        this.ctx = new CompileContext(modulePrefix + "module");
+
+        // 处理导入声明
+        this.processModuleImports(ast, modulePath);
+
+        // 收集并编译模块中的函数
+        this.collectModuleFunctions(ast, modulePrefix);
+        this.compileModuleFunctions(modulePrefix);
+
+        // 处理导出声明和模块初始化
+        this.compileModuleBody(ast, modulePrefix, moduleExports);
+
+        // 完成编译
+        this.moduleManager.endCompileModule(modulePath, moduleExports);
+
+        // 恢复编译状态
+        this.currentModulePath = savedModulePath;
+        this.currentModuleExports = savedModuleExports;
+        this.importedSymbols = savedImportedSymbols;
+        this.ctx = savedCtx;
+
+        return moduleExports;
+    }
+
+    /**
+     * 处理模块的导入声明
+     */
+    processModuleImports(ast, modulePath) {
+        for (const stmt of ast.body) {
+            if (stmt.type === "ImportDeclaration" && stmt.source) {
+                const specifier = stmt.source.value;
+                const resolvedPath = this.moduleManager.resolveModulePath(specifier, modulePath);
+
+                if (!resolvedPath) {
+                    console.warn(`Cannot resolve import: ${specifier}`);
+                    continue;
+                }
+
+                const moduleExports = this.moduleManager.getModuleExports(resolvedPath);
+                if (!moduleExports) {
+                    console.warn(`Module not compiled: ${resolvedPath}`);
+                    continue;
+                }
+
+                // 处理导入说明符
+                for (const spec of stmt.specifiers || []) {
+                    if (spec.default) {
+                        // import defaultExport from "module"
+                        const localName = spec.local.name;
+                        const label = moduleExports.default;
+                        if (label) {
+                            this.importedSymbols.set(localName, {
+                                modulePath: resolvedPath,
+                                exportName: "default",
+                                label: label,
+                                type: "default",
+                            });
+                        }
+                    } else if (spec.namespace) {
+                        // import * as name from "module"
+                        const localName = spec.local.name;
+                        this.importedSymbols.set(localName, {
+                            modulePath: resolvedPath,
+                            exportName: "*",
+                            exports: moduleExports,
+                            type: "namespace",
+                        });
+                    } else {
+                        // import { a, b as c } from "module"
+                        const localName = spec.local.name;
+                        const importedName = spec.imported ? spec.imported.name : localName;
+                        const label = moduleExports.getExport(importedName);
+                        if (label) {
+                            this.importedSymbols.set(localName, {
+                                modulePath: resolvedPath,
+                                exportName: importedName,
+                                label: label,
+                                type: "named",
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 收集模块中的函数声明
+     */
+    collectModuleFunctions(ast, modulePrefix) {
+        for (const stmt of ast.body) {
+            if (stmt.type === "FunctionDeclaration" && stmt.id) {
+                const originalName = stmt.id.name;
+                const funcName = modulePrefix + originalName;
+                const funcLabel = "_user_" + funcName;
+                this.ctx.registerFunction(funcName, stmt);
+                // 注册到 importedSymbols，使模块内部可以用原始名称调用
+                this.importedSymbols.set(originalName, {
+                    modulePath: this.currentModulePath,
+                    exportName: originalName,
+                    label: funcLabel,
+                    type: "function",
+                });
+            } else if (stmt.type === "ExportDeclaration" && stmt.declaration) {
+                const decl = stmt.declaration;
+                if (decl.type === "FunctionDeclaration" && decl.id) {
+                    const originalName = decl.id.name;
+                    const funcName = modulePrefix + originalName;
+                    const funcLabel = "_user_" + funcName;
+                    this.ctx.registerFunction(funcName, decl);
+                    // 注册到 importedSymbols，使模块内部可以用原始名称调用
+                    this.importedSymbols.set(originalName, {
+                        modulePath: this.currentModulePath,
+                        exportName: originalName,
+                        label: funcLabel,
+                        type: "function",
+                    });
+                }
+            }
+        }
+    }
+
+    /**
+     * 编译模块中的函数
+     */
+    compileModuleFunctions(modulePrefix) {
+        for (const name in this.ctx.functions) {
+            if (name.startsWith(modulePrefix)) {
+                this.compileFunction(name, this.ctx.functions[name]);
+            }
+        }
+    }
+
+    /**
+     * 编译模块主体（处理导出和顶层代码）
+     */
+    compileModuleBody(ast, modulePrefix, moduleExports) {
+        const vm = this.vm;
+        const initLabel = modulePrefix + "init";
+
+        // 生成模块初始化函数
+        vm.label(initLabel);
+        vm.prologue(64, [VReg.S0, VReg.S1]);
+
+        // 处理导出声明
+        for (const stmt of ast.body) {
+            if (stmt.type === "ExportDeclaration") {
+                this.processExportDeclaration(stmt, modulePrefix, moduleExports);
+            }
+        }
+
+        // 编译顶层语句（非函数声明和导入/导出）
+        for (const stmt of ast.body) {
+            if (stmt.type !== "FunctionDeclaration" && stmt.type !== "ImportDeclaration" && stmt.type !== "ExportDeclaration") {
+                this.compileStatement(stmt);
+            }
+        }
+
+        vm.epilogue([VReg.S0, VReg.S1], 64);
+    }
+
+    /**
+     * 处理导出声明
+     */
+    processExportDeclaration(stmt, modulePrefix, moduleExports) {
+        if (stmt.default) {
+            // export default ...
+            if (stmt.declaration) {
+                if (stmt.declaration.type === "FunctionDeclaration" && stmt.declaration.id) {
+                    const funcLabel = "_user_" + modulePrefix + stmt.declaration.id.name;
+                    moduleExports.setDefault(funcLabel);
+                    moduleExports.addFunction(stmt.declaration.id.name, funcLabel);
+                } else if (stmt.declaration.type === "Identifier") {
+                    // export default someVar
+                    const varName = stmt.declaration.name;
+                    const globalLabel = this.ctx.allocGlobal(modulePrefix + varName);
+                    moduleExports.setDefault(globalLabel);
+                }
+            }
+        } else if (stmt.declaration) {
+            // export function/const/let/var
+            if (stmt.declaration.type === "FunctionDeclaration" && stmt.declaration.id) {
+                const funcName = stmt.declaration.id.name;
+                const funcLabel = "_user_" + modulePrefix + funcName;
+                moduleExports.addFunction(funcName, funcLabel);
+            } else if (stmt.declaration.type === "VariableDeclaration") {
+                for (const decl of stmt.declaration.declarations) {
+                    if (decl.id && decl.id.type === "Identifier") {
+                        const varName = decl.id.name;
+                        const globalLabel = this.ctx.allocGlobal(modulePrefix + varName);
+                        moduleExports.addVariable(varName, globalLabel);
+                        // 为导出变量分配数据段空间
+                        this.asm.addDataLabel(globalLabel);
+                        this.asm.addDataQword(0);
+                    }
+                }
+            }
+        } else if (stmt.specifiers && stmt.specifiers.length > 0) {
+            // export { a, b as c }
+            for (const spec of stmt.specifiers) {
+                const localName = spec.local ? spec.local.name : null;
+                const exportedName = spec.exported ? spec.exported.name : localName;
+
+                if (localName) {
+                    // 查找本地符号
+                    const funcLabel = "_user_" + modulePrefix + localName;
+                    if (this.ctx.hasFunction(modulePrefix + localName)) {
+                        moduleExports.addFunction(exportedName, funcLabel);
+                    } else {
+                        // 可能是变量
+                        const globalLabel = this.ctx.getGlobal(modulePrefix + localName);
+                        if (globalLabel) {
+                            moduleExports.addNamed(exportedName, globalLabel);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * 检查符号是否是导入的
+     */
+    isImportedSymbol(name) {
+        return this.importedSymbols.has(name);
+    }
+
+    /**
+     * 获取导入符号的信息
+     */
+    getImportedSymbol(name) {
+        return this.importedSymbols.get(name);
+    }
+
+    /**
+     * 处理主模块的导入声明
+     */
+    processMainModuleImports(ast) {
+        for (const stmt of ast.body) {
+            if (stmt.type === "ImportDeclaration" && stmt.source) {
+                const specifier = stmt.source.value;
+                const resolvedPath = this.moduleManager.resolveModulePath(specifier, this.currentModulePath);
+
+                if (!resolvedPath) {
+                    console.warn(`Cannot resolve import: ${specifier}`);
+                    continue;
+                }
+
+                // 编译导入的模块
+                const moduleExports = this.compileModule(resolvedPath);
+
+                // 处理导入说明符
+                for (const spec of stmt.specifiers || []) {
+                    if (spec.default) {
+                        // import defaultExport from "module"
+                        const localName = spec.local.name;
+                        const label = moduleExports.default;
+                        if (label) {
+                            this.importedSymbols.set(localName, {
+                                modulePath: resolvedPath,
+                                exportName: "default",
+                                label: label,
+                                type: "function",
+                            });
+                        }
+                    } else if (spec.namespace) {
+                        // import * as name from "module"
+                        const localName = spec.local.name;
+                        this.importedSymbols.set(localName, {
+                            modulePath: resolvedPath,
+                            exportName: "*",
+                            exports: moduleExports,
+                            type: "namespace",
+                        });
+                    } else {
+                        // import { a, b as c } from "module"
+                        const localName = spec.local.name;
+                        const importedName = spec.imported ? spec.imported.name : localName;
+                        const label = moduleExports.getExport(importedName);
+                        if (label) {
+                            // 检查是函数还是变量
+                            const isFunc = moduleExports.functions.has(importedName);
+                            this.importedSymbols.set(localName, {
+                                modulePath: resolvedPath,
+                                exportName: importedName,
+                                label: label,
+                                type: isFunc ? "function" : "variable",
+                            });
+                        } else {
+                            console.warn(`Export '${importedName}' not found in ${resolvedPath}`);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ========== 编译流程 ==========
 
     nextLabelId() {
@@ -227,6 +580,10 @@ export class Compiler {
 
     compileFile(inputFile, outputFile) {
         const source = fs.readFileSync(inputFile, "utf-8");
+
+        // 设置当前模块路径
+        this.currentModulePath = path.resolve(inputFile);
+        this.moduleManager.addSearchPath(path.dirname(this.currentModulePath));
 
         if (!outputFile) {
             const baseName = path.basename(inputFile, ".js");
@@ -312,6 +669,9 @@ export class Compiler {
         symbolGen.generateDataSection(this.asm);
         const wellKnownSymbolsGen = new WellKnownSymbolsGenerator(this.vm, this.ctx);
         wellKnownSymbolsGen.generateDataSection(this.asm);
+        // Iterator 数据段
+        const iteratorGen = new IteratorGenerator(this.vm, this.ctx);
+        iteratorGen.generateDataSection(this.asm);
     }
 
     generateSharedLibraryRuntime() {
@@ -340,6 +700,10 @@ export class Compiler {
 
     compileProgram(ast) {
         const vm = this.vm;
+
+        // 先处理模块导入
+        this.processMainModuleImports(ast);
+
         this.collectFunctions(ast);
 
         const mainBoxedVars = analyzeTopLevelSharedVariables(ast);

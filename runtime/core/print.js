@@ -87,6 +87,91 @@ export class PrintGenerator {
         vm.epilogue([VReg.S0, VReg.S1], 16);
     }
 
+    // 智能打印字符串（可以处理数据段字符串和堆字符串）
+    // 输入：A0 = 字符串指针（可能是数据段或堆）
+    generatePrintStringSmart() {
+        const vm = this.vm;
+        const TYPE_STRING = 6;
+
+        vm.label("_print_string_smart");
+        vm.prologue(16, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0); // S0 = str pointer
+
+        // 检查是否在堆范围内
+        vm.lea(VReg.V1, "_heap_base");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jlt("_print_string_smart_data"); // < heap_base，是数据段字符串
+
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jge("_print_string_smart_data"); // >= heap_ptr，不在堆范围内
+
+        // 在堆范围内，检查类型标记
+        vm.load(VReg.V2, VReg.S0, 0);
+        vm.andImm(VReg.V2, VReg.V2, 0xff);
+        vm.movImm(VReg.V3, TYPE_STRING);
+        vm.cmp(VReg.V2, VReg.V3);
+        vm.jne("_print_string_smart_data");
+
+        // 是堆字符串，跳过 16 字节头部
+        vm.addImm(VReg.A0, VReg.S0, 16);
+        vm.call("_print_str");
+        vm.jmp("_print_string_smart_done");
+
+        vm.label("_print_string_smart_data");
+        // 数据段字符串，直接打印
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_print_str");
+
+        vm.label("_print_string_smart_done");
+        vm.epilogue([VReg.S0], 16);
+    }
+
+    // 智能打印字符串（无换行版本）
+    generatePrintStringSmartNoNL() {
+        const vm = this.vm;
+        const TYPE_STRING = 6;
+
+        vm.label("_print_string_smart_no_nl");
+        vm.prologue(16, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0); // S0 = str pointer
+
+        // 检查是否在堆范围内
+        vm.lea(VReg.V1, "_heap_base");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jlt("_print_string_smart_no_nl_data");
+
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jge("_print_string_smart_no_nl_data");
+
+        // 在堆范围内，检查类型标记
+        vm.load(VReg.V2, VReg.S0, 0);
+        vm.andImm(VReg.V2, VReg.V2, 0xff);
+        vm.movImm(VReg.V3, TYPE_STRING);
+        vm.cmp(VReg.V2, VReg.V3);
+        vm.jne("_print_string_smart_no_nl_data");
+
+        // 是堆字符串，跳过 16 字节头部
+        vm.addImm(VReg.A0, VReg.S0, 16);
+        vm.call("_print_str_no_nl");
+        vm.jmp("_print_string_smart_no_nl_done");
+
+        vm.label("_print_string_smart_no_nl_data");
+        // 数据段字符串，直接打印
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_print_str_no_nl");
+
+        vm.label("_print_string_smart_no_nl_done");
+        vm.epilogue([VReg.S0], 16);
+    }
+
     // 打印换行
     generatePrintNewline() {
         const vm = this.vm;
@@ -353,11 +438,12 @@ export class PrintGenerator {
         vm.label("_print_value_not_zero");
 
         // 首先检查是否在数据段范围内（静态字符串向后兼容）
+        // 数据段在 [_data_start, _heap_base) 之间
         vm.lea(VReg.V1, "_data_start");
         vm.cmp(VReg.S0, VReg.V1);
         vm.jlt("_print_value_check_heap");
-        vm.lea(VReg.V1, "_data_start");
-        vm.addImm(VReg.V1, VReg.V1, 0x100000);
+        vm.lea(VReg.V1, "_heap_base");
+        vm.load(VReg.V1, VReg.V1, 0);
         vm.cmp(VReg.S0, VReg.V1);
         vm.jge("_print_value_check_heap");
         // 是数据段字符串
@@ -507,8 +593,7 @@ export class PrintGenerator {
         vm.shlImm(VReg.V0, VReg.V0, 3); // index * 8
         vm.addImm(VReg.V0, VReg.V0, 24); // + header size (type + length + capacity)
         vm.add(VReg.V0, VReg.S0, VReg.V0);
-        vm.load(VReg.A0, VReg.V0, 0); // 加载元素
-        // 直接调用 _print_number_no_nl（假设元素都是 Number）
+        vm.load(VReg.A0, VReg.V0, 0); // 加载元素（Number 对象指针）
         vm.call("_print_number_no_nl");
 
         // 索引加 1
@@ -1177,6 +1262,8 @@ export class PrintGenerator {
     generate() {
         this.generatePrintStringNoNL();
         this.generatePrintString();
+        this.generatePrintStringSmart();
+        this.generatePrintStringSmartNoNL();
         this.generatePrintNewline();
         this.generatePrintBool();
         this.generatePrintBoolNoNL();

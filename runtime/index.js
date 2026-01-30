@@ -26,6 +26,8 @@ export { DateGenerator } from "./types/date/index.js";
 export { RegExpGenerator } from "./types/regexp/index.js";
 // 类型运行时 - Symbol
 export { SymbolGenerator, WellKnownSymbolsGenerator } from "./types/symbol/index.js";
+// 类型运行时 - Iterator
+export { IteratorGenerator, ArrayIteratorMethodsGenerator, MapSetIteratorMethodsGenerator } from "./types/iterator/index.js";
 
 // 运算符
 export { TypeofGenerator } from "./operators/typeof.js";
@@ -49,6 +51,7 @@ import { SetGenerator } from "./types/set/index.js";
 import { DateGenerator } from "./types/date/index.js";
 import { RegExpGenerator } from "./types/regexp/index.js";
 import { SymbolGenerator, WellKnownSymbolsGenerator } from "./types/symbol/index.js";
+import { IteratorGenerator, ArrayIteratorMethodsGenerator, MapSetIteratorMethodsGenerator } from "./types/iterator/index.js";
 import { PrintGenerator } from "./core/print.js";
 import { SubscriptGenerator } from "./core/subscript.js";
 import { TypeofGenerator } from "./operators/typeof.js";
@@ -74,6 +77,10 @@ export class RuntimeGenerator {
         this.regexpGen = new RegExpGenerator(vm);
         this.symbolGen = new SymbolGenerator(vm, ctx);
         this.wellKnownSymbolsGen = new WellKnownSymbolsGenerator(vm, ctx);
+        // 迭代器生成器
+        this.iteratorGen = new IteratorGenerator(vm, ctx);
+        this.arrayIteratorMethodsGen = new ArrayIteratorMethodsGenerator(vm, ctx);
+        this.mapSetIteratorMethodsGen = new MapSetIteratorMethodsGenerator(vm, ctx);
         // 核心生成器
         this.jsValueGen = new JSValueGenerator(vm);
         this.printGen = new PrintGenerator(vm);
@@ -100,6 +107,10 @@ export class RuntimeGenerator {
         this.regexpGen.generate();
         this.symbolGen.generate();
         this.wellKnownSymbolsGen.generate();
+        // 迭代器
+        this.iteratorGen.generate();
+        this.arrayIteratorMethodsGen.generate();
+        this.mapSetIteratorMethodsGen.generate();
         // 核心
         this.jsValueGen.generate();
         this.printGen.generate();

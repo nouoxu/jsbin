@@ -67,6 +67,10 @@ export const RUNTIME_STRINGS = {
     debugElem: { label: "_str_debug_elem", value: ", elem: " },
     debugBox: { label: "_str_debug_box", value: "BOX: " },
     debugBoxed2: { label: "_str_debug_boxed2", value: " -> " },
+    debugIdx: { label: "_str_debug_idx", value: "idx=" },
+    debugColon: { label: "_str_debug_colon", value: ":" },
+    debugNumObj: { label: "_str_debug_numobj", value: "NUM:" },
+    debugFlt: { label: "_str_debug_flt", value: "FLT:" },
 };
 
 // 字符串常量生成器

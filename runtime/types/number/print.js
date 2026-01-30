@@ -337,6 +337,9 @@ export class NumberPrintGenerator {
 
         vm.fcvtzs(VReg.V0, 0);
 
+        // 保存 V0 到 S2（打印负号可能会破坏 caller-saved 寄存器）
+        vm.mov(VReg.S2, VReg.V0);
+
         vm.cmpImm(VReg.S1, 0);
         const printIntNoMinusLabel = "_print_float_nonl_int_no_minus";
         vm.jeq(printIntNoMinusLabel);
@@ -350,7 +353,7 @@ export class NumberPrintGenerator {
         vm.pop(VReg.V1);
 
         vm.label(printIntNoMinusLabel);
-        vm.mov(VReg.A0, VReg.V0);
+        vm.mov(VReg.A0, VReg.S2); // 使用保存的 S2
         vm.call("_print_int_no_nl");
         vm.jmp("_print_float_nonl_done");
 
@@ -529,12 +532,12 @@ export class NumberPrintGenerator {
         const vm = this.vm;
 
         vm.label("_print_number_no_nl");
-        vm.prologue(32, [VReg.S0, VReg.S1]);
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
         vm.mov(VReg.S0, VReg.A0);
 
-        // 加载类型到 S1（避免被 A0 覆盖）
+        // 加载类型到 S1，值到 S2（避免被函数调用覆盖）
         vm.load(VReg.S1, VReg.S0, 0);
-        vm.load(VReg.A0, VReg.S0, 8);
+        vm.load(VReg.S2, VReg.S0, 8);
 
         // 类型判断逻辑（同 generatePrintNumber）
         const isFloatLabel = "_print_number_nonl_float";
@@ -553,14 +556,16 @@ export class NumberPrintGenerator {
 
         // >= 28 是浮点类型
         vm.label(isFloatLabel);
+        vm.mov(VReg.A0, VReg.S2);
         vm.call("_print_float_no_nl");
         vm.jmp(doneLabel);
 
         vm.label(isIntLabel);
+        vm.mov(VReg.A0, VReg.S2);
         vm.call("_print_int_no_nl");
 
         vm.label(doneLabel);
-        vm.epilogue([VReg.S0, VReg.S1], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
     }
 
     // 生成所有打印函数

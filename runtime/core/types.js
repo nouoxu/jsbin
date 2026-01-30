@@ -21,6 +21,7 @@ export const TYPE_COROUTINE = 10; // Coroutine
 export const TYPE_PROMISE = 11; // Promise
 export const TYPE_ARRAY_BUFFER = 12; // ArrayBuffer
 export const TYPE_NUMBER = 13; // Number (boxed, 默认 float64)
+export const TYPE_ITERATOR = 14; // Iterator (迭代器对象)
 
 // TypedArray 类型 (直接作为 type 字段，无需额外 elemType)
 // 布局: [type:8 | length:8 | buffer...]

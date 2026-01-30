@@ -2,14 +2,8 @@
 // 提供 JSON.parse 和 JSON.stringify 的运行时实现
 
 import { VReg } from "../../../vm/registers.js";
-
-// 类型常量
-const TYPE_NULL = 1;
-const TYPE_BOOLEAN = 2;
-const TYPE_STRING = 6;
-const TYPE_ARRAY = 5;
-const TYPE_OBJECT = 7;
-const TYPE_NUMBER = 13;
+import { TYPE_ARRAY, TYPE_OBJECT, TYPE_STRING, TYPE_NUMBER } from "../../core/types.js";
+import { TYPE_FLOAT64 } from "../../core/allocator.js";
 
 export class JSONGenerator {
     constructor(vm, ctx) {
@@ -34,11 +28,11 @@ export class JSONGenerator {
         const vm = this.vm;
 
         vm.label("_JSON_stringify");
-        vm.prologue(32, [VReg.S0, VReg.S1]);
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
         vm.mov(VReg.S0, VReg.A0); // value
 
-        // 分配初始缓冲区 (256 字节)
+        // 分配初始缓冲区 (256 字节，不含头部)
         vm.movImm(VReg.A0, 256);
         vm.call("_alloc");
         vm.mov(VReg.S1, VReg.RET); // buffer
@@ -48,14 +42,32 @@ export class JSONGenerator {
         vm.mov(VReg.A1, VReg.S1);
         vm.movImm(VReg.A2, 0); // offset
         vm.call("_json_stringify_value");
+        vm.mov(VReg.S2, VReg.RET); // length
 
         // 添加 null 终止符
-        vm.add(VReg.V0, VReg.S1, VReg.RET);
+        vm.add(VReg.V0, VReg.S1, VReg.S2);
         vm.movImm(VReg.V1, 0);
         vm.storeByte(VReg.V0, 0, VReg.V1);
 
-        vm.mov(VReg.RET, VReg.S1);
-        vm.epilogue([VReg.S0, VReg.S1], 32);
+        // 分配带头部的字符串对象
+        vm.addImm(VReg.A0, VReg.S2, 17); // 16 头部 + 内容 + null
+        vm.call("_alloc");
+        vm.mov(VReg.S3, VReg.RET); // 保存字符串对象指针
+
+        // 写入类型头部
+        vm.movImm(VReg.V1, TYPE_STRING);
+        vm.store(VReg.S3, 0, VReg.V1);
+        // 写入长度
+        vm.store(VReg.S3, 8, VReg.S2);
+        // 复制内容
+        vm.addImm(VReg.A0, VReg.S3, 16); // 目标：头部后
+        vm.mov(VReg.A1, VReg.S1); // 源：缓冲区
+        vm.addImm(VReg.A2, VReg.S2, 1); // 长度 + null
+        vm.call("_memcpy");
+
+        // 返回字符串对象指针
+        vm.mov(VReg.RET, VReg.S3);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 64);
     }
 
     // _json_stringify_value(value, buffer, offset) -> 新 offset
@@ -69,9 +81,16 @@ export class JSONGenerator {
         vm.mov(VReg.S1, VReg.A1); // buffer
         vm.mov(VReg.S2, VReg.A2); // offset
 
-        // 检查 null
+        // 检查 null (NaN-boxed: 0x7FFA000000000000)
+        // 同时检查原始 0 值（兼容旧代码）
         vm.cmpImm(VReg.S0, 0);
+        vm.jeq("_jsv_write_null");
+        vm.lea(VReg.V0, "_js_null");
+        vm.load(VReg.V0, VReg.V0, 0); // 加载 0x7FFA000000000000
+        vm.cmp(VReg.S0, VReg.V0);
         vm.jne("_jsv_not_null");
+
+        vm.label("_jsv_write_null");
         // 写入 "null"
         vm.add(VReg.V0, VReg.S1, VReg.S2);
         vm.movImm(VReg.V1, 0x6c6c756e); // "null" (little endian)
@@ -80,12 +99,10 @@ export class JSONGenerator {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
 
         vm.label("_jsv_not_null");
-        // 获取类型
-        vm.load(VReg.S3, VReg.S0, 0);
-        vm.andImm(VReg.S3, VReg.S3, 0xff);
-
         // 检查 undefined
+        // 需要加载 _js_undefined 处存储的 NaN-boxed 值进行比较
         vm.lea(VReg.V0, "_js_undefined");
+        vm.load(VReg.V0, VReg.V0, 0); // 加载 0x7FFB000000000000
         vm.cmp(VReg.S0, VReg.V0);
         vm.jne("_jsv_not_undefined");
         // undefined 序列化为 null
@@ -96,8 +113,10 @@ export class JSONGenerator {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
 
         vm.label("_jsv_not_undefined");
-        // 检查 boolean
+        // 检查 boolean true
+        // 需要加载 _js_true 处存储的 NaN-boxed 值进行比较
         vm.lea(VReg.V0, "_js_true");
+        vm.load(VReg.V0, VReg.V0, 0); // 加载 0x7FF9000000000001
         vm.cmp(VReg.S0, VReg.V0);
         vm.jne("_jsv_not_true");
         vm.add(VReg.V0, VReg.S1, VReg.S2);
@@ -107,7 +126,9 @@ export class JSONGenerator {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
 
         vm.label("_jsv_not_true");
+        // 检查 boolean false
         vm.lea(VReg.V0, "_js_false");
+        vm.load(VReg.V0, VReg.V0, 0); // 加载 0x7FF9000000000000
         vm.cmp(VReg.S0, VReg.V0);
         vm.jne("_jsv_not_false");
         vm.add(VReg.V0, VReg.S1, VReg.S2);
@@ -119,13 +140,87 @@ export class JSONGenerator {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
 
         vm.label("_jsv_not_false");
-        // 检查 Number
+
+        // ========== 处理 NaN-boxed 值 ==========
+        // 检查是否是 NaN-boxing 格式（高 16 位是 0x7FF8-0x7FFF）
+        // 如果是，需要先提取指针再处理
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 48); // 获取高 16 位
+        vm.andImm(VReg.V1, VReg.V0, 0xfff8); // 检查 0x7FF8-0x7FFF 范围
+        // cmpImm 只支持 12 位立即数，0x7ff8 需要用寄存器比较
+        vm.movImm(VReg.V2, 0x7ff8);
+        vm.cmp(VReg.V1, VReg.V2);
+        vm.jne("_jsv_not_nanbox"); // 不是 NaN-boxing 格式
+
+        // 是 NaN-boxing 格式，提取 tag 和指针
+        // Tag = (高16位 & 0x7) 表示类型: 4=string, 5=object, 6=array, 7=function
+        vm.andImm(VReg.V0, VReg.V0, 0x7); // tag
+        vm.movImm64(VReg.V1, 0x0000ffffffffffffn); // 48 位掩码
+        vm.and(VReg.S0, VReg.S0, VReg.V1); // 提取指针到 S0
+
+        // 根据 tag 跳转
+        vm.cmpImm(VReg.V0, 4); // string
+        vm.jeq("_jsv_write_string");
+        vm.cmpImm(VReg.V0, 5); // object
+        vm.jeq("_jsv_unboxed_object");
+        vm.cmpImm(VReg.V0, 6); // array
+        vm.jeq("_jsv_unboxed_array");
+        // 其他类型默认为 null
+        vm.jmp("_jsv_default");
+
+        // 从 NaN-boxing unbox 后的数组处理
+        vm.label("_jsv_unboxed_array");
+        // S0 现在是数组指针，直接跳到数组处理
+        vm.jmp("_jsv_handle_array");
+
+        // 从 NaN-boxing unbox 后的对象处理
+        vm.label("_jsv_unboxed_object");
+        // S0 现在是对象指针，直接跳到对象处理
+        vm.jmp("_jsv_handle_object");
+
+        vm.label("_jsv_not_nanbox");
+        // 检查是否是数据段字符串
+        // 数据段在 [_data_start, _heap_base) 之间
+        vm.lea(VReg.V0, "_data_start");
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jlt("_jsv_check_heap");
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jge("_jsv_check_heap");
+        // 是数据段字符串
+        vm.jmp("_jsv_write_string");
+
+        vm.label("_jsv_check_heap");
+        // 检查是否在堆范围内
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jlt("_jsv_default"); // 不在堆中，默认为 null
+        vm.lea(VReg.V0, "_heap_ptr");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jge("_jsv_default"); // 超出堆范围
+
+        // 在堆中，获取类型
+        vm.load(VReg.S3, VReg.S0, 0);
+        vm.andImm(VReg.S3, VReg.S3, 0xff);
+
+        // 检查 Number (TYPE_NUMBER = 13 或 TYPE_FLOAT64 = 29)
         vm.cmpImm(VReg.S3, TYPE_NUMBER);
+        vm.jeq("_jsv_number");
+        vm.cmpImm(VReg.S3, TYPE_FLOAT64);
         vm.jne("_jsv_not_number");
+
+        vm.label("_jsv_number");
         // 序列化数字
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_valueToStr");
-        vm.mov(VReg.S4, VReg.RET); // 数字字符串
+        vm.mov(VReg.S4, VReg.RET); // 数字字符串（带头部）
+        // 获取字符串内容
+        vm.mov(VReg.A0, VReg.S4);
+        vm.call("_getStrContent");
+        vm.mov(VReg.S4, VReg.RET); // 字符串内容指针
         // 复制到 buffer
         vm.add(VReg.A0, VReg.S1, VReg.S2);
         vm.mov(VReg.A1, VReg.S4);
@@ -137,9 +232,11 @@ export class JSONGenerator {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
 
         vm.label("_jsv_not_number");
-        // 检查 String
+        // 检查堆 String
         vm.cmpImm(VReg.S3, TYPE_STRING);
         vm.jne("_jsv_not_string");
+
+        vm.label("_jsv_write_string");
         // 写入引号和字符串内容
         vm.add(VReg.V0, VReg.S1, VReg.S2);
         vm.movImm(VReg.V1, 0x22); // '"'
@@ -168,6 +265,8 @@ export class JSONGenerator {
         // 检查 Array
         vm.cmpImm(VReg.S3, TYPE_ARRAY);
         vm.jne("_jsv_not_array");
+
+        vm.label("_jsv_handle_array");
         // 写入 '['
         vm.add(VReg.V0, VReg.S1, VReg.S2);
         vm.movImm(VReg.V1, 0x5b); // '['
@@ -216,14 +315,89 @@ export class JSONGenerator {
         // 检查 Object
         vm.cmpImm(VReg.S3, TYPE_OBJECT);
         vm.jne("_jsv_default");
+
+        vm.label("_jsv_handle_object");
         // 写入 '{'
         vm.add(VReg.V0, VReg.S1, VReg.S2);
         vm.movImm(VReg.V1, 0x7b); // '{'
         vm.storeByte(VReg.V0, 0, VReg.V1);
         vm.addImm(VReg.S2, VReg.S2, 1);
 
-        // 简化实现：遍历对象属性
-        // TODO: 完整的对象遍历
+        // 遍历对象属性
+        // S0 = obj, S1 = buffer, S2 = offset
+        // S3 用于属性数量, S4 用于索引
+        vm.load(VReg.S3, VReg.S0, 8); // count
+        vm.movImm(VReg.S4, 0); // i = 0
+
+        vm.label("_jsv_obj_loop");
+        vm.cmp(VReg.S4, VReg.S3);
+        vm.jge("_jsv_obj_done");
+
+        // 如果不是第一个，写入逗号
+        vm.cmpImm(VReg.S4, 0);
+        vm.jeq("_jsv_obj_no_comma");
+        vm.add(VReg.V0, VReg.S1, VReg.S2);
+        vm.movImm(VReg.V1, 0x2c); // ','
+        vm.storeByte(VReg.V0, 0, VReg.V1);
+        vm.addImm(VReg.S2, VReg.S2, 1);
+
+        vm.label("_jsv_obj_no_comma");
+        // 计算属性偏移: 24 + i * 16
+        vm.shlImm(VReg.V0, VReg.S4, 4); // i * 16
+        vm.addImm(VReg.V0, VReg.V0, 24);
+        vm.add(VReg.V0, VReg.S0, VReg.V0);
+
+        // 保存 key 和 value 指针到栈
+        vm.load(VReg.V1, VReg.V0, 0); // key
+        vm.load(VReg.V2, VReg.V0, 8); // value
+        vm.push(VReg.V1);
+        vm.push(VReg.V2);
+
+        // 写入 key 引号和内容
+        vm.add(VReg.V3, VReg.S1, VReg.S2);
+        vm.movImm(VReg.V4, 0x22); // '"'
+        vm.storeByte(VReg.V3, 0, VReg.V4);
+        vm.addImm(VReg.S2, VReg.S2, 1);
+
+        // 获取 key 字符串内容
+        vm.mov(VReg.A0, VReg.V1);
+        vm.call("_getStrContent");
+        vm.mov(VReg.V5, VReg.RET);
+
+        // 复制 key
+        vm.add(VReg.A0, VReg.S1, VReg.S2);
+        vm.mov(VReg.A1, VReg.V5);
+        vm.call("_strcpy");
+
+        // 计算 key 长度
+        vm.mov(VReg.A0, VReg.V5);
+        vm.call("_strlen");
+        vm.add(VReg.S2, VReg.S2, VReg.RET);
+
+        // 写入 key 结束引号
+        vm.add(VReg.V0, VReg.S1, VReg.S2);
+        vm.movImm(VReg.V1, 0x22);
+        vm.storeByte(VReg.V0, 0, VReg.V1);
+        vm.addImm(VReg.S2, VReg.S2, 1);
+
+        // 写入冒号
+        vm.add(VReg.V0, VReg.S1, VReg.S2);
+        vm.movImm(VReg.V1, 0x3a); // ':'
+        vm.storeByte(VReg.V0, 0, VReg.V1);
+        vm.addImm(VReg.S2, VReg.S2, 1);
+
+        // 恢复 value，递归序列化
+        vm.pop(VReg.A0); // value
+        vm.pop(VReg.V7); // 丢弃 key (已用过)
+        vm.mov(VReg.A1, VReg.S1);
+        vm.mov(VReg.A2, VReg.S2);
+        vm.call("_json_stringify_value");
+        vm.mov(VReg.S2, VReg.RET);
+
+        vm.addImm(VReg.S4, VReg.S4, 1);
+        vm.jmp("_jsv_obj_loop");
+
+        vm.label("_jsv_obj_done");
         // 写入 '}'
         vm.add(VReg.V0, VReg.S1, VReg.S2);
         vm.movImm(VReg.V1, 0x7d); // '}'

@@ -30,8 +30,11 @@ export class ArrayGenerator {
         vm.label("_array_push");
         vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
-        vm.mov(VReg.S0, VReg.A0); // arr
-        vm.mov(VReg.S1, VReg.A1); // value
+        vm.mov(VReg.S1, VReg.A1); // 保存 value
+
+        // unbox 数组
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取当前长度和容量
         vm.load(VReg.S2, VReg.S0, 8); // length
@@ -111,7 +114,9 @@ export class ArrayGenerator {
         vm.label("_array_pop");
         vm.prologue(16, [VReg.S0, VReg.S1]);
 
-        vm.mov(VReg.S0, VReg.A0); // arr
+        // unbox 数组
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取当前长度
         vm.load(VReg.S1, VReg.S0, 8);
@@ -206,8 +211,11 @@ export class ArrayGenerator {
         vm.label("_array_at");
         vm.prologue(0, [VReg.S0, VReg.S1]);
 
-        vm.mov(VReg.S0, VReg.A0); // arr
-        vm.mov(VReg.S1, VReg.A1); // index
+        vm.mov(VReg.S1, VReg.A1); // 保存 index
+
+        // unbox 数组
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取长度
         vm.load(VReg.V0, VReg.S0, 8);
@@ -249,8 +257,11 @@ export class ArrayGenerator {
         vm.label("_array_indexOf");
         vm.prologue(0, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
-        vm.mov(VReg.S0, VReg.A0); // arr
-        vm.mov(VReg.S1, VReg.A1); // value to find
+        vm.mov(VReg.S1, VReg.A1); // 保存 value to find
+
+        // unbox 数组
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
         vm.movImm(VReg.S2, 0); // i = 0
 
         // 获取长度
@@ -324,8 +335,11 @@ export class ArrayGenerator {
         vm.label("_array_includes");
         vm.prologue(0, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
-        vm.mov(VReg.S0, VReg.A0); // arr
-        vm.mov(VReg.S1, VReg.A1); // value to find
+        vm.mov(VReg.S1, VReg.A1); // 保存 value to find
+
+        // unbox 数组
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
         vm.movImm(VReg.S2, 0); // i = 0
 
         // 获取长度
@@ -393,9 +407,12 @@ export class ArrayGenerator {
         vm.label("_array_slice");
         vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
-        vm.mov(VReg.S0, VReg.A0); // arr (原数组)
-        vm.mov(VReg.S1, VReg.A1); // start
-        vm.mov(VReg.S2, VReg.A2); // end
+        vm.mov(VReg.S1, VReg.A1); // 保存 start
+        vm.mov(VReg.S2, VReg.A2); // 保存 end
+
+        // unbox 数组
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取原数组长度
         vm.load(VReg.V0, VReg.S0, 8);

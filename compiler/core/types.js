@@ -357,6 +357,15 @@ export function inferType(node, ctx) {
                         return Type.ARRAY;
                     }
                 }
+
+                // JSON.stringify() 返回字符串，JSON.parse() 返回 UNKNOWN
+                if (obj && obj.type === "Identifier" && obj.name === "JSON" && prop) {
+                    const methodName = prop.name || prop.value;
+                    if (methodName === "stringify") {
+                        return Type.STRING;
+                    }
+                }
+
                 // Array 方法返回类型
                 const arrayMethods = ["slice", "concat", "filter", "map", "flat", "flatMap"];
                 if (prop && arrayMethods.includes(prop.name)) {

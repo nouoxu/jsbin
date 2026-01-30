@@ -360,6 +360,17 @@ export const FunctionCompiler = {
                 return;
             }
 
+            // 检查是否是导入的函数
+            if (this.isImportedSymbol && this.isImportedSymbol(callee.name)) {
+                const importInfo = this.getImportedSymbol(callee.name);
+                if (importInfo && importInfo.type === "function") {
+                    // 编译参数并调用导入的函数
+                    this.compileCallArguments(expr.arguments);
+                    this.vm.call(importInfo.label);
+                    return;
+                }
+            }
+
             // 检查是否是外部库函数
             if (this.isExternalSymbol && this.isExternalSymbol(callee.name)) {
                 // 获取库信息
@@ -558,10 +569,21 @@ export const FunctionCompiler = {
                             // 同时也检查用户函数调用（通常返回数字）
                             const isNumberType = argType === Type.NUMBER || argType === Type.INT8 || argType === Type.INT16 || argType === Type.INT32 || argType === Type.INT64 || argType === Type.UINT8 || argType === Type.UINT16 || argType === Type.UINT32 || argType === Type.UINT64 || argType === Type.FLOAT32 || argType === Type.FLOAT64;
 
-                            // 对于函数调用（用户定义函数），假设返回数字类型
+                            // 对于用户定义函数（不包括导入的函数），假设返回数字类型
                             const isUserFunctionCall = arg.type === "CallExpression" && arg.callee && arg.callee.type === "Identifier" && this.ctx.hasFunction(arg.callee.name);
 
-                            if (isNumberType || isUserFunctionCall) {
+                            // 对于导入的函数调用，使用 _print_value 进行运行时类型检测
+                            const isImportedFunctionCall = arg.type === "CallExpression" && arg.callee && arg.callee.type === "Identifier" && this.isImportedSymbol && this.isImportedSymbol(arg.callee.name);
+
+                            if (isImportedFunctionCall) {
+                                // 导入的函数，使用运行时类型检测
+                                if (isLast) {
+                                    this.vm.call("_print_value");
+                                } else {
+                                    this.vm.call("_print_value_no_nl");
+                                    this.vm.call("_print_space");
+                                }
+                            } else if (isNumberType || isUserFunctionCall) {
                                 // 数字类型使用 _print_number
                                 if (isLast) {
                                     this.vm.call("_print_number");
@@ -570,17 +592,11 @@ export const FunctionCompiler = {
                                     this.vm.call("_print_space");
                                 }
                             } else if (argType === Type.STRING) {
-                                // 字符串类型
-                                // 字符串方法调用返回的是 String 对象（有 16 字节头部）
-                                // 但字符串变量和字面量可能是原始指针
-                                // 只对方法调用跳过头部
-                                if (arg.type === "CallExpression") {
-                                    this.vm.addImm(VReg.A0, VReg.A0, 16);
-                                }
+                                // 字符串类型 - 使用智能打印（处理数据段和堆字符串）
                                 if (isLast) {
-                                    this.vm.call("_print_str");
+                                    this.vm.call("_print_string_smart");
                                 } else {
-                                    this.vm.call("_print_str_no_nl");
+                                    this.vm.call("_print_string_smart_no_nl");
                                     this.vm.call("_print_space");
                                 }
                             } else if (argType === Type.ARRAY) {

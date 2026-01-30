@@ -75,6 +75,24 @@ export const CollectionMethodCompiler = {
                 this.vm.store(VReg.A0, 16, VReg.V1); // head = null
                 this.vm.mov(VReg.RET, VReg.A0);
                 return true;
+
+            case "keys":
+                // map.keys() -> Iterator
+                this.vm.pop(VReg.A0);
+                this.vm.call("_map_keys");
+                return true;
+
+            case "values":
+                // map.values() -> Iterator
+                this.vm.pop(VReg.A0);
+                this.vm.call("_map_values");
+                return true;
+
+            case "entries":
+                // map.entries() -> Iterator (也是 @@iterator)
+                this.vm.pop(VReg.A0);
+                this.vm.call("_map_entries");
+                return true;
         }
 
         this.vm.pop(VReg.RET); // 恢复栈
@@ -132,6 +150,24 @@ export const CollectionMethodCompiler = {
                 // set.clear()
                 this.vm.pop(VReg.A0);
                 this.vm.call("_set_clear");
+                return true;
+
+            case "keys":
+                // set.keys() -> Iterator (same as values for Set)
+                this.vm.pop(VReg.A0);
+                this.vm.call("_set_keys");
+                return true;
+
+            case "values":
+                // set.values() -> Iterator (也是 @@iterator)
+                this.vm.pop(VReg.A0);
+                this.vm.call("_set_values");
+                return true;
+
+            case "entries":
+                // set.entries() -> Iterator of [value, value]
+                this.vm.pop(VReg.A0);
+                this.vm.call("_set_entries");
                 return true;
         }
 

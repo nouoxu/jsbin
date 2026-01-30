@@ -257,6 +257,21 @@ export const ArrayBasicCompiler = {
                     this.compileArrayEvery(arrayExpr, args[0]);
                 }
                 break;
+            case "keys":
+                // arr.keys() -> Iterator
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_array_keys");
+                break;
+            case "values":
+                // arr.values() -> Iterator (也是 @@iterator)
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_array_values");
+                break;
+            case "entries":
+                // arr.entries() -> Iterator of [index, value]
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_array_entries");
+                break;
             default:
                 break;
         }

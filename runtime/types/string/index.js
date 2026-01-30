@@ -244,6 +244,44 @@ export class StringGenerator {
         vm.epilogue([VReg.S0], 0);
     }
 
+    // 从 C 字符串创建 JSString
+    // _createStrFromCStr(cstr) -> JSString 指针
+    generateCreateStrFromCStr() {
+        const vm = this.vm;
+        const TYPE_STRING = 6;
+
+        vm.label("_createStrFromCStr");
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
+
+        vm.mov(VReg.S0, VReg.A0); // S0 = C 字符串指针
+
+        // 获取字符串长度
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_strlen");
+        vm.mov(VReg.S1, VReg.RET); // S1 = 长度
+
+        // 分配内存: 16字节头部 + 长度 + 1（null terminator）
+        vm.addImm(VReg.A0, VReg.S1, 17);
+        vm.call("_alloc");
+        vm.mov(VReg.S2, VReg.RET); // S2 = 新分配的内存
+
+        // 写入类型标记
+        vm.movImm(VReg.V0, TYPE_STRING);
+        vm.store(VReg.S2, 0, VReg.V0);
+
+        // 写入长度
+        vm.store(VReg.S2, 8, VReg.S1);
+
+        // 复制字符串内容到 +16 偏移
+        vm.addImm(VReg.A0, VReg.S2, 16);
+        vm.mov(VReg.A1, VReg.S0);
+        vm.call("_strcpy");
+
+        // 返回 JSString 指针
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
+    }
+
     // 生成字符串连接函数（分配新内存）
     // _strconcat(s1, s2) -> 新字符串（带TYPE_STRING标记）
     generateStrconcat() {
@@ -426,6 +464,147 @@ export class StringGenerator {
         vm.ret();
     }
 
+    // 浮点数转字符串
+    // _floatToStr(bits) -> str (C风格字符串指针)
+    // 输入: A0 = IEEE 754 float64 位模式
+    // 支持整数和带小数的浮点数
+    generateFloatToStr() {
+        const vm = this.vm;
+
+        vm.label("_floatToStr");
+        vm.prologue(96, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+
+        vm.mov(VReg.S0, VReg.A0); // S0 = 位模式
+
+        // 分配 32 字节缓冲区
+        vm.movImm(VReg.A0, 32);
+        vm.call("_alloc");
+        vm.mov(VReg.S4, VReg.RET); // S4 = 缓冲区
+        vm.mov(VReg.S1, VReg.S4); // S1 = 写入位置
+
+        // 将位模式移动到浮点寄存器
+        vm.fmovToFloat(0, VReg.S0);
+
+        // 检查是否为负数
+        vm.movImm(VReg.S5, 0); // S5 = 是否负数标志
+        vm.fcmpZero(0);
+        vm.jge("_floatToStr_not_neg");
+
+        vm.movImm(VReg.S5, 1);
+        vm.fabs(0, 0);
+        // 写 '-'
+        vm.movImm(VReg.V0, 45);
+        vm.storeByte(VReg.S1, 0, VReg.V0);
+        vm.addImm(VReg.S1, VReg.S1, 1);
+
+        vm.label("_floatToStr_not_neg");
+
+        // 检查是否为整数（没有小数部分）
+        vm.ftrunc(1, 0); // D1 = trunc(D0)
+        vm.fcmp(0, 1);
+        vm.jne("_floatToStr_has_decimal");
+
+        // 是整数，直接转为整数字符串
+        vm.fcvtzs(VReg.A0, 0);
+        vm.call("_intToStr");
+        // _intToStr 返回 JSString 指针，需要获取内容
+        vm.mov(VReg.A0, VReg.RET);
+        vm.call("_getStrContent");
+        vm.mov(VReg.S2, VReg.RET); // S2 = 字符串内容指针
+        vm.mov(VReg.A0, VReg.S1); // 目标：当前写入位置
+        vm.mov(VReg.A1, VReg.S2); // 源：字符串内容
+        vm.call("_strcpy");
+        // 返回缓冲区起始（包含可能的负号）
+        vm.jmp("_floatToStr_done");
+
+        vm.label("_floatToStr_has_decimal");
+        // 有小数部分
+
+        // 先保存 D0（绝对值）的位模式到 S0，因为后面的函数调用会破坏浮点寄存器
+        vm.fmovToInt(VReg.S0, 0);
+
+        // 先处理整数部分
+        vm.ftrunc(1, 0); // D1 = 整数部分
+        vm.fcvtzs(VReg.S2, 1); // S2 = 整数部分
+
+        // 处理整数部分为 0 的情况
+        vm.cmpImm(VReg.S2, 0);
+        vm.jne("_floatToStr_int_nonzero");
+        vm.movImm(VReg.V0, 48); // '0'
+        vm.storeByte(VReg.S1, 0, VReg.V0);
+        vm.addImm(VReg.S1, VReg.S1, 1);
+        vm.jmp("_floatToStr_write_decimal");
+
+        vm.label("_floatToStr_int_nonzero");
+        // 写入整数部分
+        vm.mov(VReg.A0, VReg.S2);
+        vm.call("_intToStr");
+        // _intToStr 返回 JSString 指针，需要获取内容
+        vm.mov(VReg.A0, VReg.RET);
+        vm.call("_getStrContent");
+        vm.mov(VReg.S3, VReg.RET); // S3 = 字符串内容指针
+        vm.mov(VReg.A0, VReg.S1);
+        vm.mov(VReg.A1, VReg.S3);
+        vm.call("_strcpy");
+        // 更新写入位置
+        vm.mov(VReg.A0, VReg.S3);
+        vm.call("_strlen");
+        vm.add(VReg.S1, VReg.S1, VReg.RET);
+
+        vm.label("_floatToStr_write_decimal");
+        // 写小数点
+        vm.movImm(VReg.V0, 46); // '.'
+        vm.storeByte(VReg.S1, 0, VReg.V0);
+        vm.addImm(VReg.S1, VReg.S1, 1);
+
+        // 从 S0 恢复 D0
+        vm.fmovToFloat(0, VReg.S0);
+        // 重新计算 D1 = trunc(D0)
+        vm.ftrunc(1, 0);
+        // 计算小数部分: frac = abs(value) - trunc(abs(value))
+        vm.fsub(0, 0, 1); // D0 = 小数部分
+
+        // 写入小数位（最多 6 位）
+        vm.movImm(VReg.S3, 0); // 计数器
+
+        vm.label("_floatToStr_decimal_loop");
+        vm.cmpImm(VReg.S3, 6);
+        vm.jge("_floatToStr_decimal_done");
+
+        // frac = frac * 10
+        vm.movImm(VReg.V1, 10);
+        vm.scvtf(1, VReg.V1);
+        vm.fmul(0, 0, 1);
+
+        // digit = trunc(frac)
+        vm.ftrunc(1, 0);
+        vm.fcvtzs(VReg.V0, 1);
+
+        // 写入数字
+        vm.addImm(VReg.V0, VReg.V0, 48);
+        vm.storeByte(VReg.S1, 0, VReg.V0);
+        vm.addImm(VReg.S1, VReg.S1, 1);
+
+        // frac = frac - digit
+        vm.fsub(0, 0, 1);
+
+        // 检查是否已经没有小数了
+        vm.fcmpZero(0);
+        vm.jeq("_floatToStr_decimal_done");
+
+        vm.addImm(VReg.S3, VReg.S3, 1);
+        vm.jmp("_floatToStr_decimal_loop");
+
+        vm.label("_floatToStr_decimal_done");
+        // 写入结束符
+        vm.movImm(VReg.V0, 0);
+        vm.storeByte(VReg.S1, 0, VReg.V0);
+
+        vm.label("_floatToStr_done");
+        vm.mov(VReg.RET, VReg.S4);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 96);
+    }
+
     // 通用 toString（简化版）
     // _toString(v) -> str
     generateToString() {
@@ -479,8 +658,10 @@ export class StringGenerator {
         vm.cmpImm(VReg.V1, TYPE_STRING);
         vm.jeq("_valueToStr_as_string");
 
-        // 检查是否是 Number 对象 (type=13)
+        // 检查是否是 Number 对象 (TYPE_NUMBER=13 或 TYPE_FLOAT64=29)
         vm.cmpImm(VReg.V1, TYPE_NUMBER);
+        vm.jeq("_valueToStr_as_number_obj");
+        vm.cmpImm(VReg.V1, 29); // TYPE_FLOAT64
         vm.jeq("_valueToStr_as_number_obj");
 
         // 其他堆对象，当作原始数字处理（不太可能）
@@ -492,10 +673,12 @@ export class StringGenerator {
         vm.load(VReg.S0, VReg.S0, 8);
         // 继续到浮点转字符串逻辑
         vm.label("_valueToStr_as_raw_number");
-        // 将值当作浮点位表示，转换为整数后调用 _intToStr
-        vm.fmovToFloat(0, VReg.S0);
-        vm.fcvtzs(VReg.A0, 0);
-        vm.call("_intToStr");
+        // 调用 _floatToStr 转换浮点数为 C 字符串
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_floatToStr");
+        // 包装成 JSString 对象
+        vm.mov(VReg.A0, VReg.RET);
+        vm.call("_createStrFromCStr");
         vm.epilogue([VReg.S0], 16);
 
         vm.label("_valueToStr_as_string");
@@ -934,8 +1117,10 @@ export class StringGenerator {
         this.generateStrstr();
         this.generateMemcpy();
         this.generateGetStrContent();
+        this.generateCreateStrFromCStr();
         this.generateStrconcat();
         this.generateIntToStr();
+        this.generateFloatToStr();
         this.generateBoolToStr();
         this.generateToString();
         this.generateValueToStr(); // 智能值转字符串
