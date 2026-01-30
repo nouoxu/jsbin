@@ -2,6 +2,7 @@
 // 提供字符串操作函数
 
 import { VReg } from "../../../vm/registers.js";
+import { StringMethodsGenerator } from "./methods.js";
 
 export class StringGenerator {
     constructor(vm) {
@@ -930,6 +931,8 @@ export class StringGenerator {
         this.generateStrcmp();
         this.generateStrcpy();
         this.generateStrcat();
+        this.generateStrstr();
+        this.generateMemcpy();
         this.generateGetStrContent();
         this.generateStrconcat();
         this.generateIntToStr();
@@ -944,5 +947,108 @@ export class StringGenerator {
         this.generateTrim();
         this.generateSlice();
         this.generateIndexOf();
+        this.generateIncludes();
+        this.generateStartsWith();
+        this.generateEndsWith();
+        this.generateLastIndexOf();
+        this.generateRepeat();
+        this.generateAt();
+        this.generateConcat();
+        this.generateSplit();
+        this.generateReplace();
+        this.generateReplaceAll();
+    }
+
+    // _strstr(haystack, needle) -> 指针或 0
+    generateStrstr() {
+        const vm = this.vm;
+
+        vm.label("_strstr");
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+
+        vm.mov(VReg.S0, VReg.A0); // haystack
+        vm.mov(VReg.S1, VReg.A1); // needle
+
+        // 获取 needle 长度
+        vm.mov(VReg.A0, VReg.S1);
+        vm.call("_strlen");
+        vm.mov(VReg.S2, VReg.RET);
+
+        // 空 needle 返回 haystack
+        vm.cmpImm(VReg.S2, 0);
+        vm.jne("_strstr_search");
+        vm.mov(VReg.RET, VReg.S0);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
+
+        vm.label("_strstr_search");
+        vm.mov(VReg.S3, VReg.S0); // 当前位置
+
+        vm.label("_strstr_loop");
+        vm.loadByte(VReg.V0, VReg.S3, 0);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_strstr_notfound");
+
+        // 比较 needle 长度的字符
+        vm.movImm(VReg.V1, 0); // i
+
+        vm.label("_strstr_match");
+        vm.cmp(VReg.V1, VReg.S2);
+        vm.jge("_strstr_found");
+
+        vm.add(VReg.V2, VReg.S3, VReg.V1);
+        vm.loadByte(VReg.V3, VReg.V2, 0);
+        vm.add(VReg.V2, VReg.S1, VReg.V1);
+        vm.loadByte(VReg.V4, VReg.V2, 0);
+        vm.cmp(VReg.V3, VReg.V4);
+        vm.jne("_strstr_next");
+
+        vm.addImm(VReg.V1, VReg.V1, 1);
+        vm.jmp("_strstr_match");
+
+        vm.label("_strstr_next");
+        vm.addImm(VReg.S3, VReg.S3, 1);
+        vm.jmp("_strstr_loop");
+
+        vm.label("_strstr_found");
+        vm.mov(VReg.RET, VReg.S3);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
+
+        vm.label("_strstr_notfound");
+        vm.movImm(VReg.RET, 0);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
+    }
+
+    // _memcpy(dest, src, len) -> dest
+    generateMemcpy() {
+        const vm = this.vm;
+
+        vm.label("_memcpy");
+        vm.prologue(0, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+
+        vm.mov(VReg.S0, VReg.A0); // dest
+        vm.mov(VReg.S1, VReg.A1); // src
+        vm.mov(VReg.S2, VReg.A2); // len
+        vm.mov(VReg.S3, VReg.A0); // 保存原始 dest
+
+        vm.movImm(VReg.V0, 0); // i
+
+        vm.label("_memcpy_loop");
+        vm.cmp(VReg.V0, VReg.S2);
+        vm.jge("_memcpy_done");
+
+        vm.add(VReg.V1, VReg.S1, VReg.V0);
+        vm.loadByte(VReg.V2, VReg.V1, 0);
+        vm.add(VReg.V1, VReg.S0, VReg.V0);
+        vm.storeByte(VReg.V1, 0, VReg.V2);
+
+        vm.addImm(VReg.V0, VReg.V0, 1);
+        vm.jmp("_memcpy_loop");
+
+        vm.label("_memcpy_done");
+        vm.mov(VReg.RET, VReg.S3);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 0);
     }
 }
+
+// 混入字符串方法生成器
+Object.assign(StringGenerator.prototype, StringMethodsGenerator);

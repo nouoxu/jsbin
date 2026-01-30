@@ -3,7 +3,7 @@
 
 import { VReg } from "../../vm/registers.js";
 import { TYPE_STRING, TYPE_ARRAY, TYPE_OBJECT, TYPE_CLOSURE, TYPE_DATE, TYPE_PROMISE, TYPE_INT8, TYPE_FLOAT64, HEADER_SIZE } from "./allocator.js";
-import { TYPE_INT8_ARRAY, TYPE_FLOAT64_ARRAY, TYPE_ARRAY_BUFFER } from "./types.js";
+import { TYPE_INT8_ARRAY, TYPE_FLOAT64_ARRAY, TYPE_ARRAY_BUFFER, TYPE_NUMBER } from "./types.js";
 
 export class PrintGenerator {
     constructor(vm) {
@@ -390,7 +390,9 @@ export class PrintGenerator {
         vm.jeq("_print_value_heap_string");
         vm.cmpImm(VReg.V2, TYPE_DATE);
         vm.jeq("_print_value_heap_date");
-        // 检查 Number 对象 (TYPE_FLOAT64 = 29)
+        // 检查 Number 对象 (TYPE_NUMBER = 13 或 TYPE_FLOAT64 = 29)
+        vm.cmpImm(VReg.V2, TYPE_NUMBER);
+        vm.jeq("_print_value_heap_number");
         vm.cmpImm(VReg.V2, TYPE_FLOAT64);
         vm.jeq("_print_value_heap_number");
         // 默认当作对象
@@ -465,8 +467,15 @@ export class PrintGenerator {
         const vm = this.vm;
 
         vm.label("_print_array");
-        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
-        vm.mov(VReg.S0, VReg.A0); // 数组指针
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+        
+        // 保存原始输入到 S3 供调试用
+        vm.mov(VReg.S3, VReg.A0);
+        
+        // A0 包含输入参数（可能是 boxed 数组 JSValue 或原始指针）
+        // 调用 _js_unbox 获取原始指针
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // 原始数组指针
 
         // 打印 "["
         vm.lea(VReg.A0, "_str_lbracket");
@@ -493,12 +502,14 @@ export class PrintGenerator {
         vm.call("_print_str_no_nl");
 
         vm.label(notFirstLabel);
-        // 获取元素值: array[index] = *(array + 16 + index * 8)
+        // 获取元素值: array[index] = *(array + 24 + index * 8)
         vm.mov(VReg.V0, VReg.S2);
-        vm.shl(VReg.V0, VReg.V0, 3); // index * 8
+        vm.shlImm(VReg.V0, VReg.V0, 3); // index * 8
+        vm.addImm(VReg.V0, VReg.V0, 24); // + header size (type + length + capacity)
         vm.add(VReg.V0, VReg.S0, VReg.V0);
-        vm.load(VReg.A0, VReg.V0, 16); // 跳过 header (16 bytes)
-        vm.call("_print_array_elem_no_nl");
+        vm.load(VReg.A0, VReg.V0, 0); // 加载元素
+        // 直接调用 _print_number_no_nl（假设元素都是 Number）
+        vm.call("_print_number_no_nl");
 
         // 索引加 1
         vm.addImm(VReg.S2, VReg.S2, 1);
@@ -509,7 +520,7 @@ export class PrintGenerator {
         vm.lea(VReg.A0, "_str_rbracket");
         vm.call("_print_str");
 
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
     }
 
     // 数组元素打印（无换行）

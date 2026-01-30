@@ -683,6 +683,34 @@ export class ARM64Assembler {
         this.emit32(word);
     }
 
+    // FRINTM Dd, Dn - 浮点向负无穷取整 (floor)
+    frintm(fd, fn) {
+        // 0 0 0 1 1 1 1 0 0 1 1 0 0 1 0 0 0 1 0 0 0 0 Rn Rd = 0x1E654000
+        let word = 0x1e654000 | (fn << 5) | fd;
+        this.emit32(word);
+    }
+
+    // FRINTP Dd, Dn - 浮点向正无穷取整 (ceil)
+    frintp(fd, fn) {
+        // 0 0 0 1 1 1 1 0 0 1 1 0 0 1 0 0 1 1 0 0 0 0 Rn Rd = 0x1E64C000
+        let word = 0x1e64c000 | (fn << 5) | fd;
+        this.emit32(word);
+    }
+
+    // FRINTA Dd, Dn - 浮点四舍五入 (round to nearest, ties to away)
+    frinta(fd, fn) {
+        // 0 0 0 1 1 1 1 0 0 1 1 0 0 1 0 0 0 1 0 0 0 0 Rn Rd = 0x1E664000
+        let word = 0x1e664000 | (fn << 5) | fd;
+        this.emit32(word);
+    }
+
+    // CLZ Xd, Xn - 计数前导零 (64-bit)
+    clz(rd, rn) {
+        // 1 1 0 1 1 0 1 0 1 1 0 0 0 0 0 0 0 0 0 1 0 0 Rn Rd = 0xDAC01000
+        let word = 0xdac01000 | (rn << 5) | rd;
+        this.emit32(word);
+    }
+
     // ==================== 分支指令 ====================
 
     b(labelName) {

@@ -19,22 +19,30 @@ export class SubscriptGenerator {
         vm.label("_subscript_get");
         vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
-        vm.mov(VReg.S0, VReg.A0); // arr
-        vm.mov(VReg.S1, VReg.A1); // index
+        vm.mov(VReg.S1, VReg.A1); // 先保存 index
+        vm.mov(VReg.S4, VReg.A0); // 先保存原始 JSValue（用于提取 subtype）
+        
+        // 从 boxed JSValue 提取 subtype (bits 44-47)
+        vm.shrImm(VReg.V0, VReg.S4, 44);
+        vm.andImm(VReg.V0, VReg.V0, 0xf); // V0 = subtype (0=Array, 1-11=TypedArray)
+        vm.mov(VReg.S3, VReg.V0); // S3 = subtype
+        
+        // Unbox 数组 JSValue -> 原始指针 (提取低 48 位)
+        // 注意：使用 48 位掩码以兼容 _js_unbox
+        vm.movImm64(VReg.V1, 0x0000ffffffffffffn); // 48 位掩码
+        vm.and(VReg.S0, VReg.S4, VReg.V1); // S0 = 原始数组指针
 
-        // 加载类型标签
-        vm.load(VReg.S3, VReg.S0, 0); // S3 = 完整类型
-        vm.andImm(VReg.V0, VReg.S3, 0xff); // V0 = 低 8 位类型
-
-        // 检查是否是 TypedArray (类型 0x40-0x70)
-        vm.cmpImm(VReg.V0, 0x40);
-        vm.jlt("_subscript_get_array"); // 小于 0x40，是普通 Array
+        // 检查是否是普通 Array (subtype 0)
+        vm.cmpImm(VReg.S3, 0);
+        vm.jeq("_subscript_get_array");
 
         // ========== TypedArray 路径 ==========
-        // 根据类型选择元素大小和加载方式
-
-        // Int8Array (0x40)
-        vm.cmpImm(VReg.V0, TYPE_INT8_ARRAY);
+        // subtype 对应关系:
+        // 1=Int8, 2=Uint8, 3=Uint8Clamped, 4=Int16, 5=Uint16, 
+        // 6=Int32, 7=Uint32, 8=Float32, 9=Float64, 10=BigInt64, 11=BigUint64
+        
+        // Int8Array (subtype 1)
+        vm.cmpImm(VReg.S3, 1);
         vm.jne("_subscript_get_check_int16");
         vm.add(VReg.V1, VReg.S0, VReg.S1); // arr + index (1 byte per elem)
         vm.loadByte(VReg.S2, VReg.V1, 16);
@@ -230,12 +238,12 @@ export class SubscriptGenerator {
         vm.jmp("_subscript_get_done");
 
         // ========== Array 路径 ==========
-        // Array 结构: [type:8, length:8, capacity:8, elem0, elem1, ...]
-        // 偏移 = 24 + index * 8
+        // Array 结构: [length:8, capacity:8, elem0, elem1, ...]
+        // 偏移 = 16 + index * 8
         vm.label("_subscript_get_array");
         vm.shl(VReg.V1, VReg.S1, 3);
         vm.add(VReg.V1, VReg.S0, VReg.V1);
-        vm.load(VReg.RET, VReg.V1, 24);
+        vm.load(VReg.RET, VReg.V1, 16);
 
         vm.label("_subscript_get_done");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
@@ -270,11 +278,11 @@ export class SubscriptGenerator {
 
         // Array 路径
         vm.label("_subscript_set_array");
-        // Array 结构: [type:8, length:8, capacity:8, elem0, elem1, ...]
-        // 偏移 = 24 + index * 8
+        // Array 结构: [length:8, capacity:8, elem0, elem1, ...]
+        // 偏移 = 16 + index * 8
         vm.shl(VReg.V0, VReg.S1, 3); // index * 8
         vm.add(VReg.V0, VReg.S0, VReg.V0);
-        vm.store(VReg.V0, 24, VReg.S2);
+        vm.store(VReg.V0, 16, VReg.S2);
 
         vm.label("_subscript_set_done");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);

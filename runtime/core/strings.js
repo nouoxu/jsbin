@@ -12,6 +12,7 @@ export const RUNTIME_STRINGS = {
     function: { label: "_str_function", value: "[Function]" },
     array: { label: "_str_array", value: "[Array]" },
     unknown: { label: "_str_unknown", value: "[unknown]" },
+    empty: { label: "_str_empty", value: "" },
 
     // Promise 相关
     promisePending: { label: "_str_promise_pending", value: "Promise { <pending> }" },
@@ -58,6 +59,14 @@ export const RUNTIME_STRINGS = {
 
     // TypedArray 缩略格式（用于多参数 console.log）
     typedarrayAbbrev: { label: "_str_typedarray_abbrev", value: ") [...]" },
+
+    // 调试字符串
+    debugInput: { label: "_str_debug_input", value: "input: " },
+    debugUnboxed: { label: "_str_debug_unboxed", value: ", unboxed: " },
+    debugLen: { label: "_str_debug_len", value: ", len: " },
+    debugElem: { label: "_str_debug_elem", value: ", elem: " },
+    debugBox: { label: "_str_debug_box", value: "BOX: " },
+    debugBoxed2: { label: "_str_debug_boxed2", value: " -> " },
 };
 
 // 字符串常量生成器

@@ -571,4 +571,45 @@ export class ARM64Backend extends Backend {
     fmov(fpDest, fpSrc) {
         this.asm.fmovReg(fpDest, fpSrc);
     }
+
+    // 浮点平方根
+    fsqrt(fpDest, fpSrc) {
+        this.asm.fsqrt(fpDest, fpSrc);
+    }
+
+    // 浮点向负无穷取整
+    frintm(fpDest, fpSrc) {
+        this.asm.frintm(fpDest, fpSrc);
+    }
+
+    // 浮点向正无穷取整
+    frintp(fpDest, fpSrc) {
+        this.asm.frintp(fpDest, fpSrc);
+    }
+
+    // 浮点向零取整
+    frintz(fpDest, fpSrc) {
+        this.asm.frintz(fpDest, fpSrc);
+    }
+
+    // 浮点四舍五入
+    frinta(fpDest, fpSrc) {
+        this.asm.frinta(fpDest, fpSrc);
+    }
+
+    // 前导零计数
+    clz(dest, src) {
+        this.asm.clz(this.mapReg(dest), this.mapReg(src));
+    }
+
+    // 通用 emit 方法
+    emit(op, ...args) {
+        if (typeof this[op] === "function") {
+            this[op](...args);
+        } else if (typeof this.asm[op] === "function") {
+            this.asm[op](...args);
+        } else {
+            throw new Error(`ARM64Backend: unknown instruction ${op}`);
+        }
+    }
 }

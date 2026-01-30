@@ -2,6 +2,7 @@
 // 抽取 console.log 编译逻辑，减少 functions.js 体积
 
 import { VReg } from "../../vm/index.js";
+import { Type, inferType } from "../core/types.js";
 
 export const ConsoleLogCompiler = {
     // 返回 true 表示已处理 console.log
@@ -128,13 +129,43 @@ export const ConsoleLogCompiler = {
                 }
             } else {
                 // 其他表达式（变量、函数调用等）
+                // 使用类型推断选择合适的打印函数
+                const argType = inferType(arg, this.ctx);
                 this.compileExpression(arg);
                 this.vm.mov(VReg.A0, VReg.RET);
-                if (isLast) {
-                    this.vm.call("_print_value");
+
+                if (argType === Type.NUMBER) {
+                    // 数字类型使用 _print_number
+                    if (isLast) {
+                        this.vm.call("_print_number");
+                    } else {
+                        this.vm.call("_print_number_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (argType === Type.STRING) {
+                    // 字符串类型
+                    if (isLast) {
+                        this.vm.call("_print_str");
+                    } else {
+                        this.vm.call("_print_str_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (argType === Type.ARRAY) {
+                    // 数组类型
+                    if (isLast) {
+                        this.vm.call("_print_array");
+                    } else {
+                        this.vm.call("_print_array_no_nl");
+                        this.vm.call("_print_space");
+                    }
                 } else {
-                    this.vm.call("_print_value_no_nl");
-                    this.vm.call("_print_space");
+                    // 其他类型使用通用打印
+                    if (isLast) {
+                        this.vm.call("_print_value");
+                    } else {
+                        this.vm.call("_print_value_no_nl");
+                        this.vm.call("_print_space");
+                    }
                 }
             }
         }

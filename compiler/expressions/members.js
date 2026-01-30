@@ -81,16 +81,36 @@ export const MemberCompiler = {
 
     // 编译成员表达式 (obj.prop 或 arr[idx])
     compileMemberExpression(expr) {
+        // 特殊处理 Math 常量
+        if (expr.object.type === "Identifier" && expr.object.name === "Math" && !expr.computed) {
+            const propName = expr.property.name || expr.property.value;
+            const mathConstants = {
+                "PI": 3.141592653589793,
+                "E": 2.718281828459045,
+                "LN2": 0.6931471805599453,
+                "LN10": 2.302585092994046,
+                "LOG2E": 1.4426950408889634,
+                "LOG10E": 0.4342944819032518,
+                "SQRT2": 1.4142135623730951,
+                "SQRT1_2": 0.7071067811865476
+            };
+            if (mathConstants.hasOwnProperty(propName)) {
+                // 直接编译为数字字面量
+                this.compileNumericLiteral(mathConstants[propName]);
+                return;
+            }
+        }
+        
         if (expr.computed) {
             // 数组元素访问：arr[idx]
-            // 使用 _subscript_get 统一处理 Array 和 TypedArray
+            // 暂时直接使用 _array_get（TODO: 支持 TypedArray）
             if (expr.property.type === "Literal" && typeof expr.property.value === "number") {
                 // 静态索引：arr[0]
                 const idx = Math.trunc(expr.property.value);
                 this.compileExpression(expr.object);
                 this.vm.mov(VReg.A0, VReg.RET);
                 this.vm.movImm(VReg.A1, idx);
-                this.vm.call("_subscript_get");
+                this.vm.call("_array_get");
             } else {
                 // 动态索引：arr[i]
                 this.compileExpression(expr.property);
@@ -103,7 +123,7 @@ export const MemberCompiler = {
 
                 this.vm.mov(VReg.A0, VReg.RET);
                 this.vm.mov(VReg.A1, VReg.V1);
-                this.vm.call("_subscript_get");
+                this.vm.call("_array_get");
             }
         } else {
             const propName = expr.property.name || expr.property.value;

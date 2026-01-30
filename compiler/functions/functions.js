@@ -549,14 +549,58 @@ export const FunctionCompiler = {
                             }
                         } else {
                             // 其他表达式（变量、函数调用等）
-                            // 使用运行时类型检测的 _print_value
+                            // 使用静态类型推断来选择打印函数
+                            const argType = inferType(arg, this.ctx);
                             this.compileExpression(arg);
                             this.vm.mov(VReg.A0, VReg.RET);
-                            if (isLast) {
-                                this.vm.call("_print_value");
+
+                            // 检查是否是数字类型（包括 NUMBER 和所有 INT/FLOAT 子类型）
+                            // 同时也检查用户函数调用（通常返回数字）
+                            const isNumberType = argType === Type.NUMBER || argType === Type.INT8 || argType === Type.INT16 || argType === Type.INT32 || argType === Type.INT64 || argType === Type.UINT8 || argType === Type.UINT16 || argType === Type.UINT32 || argType === Type.UINT64 || argType === Type.FLOAT32 || argType === Type.FLOAT64;
+                            
+                            // 对于函数调用（用户定义函数），假设返回数字类型
+                            const isUserFunctionCall = arg.type === "CallExpression" && 
+                                arg.callee && arg.callee.type === "Identifier" && 
+                                this.ctx.hasFunction(arg.callee.name);
+
+                            if (isNumberType || isUserFunctionCall) {
+                                // 数字类型使用 _print_number
+                                if (isLast) {
+                                    this.vm.call("_print_number");
+                                } else {
+                                    this.vm.call("_print_number_no_nl");
+                                    this.vm.call("_print_space");
+                                }
+                            } else if (argType === Type.STRING) {
+                                // 字符串类型
+                                // 字符串方法调用返回的是 String 对象（有 16 字节头部）
+                                // 但字符串变量和字面量可能是原始指针
+                                // 只对方法调用跳过头部
+                                if (arg.type === "CallExpression") {
+                                    this.vm.addImm(VReg.A0, VReg.A0, 16);
+                                }
+                                if (isLast) {
+                                    this.vm.call("_print_str");
+                                } else {
+                                    this.vm.call("_print_str_no_nl");
+                                    this.vm.call("_print_space");
+                                }
+                            } else if (argType === Type.ARRAY) {
+                                // 数组类型
+                                if (isLast) {
+                                    this.vm.call("_print_array");
+                                } else {
+                                    this.vm.call("_print_array_no_nl");
+                                    this.vm.call("_print_space");
+                                }
                             } else {
-                                this.vm.call("_print_value_no_nl");
-                                this.vm.call("_print_space");
+                                // 其他类型使用运行时类型检测
+                                if (isLast) {
+                                    this.vm.call("_print_value");
+                                } else {
+                                    this.vm.call("_print_value_no_nl");
+                                    this.vm.call("_print_space");
+                                }
                             }
                         }
                     }
@@ -567,6 +611,33 @@ export const FunctionCompiler = {
             // Math 对象方法
             if (obj.type === "Identifier" && obj.name === "Math") {
                 if (this.compileMathMethod(prop.name, expr.arguments)) {
+                    return;
+                }
+            }
+
+            // JSON 对象方法
+            if (obj.type === "Identifier" && obj.name === "JSON") {
+                if (this.compileJSONMethod(prop.name, expr.arguments)) {
+                    return;
+                }
+            }
+
+            // Symbol 静态方法
+            if (obj.type === "Identifier" && obj.name === "Symbol") {
+                // Symbol.iterator, Symbol.toStringTag 等
+                if (prop.name === "iterator") {
+                    this.vm.call("_get_Symbol_iterator");
+                    return;
+                }
+                if (prop.name === "toStringTag") {
+                    this.vm.call("_get_Symbol_toStringTag");
+                    return;
+                }
+                if (prop.name === "asyncIterator") {
+                    this.vm.call("_get_Symbol_asyncIterator");
+                    return;
+                }
+                if (this.compileSymbolMethod(prop.name, expr.arguments)) {
                     return;
                 }
             }

@@ -7,9 +7,27 @@ import { VReg } from "../../vm/index.js";
 export const BuiltinMethodCompiler = {
     // 编译 Math 方法
     compileMathMethod(methodName, args) {
+        // 简单方法：直接通过 Number 对象或不需要参数
+        const simpleMethods = ["sqrt", "log", "exp", "sin", "cos", "tan", "asin", "acos", "atan", "random", "sign", "trunc", "fround"];
+
+        if (simpleMethods.includes(methodName)) {
+            if (methodName === "random") {
+                // random 不需要参数
+                this.vm.call("_math_random");
+            } else if (args.length > 0) {
+                this.compileExpression(args[0]);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_math_" + methodName);
+            }
+            return true;
+        }
+
+        // floor, ceil, round 使用运行时函数
         if (methodName === "floor" || methodName === "ceil" || methodName === "round") {
             if (args.length > 0) {
                 this.compileExpression(args[0]);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_math_" + methodName);
             }
             return true;
         }
@@ -17,16 +35,31 @@ export const BuiltinMethodCompiler = {
         if (methodName === "abs") {
             if (args.length > 0) {
                 this.compileExpression(args[0]);
-                const negLabel = this.ctx.newLabel("abs_neg");
-                const endLabel = this.ctx.newLabel("abs_end");
-                this.vm.cmpImm(VReg.RET, 0);
-                this.vm.jlt(negLabel);
-                this.vm.jmp(endLabel);
-                this.vm.label(negLabel);
-                this.vm.mov(VReg.V1, VReg.RET);
-                this.vm.movImm(VReg.RET, 0);
-                this.vm.sub(VReg.RET, VReg.RET, VReg.V1);
-                this.vm.label(endLabel);
+                // 从 Number 对象中提取值并取绝对值
+                this.vm.load(VReg.V0, VReg.RET, 8);
+                this.vm.fmovToFloat(0, VReg.V0);
+                this.vm.fabs(0, 0);
+                this.vm.fmovToInt(VReg.V0, 0);
+                // 装箱
+                this.vm.push(VReg.V0);
+                this.vm.movImm(VReg.A0, 16);
+                this.vm.call("_alloc");
+                this.vm.movImm(VReg.V1, 13); // TYPE_NUMBER
+                this.vm.store(VReg.RET, 0, VReg.V1);
+                this.vm.pop(VReg.V1);
+                this.vm.store(VReg.RET, 8, VReg.V1);
+            }
+            return true;
+        }
+
+        if (methodName === "pow") {
+            if (args.length >= 2) {
+                this.compileExpression(args[1]);
+                this.vm.push(VReg.RET);
+                this.compileExpression(args[0]);
+                this.vm.pop(VReg.A1);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_math_pow");
             }
             return true;
         }
@@ -38,10 +71,16 @@ export const BuiltinMethodCompiler = {
                 this.compileExpression(args[1]);
                 this.vm.pop(VReg.V1);
 
+                // 比较两个 Number 对象的值
+                this.vm.load(VReg.V2, VReg.V1, 8); // 第一个值
+                this.vm.load(VReg.V3, VReg.RET, 8); // 第二个值
+                this.vm.fmovToFloat(0, VReg.V2);
+                this.vm.fmovToFloat(1, VReg.V3);
+                this.vm.fcmp(0, 1);
+
                 const useFirstLabel = this.ctx.newLabel("minmax_first");
                 const endLabel = this.ctx.newLabel("minmax_end");
 
-                this.vm.cmp(VReg.V1, VReg.RET);
                 if (methodName === "min") {
                     this.vm.jlt(useFirstLabel);
                 } else {
@@ -51,6 +90,27 @@ export const BuiltinMethodCompiler = {
                 this.vm.label(useFirstLabel);
                 this.vm.mov(VReg.RET, VReg.V1);
                 this.vm.label(endLabel);
+            }
+            return true;
+        }
+
+        if (methodName === "atan2" || methodName === "hypot" || methodName === "imul") {
+            if (args.length >= 2) {
+                this.compileExpression(args[1]);
+                this.vm.push(VReg.RET);
+                this.compileExpression(args[0]);
+                this.vm.pop(VReg.A1);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_math_" + methodName);
+            }
+            return true;
+        }
+
+        if (methodName === "clz32") {
+            if (args.length > 0) {
+                this.compileExpression(args[0]);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_math_clz32");
             }
             return true;
         }
@@ -896,25 +956,36 @@ export const BuiltinMethodCompiler = {
                 this.vm.call("_getStrContent");
                 this.vm.push(VReg.RET); // 保存内容指针
 
-                // 编译 start 参数（需要转换浮点数到整数）
+                // 编译 start 参数
                 if (args.length > 0) {
-                    this.compileExpression(args[0]);
-                    // 使用 VM 统一接口
-                    this.vm.fmovToFloat(0, VReg.RET);
-                    this.vm.fcvtzs(VReg.RET, 0);
-                    this.vm.push(VReg.RET); // 保存 start
+                    // 数字字面量直接使用整数值
+                    if (args[0].type === "Literal" && typeof args[0].value === "number") {
+                        this.vm.movImm(VReg.V0, Math.trunc(args[0].value));
+                    } else {
+                        // 其他表达式返回 Number 对象，需要 unbox
+                        this.compileExpression(args[0]);
+                        this.unboxNumber(VReg.RET);
+                        this.vm.fmovToFloat(0, VReg.RET);
+                        this.vm.fcvtzs(VReg.V0, 0);
+                    }
+                    this.vm.push(VReg.V0); // 保存 start
                 } else {
                     this.vm.movImm(VReg.V0, 0);
                     this.vm.push(VReg.V0);
                 }
 
-                // 编译 end 参数（需要转换浮点数到整数）
+                // 编译 end 参数
                 if (args.length > 1) {
-                    this.compileExpression(args[1]);
-                    // 使用 VM 统一接口
-                    this.vm.fmovToFloat(0, VReg.RET);
-                    this.vm.fcvtzs(VReg.RET, 0);
-                    this.vm.mov(VReg.A2, VReg.RET);
+                    // 数字字面量直接使用整数值
+                    if (args[1].type === "Literal" && typeof args[1].value === "number") {
+                        this.vm.movImm(VReg.A2, Math.trunc(args[1].value));
+                    } else {
+                        // 其他表达式返回 Number 对象，需要 unbox
+                        this.compileExpression(args[1]);
+                        this.unboxNumber(VReg.RET);
+                        this.vm.fmovToFloat(0, VReg.RET);
+                        this.vm.fcvtzs(VReg.A2, 0);
+                    }
                 } else {
                     this.vm.movImm(VReg.A2, -1); // -1 表示到末尾
                 }
@@ -953,6 +1024,58 @@ export const BuiltinMethodCompiler = {
 
         // 未处理的方法，弹出栈
         this.vm.pop(VReg.V0);
+        return false;
+    },
+
+    // 编译 JSON 方法
+    compileJSONMethod(methodName, args) {
+        if (methodName === "stringify") {
+            if (args.length > 0) {
+                this.compileExpression(args[0]);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_JSON_stringify");
+            } else {
+                // 无参数返回 "undefined"
+                this.vm.lea(VReg.RET, "_str_undefined");
+            }
+            return true;
+        }
+
+        if (methodName === "parse") {
+            if (args.length > 0) {
+                this.compileExpression(args[0]);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_JSON_parse");
+            } else {
+                // 无参数返回 undefined
+                this.vm.lea(VReg.RET, "_js_undefined");
+            }
+            return true;
+        }
+
+        return false;
+    },
+
+    // 编译 Symbol 方法
+    compileSymbolMethod(methodName, args) {
+        if (methodName === "for") {
+            if (args.length > 0) {
+                this.compileExpression(args[0]);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_Symbol_for");
+            }
+            return true;
+        }
+
+        if (methodName === "keyFor") {
+            if (args.length > 0) {
+                this.compileExpression(args[0]);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_Symbol_keyFor");
+            }
+            return true;
+        }
+
         return false;
     },
 };

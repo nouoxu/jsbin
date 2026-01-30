@@ -22,7 +22,7 @@ import { ARM64Assembler } from "../asm/arm64.js";
 import { X64Assembler } from "../asm/x64.js";
 
 // 运行时
-import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, StringConstantsGenerator, AsyncGenerator } from "../runtime/index.js";
+import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator } from "../runtime/index.js";
 
 // 编译上下文和平台
 import { CompileContext, CompileOptions, CompileResult } from "./core/context.js";
@@ -304,6 +304,14 @@ export class Compiler {
     generateDataSection() {
         const numberGen = new NumberGenerator(this.vm, this.ctx);
         numberGen.generateDataSection(this.asm);
+        // Math 数据段（常量和随机数状态）
+        const mathGen = new MathGenerator(this.vm, this.ctx);
+        mathGen.generateDataSection(this.asm);
+        // Symbol 数据段
+        const symbolGen = new SymbolGenerator(this.vm, this.ctx);
+        symbolGen.generateDataSection(this.asm);
+        const wellKnownSymbolsGen = new WellKnownSymbolsGenerator(this.vm, this.ctx);
+        wellKnownSymbolsGen.generateDataSection(this.asm);
     }
 
     generateSharedLibraryRuntime() {

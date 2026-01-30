@@ -522,6 +522,59 @@ export class VirtualMachine {
         this.backend.fmov(fpDest, fpSrc);
     }
 
+    // 浮点平方根
+    fsqrt(fpDest, fpSrc) {
+        this._emit("fsqrt", [fpDest, fpSrc]);
+        this.backend.fsqrt(fpDest, fpSrc);
+    }
+
+    // 浮点向负无穷取整
+    frintm(fpDest, fpSrc) {
+        this._emit("frintm", [fpDest, fpSrc]);
+        this.backend.frintm(fpDest, fpSrc);
+    }
+
+    // 浮点向正无穷取整
+    frintp(fpDest, fpSrc) {
+        this._emit("frintp", [fpDest, fpSrc]);
+        this.backend.frintp(fpDest, fpSrc);
+    }
+
+    // 浮点向零取整
+    frintz(fpDest, fpSrc) {
+        this._emit("frintz", [fpDest, fpSrc]);
+        this.backend.frintz(fpDest, fpSrc);
+    }
+
+    // 浮点四舍五入
+    frinta(fpDest, fpSrc) {
+        this._emit("frinta", [fpDest, fpSrc]);
+        this.backend.frinta(fpDest, fpSrc);
+    }
+
+    // 前导零计数
+    clz(dest, src) {
+        this._emit("clz", [dest, src]);
+        this.backend.clz(dest, src);
+    }
+
+    // 通用 emit 方法，用于直接发射指令
+    // 支持 snake_case 和 camelCase 命名
+    emit(op, ...args) {
+        this._emit(op, args);
+        // 转换 snake_case 到 camelCase
+        const camelOp = op.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+        if (typeof this.backend[op] === "function") {
+            this.backend[op](...args);
+        } else if (typeof this.backend[camelOp] === "function") {
+            this.backend[camelOp](...args);
+        } else if (this.backend.emit) {
+            this.backend.emit(op, ...args);
+        } else {
+            throw new Error(`Unknown instruction: ${op}`);
+        }
+    }
+
     // ========== 辅助方法 ==========
 
     _emit(op, operands) {

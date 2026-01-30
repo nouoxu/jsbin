@@ -37,13 +37,16 @@ export const LiteralCompiler = {
         }
     },
 
-    // 编译数字字面量（直接使用 IEEE 754 double 格式）
-    // 在 NaN-boxing 系统中，纯 double 值直接作为 64 位值存储
+    // 编译数字字面量为 Number 对象
+    // 所有数字字面量统一生成为 Number 对象 [type: 8B][value: 8B]
+    // 这样变量赋值后存储的是对象指针，与运算时的 unboxNumber 一致
     compileNumericLiteral(value) {
         const bits = floatToInt64Bits(value);
         const label = this.asm.addFloat64(value, bits);
         this.vm.lea(VReg.RET, label);
         this.vm.load(VReg.RET, VReg.RET, 0);
+        // 将 raw float64 位模式包装为 Number 对象
+        this.boxNumber(VReg.RET);
     },
 
     // 编译整数字面量（用于 int 类型上下文，无头部）

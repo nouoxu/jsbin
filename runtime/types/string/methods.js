@@ -633,4 +633,291 @@ export const StringMethodsGenerator = {
         // 直接调用 _strconcat
         vm.jmp("_strconcat");
     },
+
+    // _str_split(str, separator) -> 数组
+    // 将字符串按分隔符拆分成数组
+    generateSplit() {
+        const vm = this.vm;
+        const TYPE_STRING = 6;
+        const TYPE_ARRAY = 5;
+
+        vm.label("_str_split");
+        vm.prologue(80, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+
+        vm.mov(VReg.S0, VReg.A0); // str
+        vm.mov(VReg.S1, VReg.A1); // separator
+
+        // 获取分隔符长度
+        vm.mov(VReg.A0, VReg.S1);
+        vm.call("_strlen");
+        vm.mov(VReg.S2, VReg.RET); // S2 = sep 长度
+
+        // 获取字符串长度
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_strlen");
+        vm.mov(VReg.S3, VReg.RET); // S3 = str 长度
+
+        // 如果分隔符为空，返回单元素数组
+        vm.cmpImm(VReg.S2, 0);
+        vm.jne("_split_nonempty_sep");
+
+        // 创建单元素数组
+        vm.movImm(VReg.A0, 32); // 24 头部 + 8 元素
+        vm.call("_alloc");
+        vm.mov(VReg.S4, VReg.RET);
+        vm.movImm(VReg.V1, TYPE_ARRAY);
+        vm.store(VReg.S4, 0, VReg.V1);
+        vm.movImm(VReg.V1, 1);
+        vm.store(VReg.S4, 8, VReg.V1); // length = 1
+        vm.store(VReg.S4, 16, VReg.V1); // capacity = 1
+        vm.store(VReg.S4, 24, VReg.S0); // 存储原字符串
+        vm.mov(VReg.RET, VReg.S4);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
+
+        vm.label("_split_nonempty_sep");
+        // 首先计算会产生多少个分片（最多 str_len / sep_len + 1）
+        // 分配一个较大的数组（初始容量 16）
+        vm.movImm(VReg.A0, 152); // 24 + 16*8
+        vm.call("_alloc");
+        vm.mov(VReg.S4, VReg.RET); // 结果数组
+        vm.movImm(VReg.V1, TYPE_ARRAY);
+        vm.store(VReg.S4, 0, VReg.V1);
+        vm.movImm(VReg.V1, 0);
+        vm.store(VReg.S4, 8, VReg.V1); // length = 0
+        vm.movImm(VReg.V1, 16);
+        vm.store(VReg.S4, 16, VReg.V1); // capacity = 16
+
+        // 遍历字符串查找分隔符
+        vm.movImm(VReg.S5, 0); // 当前起始位置
+        vm.movImm(VReg.V4, 0); // 当前数组索引
+
+        vm.label("_split_loop");
+        // 从 S5 位置开始查找分隔符
+        vm.add(VReg.A0, VReg.S0, VReg.S5);
+        vm.mov(VReg.A1, VReg.S1);
+        vm.call("_strstr");
+        vm.cmpImm(VReg.RET, 0);
+        vm.jeq("_split_last");
+
+        // 找到分隔符，计算子串长度
+        vm.sub(VReg.V5, VReg.RET, VReg.S0);
+        vm.sub(VReg.V5, VReg.V5, VReg.S5); // 子串长度
+
+        // 创建子串
+        vm.addImm(VReg.A0, VReg.V5, 17); // 16 头部 + len + 1
+        vm.call("_alloc");
+        vm.mov(VReg.V6, VReg.RET); // 新字符串
+
+        // 写入头部
+        vm.movImm(VReg.V1, TYPE_STRING);
+        vm.store(VReg.V6, 0, VReg.V1);
+        vm.store(VReg.V6, 8, VReg.V5); // length
+
+        // 复制内容
+        vm.addImm(VReg.A0, VReg.V6, 16);
+        vm.add(VReg.A1, VReg.S0, VReg.S5);
+        vm.mov(VReg.A2, VReg.V5);
+        vm.call("_memcpy");
+
+        // 写入 null 终止符
+        vm.add(VReg.V1, VReg.V6, VReg.V5);
+        vm.addImm(VReg.V1, VReg.V1, 16);
+        vm.movImm(VReg.V2, 0);
+        vm.storeByte(VReg.V1, 0, VReg.V2);
+
+        // 添加到数组
+        vm.load(VReg.V7, VReg.S4, 8); // 当前 length
+        vm.shlImm(VReg.V1, VReg.V7, 3);
+        vm.addImm(VReg.V1, VReg.V1, 24);
+        vm.add(VReg.V1, VReg.S4, VReg.V1);
+        vm.store(VReg.V1, 0, VReg.V6);
+        vm.addImm(VReg.V7, VReg.V7, 1);
+        vm.store(VReg.S4, 8, VReg.V7);
+
+        // 更新起始位置（跳过分隔符）
+        vm.sub(VReg.S5, VReg.RET, VReg.S0);
+        vm.add(VReg.S5, VReg.S5, VReg.S2);
+        vm.jmp("_split_loop");
+
+        vm.label("_split_last");
+        // 处理最后一个分片
+        vm.sub(VReg.V5, VReg.S3, VReg.S5); // 剩余长度
+
+        // 创建最后一个子串
+        vm.addImm(VReg.A0, VReg.V5, 17);
+        vm.call("_alloc");
+        vm.mov(VReg.V6, VReg.RET);
+
+        vm.movImm(VReg.V1, TYPE_STRING);
+        vm.store(VReg.V6, 0, VReg.V1);
+        vm.store(VReg.V6, 8, VReg.V5);
+
+        vm.addImm(VReg.A0, VReg.V6, 16);
+        vm.add(VReg.A1, VReg.S0, VReg.S5);
+        vm.mov(VReg.A2, VReg.V5);
+        vm.call("_memcpy");
+
+        vm.add(VReg.V1, VReg.V6, VReg.V5);
+        vm.addImm(VReg.V1, VReg.V1, 16);
+        vm.movImm(VReg.V2, 0);
+        vm.storeByte(VReg.V1, 0, VReg.V2);
+
+        // 添加到数组
+        vm.load(VReg.V7, VReg.S4, 8);
+        vm.shlImm(VReg.V1, VReg.V7, 3);
+        vm.addImm(VReg.V1, VReg.V1, 24);
+        vm.add(VReg.V1, VReg.S4, VReg.V1);
+        vm.store(VReg.V1, 0, VReg.V6);
+        vm.addImm(VReg.V7, VReg.V7, 1);
+        vm.store(VReg.S4, 8, VReg.V7);
+
+        vm.mov(VReg.RET, VReg.S4);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
+    },
+
+    // _str_replace(str, search, replacement) -> 新字符串
+    // 替换第一个匹配的子字符串
+    generateReplace() {
+        const vm = this.vm;
+        const TYPE_STRING = 6;
+
+        vm.label("_str_replace");
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+
+        vm.mov(VReg.S0, VReg.A0); // str
+        vm.mov(VReg.S1, VReg.A1); // search
+        vm.mov(VReg.S2, VReg.A2); // replacement
+
+        // 查找 search 在 str 中的位置
+        vm.mov(VReg.A0, VReg.S0);
+        vm.mov(VReg.A1, VReg.S1);
+        vm.call("_strstr");
+        vm.cmpImm(VReg.RET, 0);
+        vm.jne("_replace_found");
+
+        // 未找到，返回原字符串
+        vm.mov(VReg.RET, VReg.S0);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
+
+        vm.label("_replace_found");
+        vm.mov(VReg.S3, VReg.RET); // S3 = 匹配位置
+
+        // 获取各部分长度
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_strlen");
+        vm.mov(VReg.S4, VReg.RET); // str 长度
+
+        vm.mov(VReg.A0, VReg.S1);
+        vm.call("_strlen");
+        vm.mov(VReg.S5, VReg.RET); // search 长度
+
+        vm.mov(VReg.A0, VReg.S2);
+        vm.call("_strlen");
+        vm.mov(VReg.V4, VReg.RET); // replacement 长度
+
+        // 计算前缀长度
+        vm.sub(VReg.V5, VReg.S3, VReg.S0); // prefix 长度
+
+        // 计算后缀长度
+        vm.add(VReg.V6, VReg.V5, VReg.S5); // prefix + search
+        vm.sub(VReg.V6, VReg.S4, VReg.V6); // suffix 长度
+
+        // 计算新字符串长度
+        vm.add(VReg.V7, VReg.V5, VReg.V4); // prefix + replacement
+        vm.add(VReg.V7, VReg.V7, VReg.V6); // + suffix
+
+        // 分配新字符串
+        vm.addImm(VReg.A0, VReg.V7, 17); // 16 头部 + len + 1
+        vm.call("_alloc");
+        vm.push(VReg.RET); // 保存新字符串指针
+
+        // 写入头部
+        vm.movImm(VReg.V1, TYPE_STRING);
+        vm.store(VReg.RET, 0, VReg.V1);
+        vm.store(VReg.RET, 8, VReg.V7);
+
+        // 复制前缀
+        vm.addImm(VReg.A0, VReg.RET, 16);
+        vm.mov(VReg.A1, VReg.S0);
+        vm.mov(VReg.A2, VReg.V5);
+        vm.call("_memcpy");
+
+        // 复制替换内容
+        vm.pop(VReg.V0);
+        vm.push(VReg.V0);
+        vm.addImm(VReg.A0, VReg.V0, 16);
+        vm.add(VReg.A0, VReg.A0, VReg.V5);
+        vm.mov(VReg.A1, VReg.S2);
+        vm.mov(VReg.A2, VReg.V4);
+        vm.call("_memcpy");
+
+        // 复制后缀
+        vm.pop(VReg.V0);
+        vm.push(VReg.V0);
+        vm.addImm(VReg.A0, VReg.V0, 16);
+        vm.add(VReg.A0, VReg.A0, VReg.V5);
+        vm.add(VReg.A0, VReg.A0, VReg.V4);
+        vm.add(VReg.A1, VReg.S3, VReg.S5); // 原字符串的后缀起始
+        vm.mov(VReg.A2, VReg.V6);
+        vm.call("_memcpy");
+
+        // 写入 null 终止符
+        vm.pop(VReg.V0);
+        vm.addImm(VReg.V1, VReg.V0, 16);
+        vm.add(VReg.V1, VReg.V1, VReg.V7);
+        vm.movImm(VReg.V2, 0);
+        vm.storeByte(VReg.V1, 0, VReg.V2);
+
+        vm.mov(VReg.RET, VReg.V0);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
+    },
+
+    // _str_replaceAll(str, search, replacement) -> 新字符串
+    // 替换所有匹配的子字符串
+    generateReplaceAll() {
+        const vm = this.vm;
+        const TYPE_STRING = 6;
+
+        vm.label("_str_replaceAll");
+        vm.prologue(80, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+
+        vm.mov(VReg.S0, VReg.A0); // str
+        vm.mov(VReg.S1, VReg.A1); // search
+        vm.mov(VReg.S2, VReg.A2); // replacement
+
+        // 获取 search 长度
+        vm.mov(VReg.A0, VReg.S1);
+        vm.call("_strlen");
+        vm.mov(VReg.S3, VReg.RET);
+
+        // 如果 search 为空，返回原字符串
+        vm.cmpImm(VReg.S3, 0);
+        vm.jne("_replaceAll_start");
+        vm.mov(VReg.RET, VReg.S0);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
+
+        vm.label("_replaceAll_start");
+        // 循环调用 replace
+        vm.mov(VReg.S4, VReg.S0); // 当前字符串
+
+        vm.label("_replaceAll_loop");
+        // 检查是否还有匹配
+        vm.mov(VReg.A0, VReg.S4);
+        vm.mov(VReg.A1, VReg.S1);
+        vm.call("_strstr");
+        vm.cmpImm(VReg.RET, 0);
+        vm.jeq("_replaceAll_done");
+
+        // 执行一次替换
+        vm.mov(VReg.A0, VReg.S4);
+        vm.mov(VReg.A1, VReg.S1);
+        vm.mov(VReg.A2, VReg.S2);
+        vm.call("_str_replace");
+        vm.mov(VReg.S4, VReg.RET);
+        vm.jmp("_replaceAll_loop");
+
+        vm.label("_replaceAll_done");
+        vm.mov(VReg.RET, VReg.S4);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
+    },
 };

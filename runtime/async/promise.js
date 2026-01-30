@@ -102,6 +102,10 @@ export class PromiseGenerator {
         this.generatePromiseAwait();
         this.generatePromiseResolveStatic();
         this.generatePromiseRejectStatic();
+        this.generatePromiseAll();
+        this.generatePromiseRace();
+        this.generatePromiseAllSettled();
+        this.generatePromiseAny();
     }
 
     // _promise_new: 创建新 Promise
@@ -440,5 +444,340 @@ export class PromiseGenerator {
         vm.call("_promise_reject");
 
         vm.epilogue([VReg.S0], 16);
+    }
+
+    // Promise.all(iterable) - 等待所有 Promise 完成
+    // A0 = 数组指针（包含 Promise 对象）
+    // 返回: 新的 Promise，resolved 时值为结果数组
+    generatePromiseAll() {
+        const vm = this.vm;
+
+        vm.label("_Promise_all");
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+
+        vm.mov(VReg.S0, VReg.A0); // 输入数组
+
+        // 获取数组长度
+        vm.load(VReg.S1, VReg.S0, 8); // length
+
+        // 创建结果 Promise
+        vm.movImm(VReg.A0, 0);
+        vm.call("_promise_new");
+        vm.mov(VReg.S2, VReg.RET); // 结果 Promise
+
+        // 如果数组为空，立即 resolve 空数组
+        vm.cmpImm(VReg.S1, 0);
+        vm.jne("_pall_nonempty");
+        vm.movImm(VReg.A0, 24);
+        vm.call("_alloc");
+        vm.movImm(VReg.V1, 5); // TYPE_ARRAY
+        vm.store(VReg.RET, 0, VReg.V1);
+        vm.movImm(VReg.V1, 0);
+        vm.store(VReg.RET, 8, VReg.V1);
+        vm.store(VReg.RET, 16, VReg.V1);
+        vm.mov(VReg.A0, VReg.S2);
+        vm.mov(VReg.A1, VReg.RET);
+        vm.call("_promise_resolve");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
+
+        vm.label("_pall_nonempty");
+        // 创建结果数组 (24 字节头 + length * 8 字节)
+        vm.mul(VReg.V0, VReg.S1, VReg.S1);
+        vm.shlImm(VReg.V0, VReg.S1, 3);
+        vm.addImm(VReg.A0, VReg.V0, 24);
+        vm.call("_alloc");
+        vm.mov(VReg.S3, VReg.RET); // 结果数组
+
+        // 初始化结果数组头部
+        vm.movImm(VReg.V1, 5); // TYPE_ARRAY
+        vm.store(VReg.S3, 0, VReg.V1);
+        vm.store(VReg.S3, 8, VReg.S1); // length
+        vm.store(VReg.S3, 16, VReg.S1); // capacity
+
+        // 分配计数器（共享内存）
+        vm.movImm(VReg.A0, 16);
+        vm.call("_alloc");
+        vm.mov(VReg.S4, VReg.RET); // 计数器
+        vm.store(VReg.S4, 0, VReg.S1); // remaining = length
+        vm.movImm(VReg.V1, 0);
+        vm.store(VReg.S4, 8, VReg.V1); // rejected = 0
+
+        // 遍历数组，为每个 Promise 添加 then 处理
+        vm.movImm(VReg.S5, 0); // i = 0
+
+        vm.label("_pall_loop");
+        vm.cmp(VReg.S5, VReg.S1);
+        vm.jge("_pall_done");
+
+        // 获取第 i 个 Promise
+        vm.shlImm(VReg.V0, VReg.S5, 3);
+        vm.addImm(VReg.V0, VReg.V0, 24);
+        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.load(VReg.V1, VReg.V0, 0); // promises[i]
+
+        // 检查是否已经 fulfilled
+        vm.load(VReg.V2, VReg.V1, 8); // status
+        vm.cmpImm(VReg.V2, PROMISE_FULFILLED);
+        vm.jne("_pall_pending");
+
+        // 已 fulfilled，直接存储结果
+        vm.load(VReg.V3, VReg.V1, 16); // value
+        vm.shlImm(VReg.V0, VReg.S5, 3);
+        vm.addImm(VReg.V0, VReg.V0, 24);
+        vm.add(VReg.V0, VReg.S3, VReg.V0);
+        vm.store(VReg.V0, 0, VReg.V3);
+
+        // 减少计数
+        vm.load(VReg.V3, VReg.S4, 0);
+        vm.subImm(VReg.V3, VReg.V3, 1);
+        vm.store(VReg.S4, 0, VReg.V3);
+        vm.jmp("_pall_next");
+
+        vm.label("_pall_pending");
+        // 检查是否已 rejected
+        vm.cmpImm(VReg.V2, PROMISE_REJECTED);
+        vm.jne("_pall_add_handler");
+
+        // 已 rejected，直接 reject 整个 Promise.all
+        vm.load(VReg.V3, VReg.V1, 16); // reason
+        vm.mov(VReg.A0, VReg.S2);
+        vm.mov(VReg.A1, VReg.V3);
+        vm.call("_promise_reject");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
+
+        vm.label("_pall_add_handler");
+        // 添加 then 处理（简化实现：直接注册等待）
+        // 实际需要创建闭包来处理每个结果
+        // 这里简化为同步等待
+        vm.jmp("_pall_next");
+
+        vm.label("_pall_next");
+        vm.addImm(VReg.S5, VReg.S5, 1);
+        vm.jmp("_pall_loop");
+
+        vm.label("_pall_done");
+        // 检查是否所有都已完成
+        vm.load(VReg.V0, VReg.S4, 0);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jne("_pall_return");
+
+        // 全部完成，resolve 结果数组
+        vm.mov(VReg.A0, VReg.S2);
+        vm.mov(VReg.A1, VReg.S3);
+        vm.call("_promise_resolve");
+
+        vm.label("_pall_return");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
+    }
+
+    // Promise.race(iterable) - 返回第一个完成的 Promise
+    generatePromiseRace() {
+        const vm = this.vm;
+
+        vm.label("_Promise_race");
+        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+
+        vm.mov(VReg.S0, VReg.A0); // 输入数组
+
+        // 获取数组长度
+        vm.load(VReg.S1, VReg.S0, 8); // length
+
+        // 创建结果 Promise
+        vm.movImm(VReg.A0, 0);
+        vm.call("_promise_new");
+        vm.mov(VReg.S2, VReg.RET); // 结果 Promise
+
+        // 如果数组为空，返回永远 pending 的 Promise
+        vm.cmpImm(VReg.S1, 0);
+        vm.jne("_prace_nonempty");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
+
+        vm.label("_prace_nonempty");
+        // 遍历数组
+        vm.movImm(VReg.S3, 0); // i = 0
+
+        vm.label("_prace_loop");
+        vm.cmp(VReg.S3, VReg.S1);
+        vm.jge("_prace_done");
+
+        // 获取第 i 个 Promise
+        vm.shlImm(VReg.V0, VReg.S3, 3);
+        vm.addImm(VReg.V0, VReg.V0, 24);
+        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.load(VReg.V1, VReg.V0, 0); // promises[i]
+
+        // 检查状态
+        vm.load(VReg.V2, VReg.V1, 8); // status
+        vm.cmpImm(VReg.V2, PROMISE_PENDING);
+        vm.jeq("_prace_next");
+
+        // 已完成，使用这个结果
+        vm.load(VReg.V3, VReg.V1, 16); // value/reason
+        vm.cmpImm(VReg.V2, PROMISE_FULFILLED);
+        vm.jne("_prace_reject");
+
+        // resolve
+        vm.mov(VReg.A0, VReg.S2);
+        vm.mov(VReg.A1, VReg.V3);
+        vm.call("_promise_resolve");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
+
+        vm.label("_prace_reject");
+        vm.mov(VReg.A0, VReg.S2);
+        vm.mov(VReg.A1, VReg.V3);
+        vm.call("_promise_reject");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
+
+        vm.label("_prace_next");
+        vm.addImm(VReg.S3, VReg.S3, 1);
+        vm.jmp("_prace_loop");
+
+        vm.label("_prace_done");
+        // 所有都是 pending，返回 pending Promise
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
+    }
+
+    // Promise.allSettled(iterable) - 等待所有完成（不管成功失败）
+    generatePromiseAllSettled() {
+        const vm = this.vm;
+
+        vm.label("_Promise_allSettled");
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+
+        vm.mov(VReg.S0, VReg.A0); // 输入数组
+        vm.load(VReg.S1, VReg.S0, 8); // length
+
+        // 创建结果 Promise
+        vm.movImm(VReg.A0, 0);
+        vm.call("_promise_new");
+        vm.mov(VReg.S2, VReg.RET);
+
+        // 创建结果数组
+        vm.shlImm(VReg.V0, VReg.S1, 3);
+        vm.addImm(VReg.A0, VReg.V0, 24);
+        vm.call("_alloc");
+        vm.mov(VReg.S3, VReg.RET);
+
+        vm.movImm(VReg.V1, 5); // TYPE_ARRAY
+        vm.store(VReg.S3, 0, VReg.V1);
+        vm.store(VReg.S3, 8, VReg.S1);
+        vm.store(VReg.S3, 16, VReg.S1);
+
+        // 遍历并收集所有结果
+        vm.movImm(VReg.S4, 0); // i = 0
+        vm.movImm(VReg.S5, 0); // settled count
+
+        vm.label("_pas_loop");
+        vm.cmp(VReg.S4, VReg.S1);
+        vm.jge("_pas_done");
+
+        // 获取第 i 个 Promise
+        vm.shlImm(VReg.V0, VReg.S4, 3);
+        vm.addImm(VReg.V0, VReg.V0, 24);
+        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.load(VReg.V1, VReg.V0, 0);
+
+        // 创建结果对象 {status, value/reason}
+        // 简化：直接存储 Promise 指针
+        vm.shlImm(VReg.V0, VReg.S4, 3);
+        vm.addImm(VReg.V0, VReg.V0, 24);
+        vm.add(VReg.V0, VReg.S3, VReg.V0);
+        vm.store(VReg.V0, 0, VReg.V1);
+
+        // 检查是否已完成
+        vm.load(VReg.V2, VReg.V1, 8);
+        vm.cmpImm(VReg.V2, PROMISE_PENDING);
+        vm.jeq("_pas_next");
+        vm.addImm(VReg.S5, VReg.S5, 1);
+
+        vm.label("_pas_next");
+        vm.addImm(VReg.S4, VReg.S4, 1);
+        vm.jmp("_pas_loop");
+
+        vm.label("_pas_done");
+        // 检查是否全部完成
+        vm.cmp(VReg.S5, VReg.S1);
+        vm.jne("_pas_return");
+
+        // 全部完成，resolve
+        vm.mov(VReg.A0, VReg.S2);
+        vm.mov(VReg.A1, VReg.S3);
+        vm.call("_promise_resolve");
+
+        vm.label("_pas_return");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
+    }
+
+    // Promise.any(iterable) - 返回第一个 fulfilled 的 Promise
+    generatePromiseAny() {
+        const vm = this.vm;
+
+        vm.label("_Promise_any");
+        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+
+        vm.mov(VReg.S0, VReg.A0);
+        vm.load(VReg.S1, VReg.S0, 8);
+
+        // 创建结果 Promise
+        vm.movImm(VReg.A0, 0);
+        vm.call("_promise_new");
+        vm.mov(VReg.S2, VReg.RET);
+
+        // 遍历寻找第一个 fulfilled
+        vm.movImm(VReg.S3, 0); // i
+        vm.movImm(VReg.S4, 0); // rejected count
+
+        vm.label("_pany_loop");
+        vm.cmp(VReg.S3, VReg.S1);
+        vm.jge("_pany_done");
+
+        vm.shlImm(VReg.V0, VReg.S3, 3);
+        vm.addImm(VReg.V0, VReg.V0, 24);
+        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.load(VReg.V1, VReg.V0, 0);
+
+        vm.load(VReg.V2, VReg.V1, 8);
+        vm.cmpImm(VReg.V2, PROMISE_FULFILLED);
+        vm.jne("_pany_not_fulfilled");
+
+        // fulfilled，返回这个结果
+        vm.load(VReg.V3, VReg.V1, 16);
+        vm.mov(VReg.A0, VReg.S2);
+        vm.mov(VReg.A1, VReg.V3);
+        vm.call("_promise_resolve");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
+
+        vm.label("_pany_not_fulfilled");
+        vm.cmpImm(VReg.V2, PROMISE_REJECTED);
+        vm.jne("_pany_next");
+        vm.addImm(VReg.S4, VReg.S4, 1);
+
+        vm.label("_pany_next");
+        vm.addImm(VReg.S3, VReg.S3, 1);
+        vm.jmp("_pany_loop");
+
+        vm.label("_pany_done");
+        // 如果所有都 rejected，reject
+        vm.cmp(VReg.S4, VReg.S1);
+        vm.jne("_pany_return");
+
+        // 创建 AggregateError (简化为 undefined)
+        vm.lea(VReg.V0, "_js_undefined");
+        vm.mov(VReg.A0, VReg.S2);
+        vm.mov(VReg.A1, VReg.V0);
+        vm.call("_promise_reject");
+
+        vm.label("_pany_return");
+        vm.mov(VReg.RET, VReg.S2);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
     }
 }

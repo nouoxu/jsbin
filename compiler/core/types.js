@@ -279,6 +279,15 @@ export function inferType(node, ctx) {
             return Type.OBJECT;
 
         case "MemberExpression":
+            // Math 常量
+            if (node.object && node.object.type === "Identifier" && node.object.name === "Math") {
+                const propName = node.property && (node.property.name || node.property.value);
+                const mathConstants = ["PI", "E", "LN2", "LN10", "LOG2E", "LOG10E", "SQRT2", "SQRT1_2"];
+                if (mathConstants.includes(propName)) {
+                    return Type.NUMBER;
+                }
+            }
+            
             // 成员访问：尝试从对象字面量中推断属性类型
             // 检查对象是否是一个已知变量，其值是对象字面量
             if (node.object && node.object.type === "Identifier" && ctx) {
@@ -301,6 +310,10 @@ export function inferType(node, ctx) {
                     return Type.INT64; // length 通常返回整数
                 }
             }
+            // 数组元素访问 arr[i] 返回 NUMBER（假设是数字数组）
+            if (node.computed) {
+                return Type.NUMBER;
+            }
             return Type.UNKNOWN;
 
         case "CallExpression":
@@ -309,6 +322,34 @@ export function inferType(node, ctx) {
             if (node.callee && node.callee.type === "MemberExpression") {
                 const obj = node.callee.object;
                 const prop = node.callee.property;
+
+                // Math 方法返回数字
+                if (obj && obj.type === "Identifier" && obj.name === "Math" && prop) {
+                    const methodName = prop.name || prop.value;
+                    const mathMethods = ["abs", "acos", "acosh", "asin", "asinh", "atan", "atanh", "atan2", "cbrt", "ceil", "clz32", "cos", "cosh", "exp", "expm1", "floor", "fround", "hypot", "imul", "log", "log1p", "log10", "log2", "max", "min", "pow", "random", "round", "sign", "sin", "sinh", "sqrt", "tan", "tanh", "trunc"];
+                    if (mathMethods.includes(methodName)) {
+                        return Type.NUMBER;
+                    }
+                }
+
+                // String 方法返回类型
+                const stringMethodsReturningString = ["toUpperCase", "toLowerCase", "trim", "trimStart", "trimEnd", "slice", "substring", "substr", "replace", "replaceAll", "padStart", "padEnd", "repeat", "charAt", "normalize", "toString", "valueOf"];
+                if (prop && stringMethodsReturningString.includes(prop.name)) {
+                    const objType = inferType(obj, ctx);
+                    if (objType === Type.STRING) {
+                        return Type.STRING;
+                    }
+                }
+
+                // String 方法返回数字
+                const stringMethodsReturningNumber = ["indexOf", "lastIndexOf", "charCodeAt", "codePointAt", "localeCompare"];
+                if (prop && stringMethodsReturningNumber.includes(prop.name)) {
+                    const objType = inferType(obj, ctx);
+                    if (objType === Type.STRING) {
+                        return Type.NUMBER;
+                    }
+                }
+
                 // Object.keys(), Object.values(), Object.entries() 返回数组
                 if (obj && obj.type === "Identifier" && obj.name === "Object" && prop) {
                     const methodName = prop.name || prop.value;

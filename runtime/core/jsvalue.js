@@ -282,11 +282,11 @@ export class JSValueGenerator {
         vm.label("_js_box_array");
         // A0 = array 指针
         // 使用 V1 避免与 RET(V0) 冲突
-        // JSValue 布局: [0x7FFE:16][subtype:4][ptr:44]
-        // 普通数组 subtype=0，只保留低 44 位指针
-        vm.movImm64(VReg.V1, 0x00000fffffffffffn);
+        // JSValue 布局: [0x7FFE:16][ptr:48]
+        // 普通数组 subtype 包含在 0x7FFE 中，保留低 48 位指针
+        vm.movImm64(VReg.V1, 0x0000ffffffffffffn); // 48 位掩码
         vm.and(VReg.RET, VReg.A0, VReg.V1);
-        vm.movImm64(VReg.V1, 0x7ffe000000000000n); // JS_TAG_ARRAY_BASE (subtype=0)
+        vm.movImm64(VReg.V1, 0x7ffe000000000000n); // JS_TAG_ARRAY_BASE
         vm.or(VReg.RET, VReg.RET, VReg.V1);
         vm.ret();
     }

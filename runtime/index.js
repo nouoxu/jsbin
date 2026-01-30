@@ -10,6 +10,10 @@ export { RUNTIME_STRINGS, StringConstantsGenerator } from "./core/strings.js";
 // 类型运行时 - Number (包含所有数值子类型)
 export { NumberGenerator } from "./types/number/index.js";
 export * from "./types/number/types.js"; // 导出所有 Number 类型常量
+// 类型运行时 - Math
+export { MathGenerator } from "./types/math/index.js";
+// 类型运行时 - JSON
+export { JSONGenerator } from "./types/json/index.js";
 // 类型运行时 - 其他类型
 export { StringGenerator } from "./types/string/index.js";
 export { ArrayGenerator } from "./types/array/index.js";
@@ -20,6 +24,8 @@ export { MapGenerator } from "./types/map/index.js";
 export { SetGenerator } from "./types/set/index.js";
 export { DateGenerator } from "./types/date/index.js";
 export { RegExpGenerator } from "./types/regexp/index.js";
+// 类型运行时 - Symbol
+export { SymbolGenerator, WellKnownSymbolsGenerator } from "./types/symbol/index.js";
 
 // 运算符
 export { TypeofGenerator } from "./operators/typeof.js";
@@ -32,6 +38,8 @@ export { AsyncGenerator, CoroutineGenerator, PromiseGenerator } from "./async/in
 
 // 统一运行时生成器
 import { NumberGenerator } from "./types/number/index.js";
+import { MathGenerator } from "./types/math/index.js";
+import { JSONGenerator } from "./types/json/index.js";
 import { StringGenerator } from "./types/string/index.js";
 import { ArrayGenerator } from "./types/array/index.js";
 import { TypedArrayGenerator, ArrayBufferGenerator } from "./types/typedarray/index.js";
@@ -40,10 +48,12 @@ import { MapGenerator } from "./types/map/index.js";
 import { SetGenerator } from "./types/set/index.js";
 import { DateGenerator } from "./types/date/index.js";
 import { RegExpGenerator } from "./types/regexp/index.js";
+import { SymbolGenerator, WellKnownSymbolsGenerator } from "./types/symbol/index.js";
 import { PrintGenerator } from "./core/print.js";
 import { SubscriptGenerator } from "./core/subscript.js";
 import { TypeofGenerator } from "./operators/typeof.js";
 import { AsyncGenerator } from "./async/index.js";
+import { JSValueGenerator } from "./core/jsvalue.js";
 
 export class RuntimeGenerator {
     constructor(vm, ctx) {
@@ -51,6 +61,8 @@ export class RuntimeGenerator {
         this.ctx = ctx;
         // 类型生成器
         this.numberGen = new NumberGenerator(vm, ctx);
+        this.mathGen = new MathGenerator(vm, ctx);
+        this.jsonGen = new JSONGenerator(vm, ctx);
         this.stringGen = new StringGenerator(vm);
         this.arrayGen = new ArrayGenerator(vm);
         this.typedArrayGen = new TypedArrayGenerator(vm, ctx);
@@ -60,7 +72,10 @@ export class RuntimeGenerator {
         this.setGen = new SetGenerator(vm);
         this.dateGen = new DateGenerator(vm);
         this.regexpGen = new RegExpGenerator(vm);
+        this.symbolGen = new SymbolGenerator(vm, ctx);
+        this.wellKnownSymbolsGen = new WellKnownSymbolsGenerator(vm, ctx);
         // 核心生成器
+        this.jsValueGen = new JSValueGenerator(vm);
         this.printGen = new PrintGenerator(vm);
         this.subscriptGen = new SubscriptGenerator(vm, ctx);
         this.typeofGen = new TypeofGenerator(vm);
@@ -72,6 +87,8 @@ export class RuntimeGenerator {
     generate() {
         // 类型
         this.numberGen.generate();
+        this.mathGen.generate();
+        this.jsonGen.generate();
         this.stringGen.generate();
         this.arrayGen.generate();
         this.typedArrayGen.generate();
@@ -81,7 +98,10 @@ export class RuntimeGenerator {
         this.setGen.generate();
         this.dateGen.generate();
         this.regexpGen.generate();
+        this.symbolGen.generate();
+        this.wellKnownSymbolsGen.generate();
         // 核心
+        this.jsValueGen.generate();
         this.printGen.generate();
         this.subscriptGen.generate();
         this.typeofGen.generate();
