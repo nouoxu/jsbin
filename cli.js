@@ -31,6 +31,7 @@ Options:
   --lib-path <path>     Add library search path
   --list-targets        List all supported targets
   --debug               Enable debug output
+  --dump-asm            Dump generated assembly/instructions
   -h, --help            Show this help
 
 Examples:
@@ -54,6 +55,7 @@ function parseArgs(args) {
         help: false,
         listTargets: false,
         debug: false,
+        dumpAsm: false,
         shared: false,
         static: false,
         noJslib: false,
@@ -72,6 +74,8 @@ function parseArgs(args) {
             result.listTargets = true;
         } else if (arg === "--debug") {
             result.debug = true;
+        } else if (arg === "--dump-asm") {
+            result.dumpAsm = true;
         } else if (arg === "--shared") {
             result.shared = true;
         } else if (arg === "--static") {
@@ -215,6 +219,11 @@ function main() {
         // 设置 jslib 生成选项
         if (opts.noJslib) {
             compiler.setOption("noJslib", true);
+        }
+
+        // 设置 dump-asm 选项
+        if (opts.dumpAsm) {
+            compiler.setOption("dumpAsm", true);
         }
 
         // 添加导出符号

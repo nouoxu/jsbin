@@ -61,6 +61,7 @@ export class Parser {
         this.prefixParseFns[TokenType.SPREAD] = () => this.parseSpreadExpression();
         this.prefixParseFns[TokenType.FUNCTION] = () => this.parseFunctionExpression();
         this.prefixParseFns[TokenType.YIELD] = () => this.parseYieldExpression();
+        this.prefixParseFns[TokenType.SLASH] = () => this.parseRegExpLiteral();
 
         // 中缀解析函数
         this.infixParseFns[TokenType.PLUS] = (left) => this.parseBinaryExpression(left);
@@ -79,7 +80,7 @@ export class Parser {
         this.infixParseFns[TokenType.GTE] = (left) => this.parseBinaryExpression(left);
         this.infixParseFns[TokenType.AND] = (left) => this.parseLogicalExpression(left);
         this.infixParseFns[TokenType.OR] = (left) => this.parseLogicalExpression(left);
-        this.infixParseFns[TokenType.NULLISH] = (left) => this.parseBinaryExpression(left);
+        this.infixParseFns[TokenType.NULLISH] = (left) => this.parseLogicalExpression(left); // ?? 作为逻辑表达式
         this.infixParseFns[TokenType.BITAND] = (left) => this.parseBinaryExpression(left);
         this.infixParseFns[TokenType.BITOR] = (left) => this.parseBinaryExpression(left);
         this.infixParseFns[TokenType.BITXOR] = (left) => this.parseBinaryExpression(left);

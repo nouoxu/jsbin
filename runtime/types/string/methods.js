@@ -176,29 +176,27 @@ export const StringMethodsGenerator = {
         vm.call("_getStrContent");
         vm.mov(VReg.S2, VReg.RET); // S2 = 内容指针
 
-        // 分配 10 字节（8 字节头部 + 1 字符 + 1 null）
-        vm.movImm(VReg.A0, 10);
+        // 分配 18 字节（16 字节头部 + 1 字符 + 1 null）
+        vm.movImm(VReg.A0, 18);
         vm.call("_alloc");
         vm.mov(VReg.V0, VReg.RET); // V0 = 新字符串
 
-        // 写入头部: type (低 8 位) + length (高 32 位)
-        // length = 1, type = 6 (TYPE_STRING)
-        // header = (1 << 32) | 6
-        vm.movImm(VReg.V1, 1);
-        vm.shlImm(VReg.V1, VReg.V1, 32);
-        vm.movImm(VReg.V2, TYPE_STRING);
-        vm.or(VReg.V1, VReg.V1, VReg.V2);
+        // 写入类型标记 (偏移 0)
+        vm.movImm(VReg.V1, TYPE_STRING);
         vm.store(VReg.V0, 0, VReg.V1);
+        // 写入 length = 1 (偏移 8)
+        vm.movImm(VReg.V1, 1);
+        vm.store(VReg.V0, 8, VReg.V1);
 
         // 获取字符 (内容指针 + index)
         vm.add(VReg.V2, VReg.S2, VReg.S1);
         vm.loadByte(VReg.V3, VReg.V2, 0);
 
-        // 写入字符到 +8 位置（内容区域）
-        vm.storeByte(VReg.V0, 8, VReg.V3);
+        // 写入字符到 +16 位置（内容区域）
+        vm.storeByte(VReg.V0, 16, VReg.V3);
         // 写入 null 终止符
         vm.movImm(VReg.V3, 0);
-        vm.storeByte(VReg.V0, 9, VReg.V3);
+        vm.storeByte(VReg.V0, 17, VReg.V3);
 
         vm.mov(VReg.RET, VReg.V0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);

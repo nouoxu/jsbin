@@ -58,8 +58,11 @@ export class SetGenerator {
         vm.cmpImm(VReg.S2, 0);
         vm.jeq(addNotFoundLabel);
 
-        vm.load(VReg.V1, VReg.S2, 0);
-        vm.cmp(VReg.V1, VReg.S1);
+        // 使用 _map_key_compare 进行值比较
+        vm.load(VReg.A0, VReg.S2, 0); // current.value
+        vm.mov(VReg.A1, VReg.S1); // search value
+        vm.call("_map_key_compare");
+        vm.cmpImm(VReg.RET, 1);
         vm.jeq(addFoundLabel);
 
         vm.load(VReg.S2, VReg.S2, 8);
@@ -94,35 +97,38 @@ export class SetGenerator {
         // A0 = Set 指针, A1 = value
         // 返回 1 (true) 或 0 (false)
         vm.label("_set_has");
-        vm.prologue(32, [VReg.S0, VReg.S1]);
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
 
         vm.mov(VReg.S0, VReg.A0);
         vm.mov(VReg.S1, VReg.A1);
 
-        vm.load(VReg.V0, VReg.S0, 16);
+        vm.load(VReg.S2, VReg.S0, 16);
 
         const hasLoopLabel = "_set_has_loop";
         const hasFoundLabel = "_set_has_found";
         const hasNotFoundLabel = "_set_has_not_found";
 
         vm.label(hasLoopLabel);
-        vm.cmpImm(VReg.V0, 0);
+        vm.cmpImm(VReg.S2, 0);
         vm.jeq(hasNotFoundLabel);
 
-        vm.load(VReg.V1, VReg.V0, 0);
-        vm.cmp(VReg.V1, VReg.S1);
+        // 使用 _map_key_compare 进行值比较
+        vm.load(VReg.A0, VReg.S2, 0); // current.value
+        vm.mov(VReg.A1, VReg.S1); // search value
+        vm.call("_map_key_compare");
+        vm.cmpImm(VReg.RET, 1);
         vm.jeq(hasFoundLabel);
 
-        vm.load(VReg.V0, VReg.V0, 8);
+        vm.load(VReg.S2, VReg.S2, 8);
         vm.jmp(hasLoopLabel);
 
         vm.label(hasFoundLabel);
         vm.movImm(VReg.RET, 1);
-        vm.epilogue([VReg.S0, VReg.S1], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
 
         vm.label(hasNotFoundLabel);
         vm.movImm(VReg.RET, 0);
-        vm.epilogue([VReg.S0, VReg.S1], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
 
         // _set_delete - 删除元素
         // A0 = Set 指针, A1 = value
@@ -144,8 +150,11 @@ export class SetGenerator {
         vm.cmpImm(VReg.S3, 0);
         vm.jeq(delNotFoundLabel);
 
-        vm.load(VReg.V1, VReg.S3, 0);
-        vm.cmp(VReg.V1, VReg.S1);
+        // 使用 _map_key_compare 进行值比较
+        vm.load(VReg.A0, VReg.S3, 0); // current.value
+        vm.mov(VReg.A1, VReg.S1); // search value
+        vm.call("_map_key_compare");
+        vm.cmpImm(VReg.RET, 1);
         vm.jeq(delFoundLabel);
 
         vm.mov(VReg.S2, VReg.S3);

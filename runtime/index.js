@@ -6,6 +6,7 @@ export { AllocatorGenerator } from "./core/allocator.js";
 export * from "./core/allocator.js";
 export { PrintGenerator } from "./core/print.js";
 export { RUNTIME_STRINGS, StringConstantsGenerator } from "./core/strings.js";
+export { CoercionGenerator } from "./core/coercion.js";
 
 // 类型运行时 - Number (包含所有数值子类型)
 export { NumberGenerator } from "./types/number/index.js";
@@ -28,9 +29,17 @@ export { RegExpGenerator } from "./types/regexp/index.js";
 export { SymbolGenerator, WellKnownSymbolsGenerator } from "./types/symbol/index.js";
 // 类型运行时 - Iterator
 export { IteratorGenerator, ArrayIteratorMethodsGenerator, MapSetIteratorMethodsGenerator } from "./types/iterator/index.js";
+// 类型运行时 - Generator
+export { GeneratorGenerator } from "./types/generator/index.js";
+export { AsyncGeneratorGenerator } from "./types/generator/async.js";
+// 类型运行时 - 私有字段
+export { PrivateFieldGenerator, generatePrivateFieldStrings } from "./types/private/index.js";
+// 类型运行时 - Error
+export { ErrorGenerator } from "./types/error/index.js";
 
 // 运算符
 export { TypeofGenerator } from "./operators/typeof.js";
+export { EqualityGenerator } from "./operators/equality.js";
 
 // 下标访问
 export { SubscriptGenerator } from "./core/subscript.js";
@@ -52,11 +61,17 @@ import { DateGenerator } from "./types/date/index.js";
 import { RegExpGenerator } from "./types/regexp/index.js";
 import { SymbolGenerator, WellKnownSymbolsGenerator } from "./types/symbol/index.js";
 import { IteratorGenerator, ArrayIteratorMethodsGenerator, MapSetIteratorMethodsGenerator } from "./types/iterator/index.js";
+import { GeneratorGenerator } from "./types/generator/index.js";
+import { AsyncGeneratorGenerator } from "./types/generator/async.js";
+import { PrivateFieldGenerator } from "./types/private/index.js";
+import { ErrorGenerator } from "./types/error/index.js";
 import { PrintGenerator } from "./core/print.js";
 import { SubscriptGenerator } from "./core/subscript.js";
 import { TypeofGenerator } from "./operators/typeof.js";
+import { EqualityGenerator } from "./operators/equality.js";
 import { AsyncGenerator } from "./async/index.js";
 import { JSValueGenerator } from "./core/jsvalue.js";
+import { CoercionGenerator } from "./core/coercion.js";
 
 export class RuntimeGenerator {
     constructor(vm, ctx) {
@@ -74,18 +89,27 @@ export class RuntimeGenerator {
         this.mapGen = new MapGenerator(vm);
         this.setGen = new SetGenerator(vm);
         this.dateGen = new DateGenerator(vm);
-        this.regexpGen = new RegExpGenerator(vm);
+        this.regexpGen = new RegExpGenerator(vm, ctx);
         this.symbolGen = new SymbolGenerator(vm, ctx);
         this.wellKnownSymbolsGen = new WellKnownSymbolsGenerator(vm, ctx);
         // 迭代器生成器
         this.iteratorGen = new IteratorGenerator(vm, ctx);
         this.arrayIteratorMethodsGen = new ArrayIteratorMethodsGenerator(vm, ctx);
         this.mapSetIteratorMethodsGen = new MapSetIteratorMethodsGenerator(vm, ctx);
+        // Generator 生成器
+        this.generatorGen = new GeneratorGenerator(vm, ctx);
+        this.asyncGeneratorGen = new AsyncGeneratorGenerator(vm, ctx);
+        // 私有字段生成器
+        this.privateFieldGen = new PrivateFieldGenerator(vm, ctx);
+        // Error 生成器
+        this.errorGen = new ErrorGenerator(vm, ctx);
         // 核心生成器
         this.jsValueGen = new JSValueGenerator(vm);
         this.printGen = new PrintGenerator(vm);
         this.subscriptGen = new SubscriptGenerator(vm, ctx);
         this.typeofGen = new TypeofGenerator(vm);
+        this.equalityGen = new EqualityGenerator(vm);
+        this.coercionGen = new CoercionGenerator(vm);
         // 异步运行时
         this.asyncGen = new AsyncGenerator(vm);
     }
@@ -111,11 +135,20 @@ export class RuntimeGenerator {
         this.iteratorGen.generate();
         this.arrayIteratorMethodsGen.generate();
         this.mapSetIteratorMethodsGen.generate();
+        // Generator
+        this.generatorGen.generate();
+        this.asyncGeneratorGen.generate();
+        // 私有字段
+        this.privateFieldGen.generate();
+        // Error
+        this.errorGen.generate();
         // 核心
         this.jsValueGen.generate();
         this.printGen.generate();
         this.subscriptGen.generate();
         this.typeofGen.generate();
+        this.equalityGen.generate();
+        this.coercionGen.generate();
         // 异步
         this.asyncGen.generate();
     }

@@ -83,6 +83,7 @@ export const TokenType = {
     SPREAD: "...",
     OPTIONAL: "?.",
     HASH: "#", // 私有字段前缀
+    AT: "@", // 装饰器前缀
 
     // 括号
     LPAREN: "(",
@@ -199,15 +200,16 @@ export function lookupIdent(ident) {
 
 // Token 类
 export class Token {
-    constructor(type, literal, line, column) {
+    constructor(type, literal, line, column, position) {
         this.type = type;
         this.literal = literal;
         this.line = line;
         this.column = column;
+        this.position = position; // 在源码中的位置
     }
 }
 
 // 创建 Token
-export function newToken(type, literal, line, column) {
-    return new Token(type, literal, line, column);
+export function newToken(type, literal, line, column, position) {
+    return new Token(type, literal, line, column, position);
 }

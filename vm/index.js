@@ -60,6 +60,12 @@ export class VirtualMachine {
         this.backend.movImm64(dest, imm);
     }
 
+    // 从 LR (Link Register) 读取到寄存器
+    movFromLR(dest) {
+        this._emit(OpCode.MOV_FROM_LR, [dest]);
+        this.backend.movFromLR(dest);
+    }
+
     // 从内存加载: dest = [base + offset]
     load(dest, base, offset) {
         this._emit(OpCode.LOAD, [dest, base, offset]);

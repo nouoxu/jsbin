@@ -237,6 +237,38 @@ export const BuiltinMethodCompiler = {
                     this.compileArrayReduce(arrayExpr, args[0], args[1]);
                 }
                 break;
+            case "flat":
+                // arr.flat(depth?) - 扁平化数组
+                this.vm.push(VReg.RET);
+                if (args.length > 0) {
+                    this.compileExpressionAsInt(args[0]);
+                    this.vm.mov(VReg.A1, VReg.RET); // depth (int)
+                } else {
+                    this.vm.movImm(VReg.A1, 1); // 默认 depth = 1
+                }
+                this.vm.pop(VReg.A0);
+                this.vm.call("_array_flat");
+                break;
+            case "flatMap":
+                // arr.flatMap(callback) - map + flat(1)
+                if (args.length > 0) {
+                    this.vm.push(VReg.RET);
+                    this.compileExpression(args[0]);
+                    this.vm.mov(VReg.A1, VReg.RET); // callback
+                    this.vm.pop(VReg.A0);
+                    this.vm.call("_array_flatmap");
+                }
+                break;
+            case "sort":
+                // arr.sort() - 原地排序（数字升序）
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_array_sort");
+                break;
+            case "reverse":
+                // arr.reverse() - 原地反转
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_array_reverse");
+                break;
             default:
                 break;
         }
@@ -247,17 +279,17 @@ export const BuiltinMethodCompiler = {
         // 先编译数组和回调
         this.compileExpression(arrayExpr);
         const arrOffset = this.ctx.allocLocal(`__forEach_arr_${this.nextLabelId()}`);
-        this.vm.store(VReg.FP, arrOffset, VReg.RET);
+        this.vm.store(VReg.FP, arrOffset, VReg.RET); // 存储 boxed array
 
         this.compileExpression(callbackExpr);
         const cbOffset = this.ctx.allocLocal(`__forEach_cb_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, cbOffset, VReg.RET);
 
-        // 获取数组长度
-        this.vm.load(VReg.V0, VReg.FP, arrOffset);
-        this.vm.load(VReg.V0, VReg.V0, 8);
+        // 获取数组长度 - 调用 _array_length 来统一处理
+        this.vm.load(VReg.A0, VReg.FP, arrOffset);
+        this.vm.call("_array_length");
         const lenOffset = this.ctx.allocLocal(`__forEach_len_${this.nextLabelId()}`);
-        this.vm.store(VReg.FP, lenOffset, VReg.V0);
+        this.vm.store(VReg.FP, lenOffset, VReg.RET);
 
         // 初始化索引
         const idxOffset = this.ctx.allocLocal(`__forEach_idx_${this.nextLabelId()}`);
@@ -278,10 +310,10 @@ export const BuiltinMethodCompiler = {
         this.vm.cmp(VReg.V0, VReg.V1);
         this.vm.jge(endLabel);
 
-        // 获取当前元素 - 使用 _subscript_get 统一处理 Array 和 TypedArray
+        // 获取当前元素 - 使用 _array_get（暂时只支持普通数组）
         this.vm.load(VReg.A0, VReg.FP, arrOffset); // arr
         this.vm.load(VReg.A1, VReg.FP, idxOffset); // index
-        this.vm.call("_subscript_get");
+        this.vm.call("_array_get");
 
         // 保存元素值
         this.vm.store(VReg.FP, elemOffset, VReg.RET);
@@ -363,16 +395,16 @@ export const BuiltinMethodCompiler = {
         this.vm.store(VReg.FP, arrOffset, VReg.RET);
 
         // 保存数组类型（用于创建同类型的结果数组）
-        this.vm.load(VReg.V0, VReg.RET, 0); // 加载类型标签
-        this.vm.andImm(VReg.V0, VReg.V0, 0xff); // 取低 8 位
+        // TODO: 这里需要 unbox 后才能读取类型，暂时假设是普通数组
         const typeOffset = this.ctx.allocLocal(`__map_type_${this.nextLabelId()}`);
+        this.vm.movImm(VReg.V0, 0); // 普通数组类型 = 0
         this.vm.store(VReg.FP, typeOffset, VReg.V0);
 
-        // 获取数组长度
-        this.vm.load(VReg.V0, VReg.FP, arrOffset);
-        this.vm.load(VReg.V0, VReg.V0, 8); // 长度
+        // 获取数组长度 - 使用 _array_length 函数正确处理
+        this.vm.load(VReg.A0, VReg.FP, arrOffset);
+        this.vm.call("_array_length");
         const lenOffset = this.ctx.allocLocal(`__map_len_${this.nextLabelId()}`);
-        this.vm.store(VReg.FP, lenOffset, VReg.V0);
+        this.vm.store(VReg.FP, lenOffset, VReg.RET);
 
         // 根据类型创建新数组
         // 检查是否是 TypedArray (类型 >= 0x40)
@@ -382,17 +414,9 @@ export const BuiltinMethodCompiler = {
         const createDone = this.ctx.newLabel("map_create_done");
         this.vm.jge(createTypedArray);
 
-        // 创建普通 Array: 16 + length * 8
-        this.vm.load(VReg.V0, VReg.FP, lenOffset);
-        this.vm.shl(VReg.A0, VReg.V0, 3);
-        this.vm.addImm(VReg.A0, VReg.A0, 16);
-        this.vm.call("_alloc");
-        this.vm.mov(VReg.S1, VReg.RET);
-        this.vm.load(VReg.V0, VReg.FP, lenOffset);
-        this.vm.movImm(VReg.V1, 1); // TYPE_ARRAY
-        this.vm.store(VReg.S1, 0, VReg.V1);
-        this.vm.store(VReg.S1, 8, VReg.V0);
-        this.vm.mov(VReg.RET, VReg.S1);
+        // 创建普通 Array - 使用运行时函数
+        this.vm.load(VReg.A0, VReg.FP, lenOffset);
+        this.vm.call("_array_new_with_size");
         this.vm.jmp(createDone);
 
         // 创建 TypedArray
@@ -429,10 +453,10 @@ export const BuiltinMethodCompiler = {
         this.vm.cmp(VReg.V0, VReg.V1);
         this.vm.jge(endLabel);
 
-        // 获取当前元素 - 使用 _subscript_get 统一处理
+        // 获取当前元素 - 使用 _array_get（暂时只支持普通数组）
         this.vm.load(VReg.A0, VReg.FP, arrOffset); // arr
         this.vm.load(VReg.A1, VReg.FP, idxOffset); // index
-        this.vm.call("_subscript_get");
+        this.vm.call("_array_get");
 
         // 保存元素值
         this.vm.store(VReg.FP, elemOffset, VReg.RET);
@@ -450,11 +474,11 @@ export const BuiltinMethodCompiler = {
         this.vm.pop(VReg.S0);
         this.emitClosureCallAfterSetup();
 
-        // 存储结果到新数组 - 使用 _subscript_set 统一处理
+        // 存储结果到新数组 - 使用 _array_set（暂时只支持普通数组）
         this.vm.mov(VReg.A2, VReg.RET); // value (返回值)
         this.vm.load(VReg.A0, VReg.FP, newArrOffset); // arr
         this.vm.load(VReg.A1, VReg.FP, idxOffset); // index
-        this.vm.call("_subscript_set");
+        this.vm.call("_array_set");
 
         // 索引++
         this.vm.load(VReg.V0, VReg.FP, idxOffset);
@@ -476,16 +500,16 @@ export const BuiltinMethodCompiler = {
         this.vm.store(VReg.FP, arrOffset, VReg.RET);
 
         // 保存数组类型
-        this.vm.load(VReg.V0, VReg.RET, 0);
-        this.vm.andImm(VReg.V0, VReg.V0, 0xff);
+        // TODO: 这里需要 unbox 后才能读取类型，暂时假设是普通数组
         const typeOffset = this.ctx.allocLocal(`__filter_type_${this.nextLabelId()}`);
+        this.vm.movImm(VReg.V0, 0);
         this.vm.store(VReg.FP, typeOffset, VReg.V0);
 
-        // 获取数组长度
-        this.vm.load(VReg.V0, VReg.FP, arrOffset);
-        this.vm.load(VReg.V0, VReg.V0, 8);
+        // 获取数组长度 - 使用 _array_length 函数
+        this.vm.load(VReg.A0, VReg.FP, arrOffset);
+        this.vm.call("_array_length");
         const lenOffset = this.ctx.allocLocal(`__filter_len_${this.nextLabelId()}`);
-        this.vm.store(VReg.FP, lenOffset, VReg.V0);
+        this.vm.store(VReg.FP, lenOffset, VReg.RET);
 
         // 根据类型创建新数组（最大可能大小）
         this.vm.load(VReg.V1, VReg.FP, typeOffset);
@@ -494,17 +518,9 @@ export const BuiltinMethodCompiler = {
         const createDone = this.ctx.newLabel("filter_create_done");
         this.vm.jge(createTypedArray);
 
-        // 创建普通 Array
-        this.vm.load(VReg.V0, VReg.FP, lenOffset);
-        this.vm.shl(VReg.A0, VReg.V0, 3);
-        this.vm.addImm(VReg.A0, VReg.A0, 16);
-        this.vm.call("_alloc");
-        this.vm.mov(VReg.S1, VReg.RET);
-        this.vm.movImm(VReg.V1, 1);
-        this.vm.store(VReg.S1, 0, VReg.V1);
-        this.vm.movImm(VReg.V1, 0);
-        this.vm.store(VReg.S1, 8, VReg.V1);
-        this.vm.mov(VReg.RET, VReg.S1);
+        // 创建普通 Array - 使用运行时函数（初始长度 0，用 push 添加元素）
+        this.vm.movImm(VReg.A0, 0);
+        this.vm.call("_array_new_with_size");
         this.vm.jmp(createDone);
 
         // 创建 TypedArray
@@ -512,12 +528,7 @@ export const BuiltinMethodCompiler = {
         this.vm.load(VReg.A0, VReg.FP, typeOffset);
         this.vm.load(VReg.A1, VReg.FP, lenOffset);
         this.vm.call("_typed_array_new");
-        // 重置长度为 0 (会在添加时递增)
-        // 注意：_typed_array_new 后 V0 可能被修改，需要重新设置
-        this.vm.mov(VReg.V0, VReg.RET); // 保存新数组指针
-        this.vm.movImm(VReg.V1, 0);
-        this.vm.store(VReg.V0, 8, VReg.V1);
-        this.vm.mov(VReg.RET, VReg.V0); // 恢复 RET
+        // TODO: TypedArray 需要不同的处理方式
 
         this.vm.label(createDone);
         const newArrOffset = this.ctx.allocLocal(`__filter_newarr_${this.nextLabelId()}`);
@@ -549,10 +560,10 @@ export const BuiltinMethodCompiler = {
         this.vm.cmp(VReg.V0, VReg.V1);
         this.vm.jge(endLabel);
 
-        // 获取当前元素 - 使用 _subscript_get 统一处理
+        // 获取当前元素 - 使用 _array_get
         this.vm.load(VReg.A0, VReg.FP, arrOffset);
         this.vm.load(VReg.A1, VReg.FP, idxOffset);
-        this.vm.call("_subscript_get");
+        this.vm.call("_array_get");
 
         // 保存当前元素
         this.vm.store(VReg.FP, elemOffset, VReg.RET);
@@ -574,20 +585,13 @@ export const BuiltinMethodCompiler = {
         this.vm.cmpImm(VReg.RET, 0);
         this.vm.jeq(skipLabel);
 
-        // 添加元素到新数组 - 使用 _subscript_set 统一处理
+        // 添加元素到新数组 - 使用 _array_push
         this.vm.label(addLabel);
         this.vm.load(VReg.A0, VReg.FP, newArrOffset); // arr
-        this.vm.load(VReg.A1, VReg.A0, 8); // 当前长度作为 index
-        this.vm.load(VReg.A2, VReg.FP, elemOffset); // value
-
-        // 存储元素
-        this.vm.call("_subscript_set");
-
-        // 更新长度（在存储之后）
-        this.vm.load(VReg.V0, VReg.FP, newArrOffset);
-        this.vm.load(VReg.V1, VReg.V0, 8); // 读取当前长度
-        this.vm.addImm(VReg.V1, VReg.V1, 1);
-        this.vm.store(VReg.V0, 8, VReg.V1);
+        this.vm.load(VReg.A1, VReg.FP, elemOffset); // value
+        this.vm.call("_array_push");
+        // _array_push 可能返回新的数组指针（如果扩容了）
+        this.vm.store(VReg.FP, newArrOffset, VReg.RET);
 
         this.vm.label(skipLabel);
         // 索引++
@@ -609,10 +613,11 @@ export const BuiltinMethodCompiler = {
         const arrOffset = this.ctx.allocLocal(`__reduce_arr_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, arrOffset, VReg.RET);
 
-        // 获取数组长度
-        this.vm.load(VReg.V0, VReg.RET, 8);
+        // 获取数组长度 - 使用 _array_length
+        this.vm.load(VReg.A0, VReg.FP, arrOffset);
+        this.vm.call("_array_length");
         const lenOffset = this.ctx.allocLocal(`__reduce_len_${this.nextLabelId()}`);
-        this.vm.store(VReg.FP, lenOffset, VReg.V0);
+        this.vm.store(VReg.FP, lenOffset, VReg.RET);
 
         // 初始化累加器
         const accOffset = this.ctx.allocLocal(`__reduce_acc_${this.nextLabelId()}`);
@@ -621,10 +626,10 @@ export const BuiltinMethodCompiler = {
             this.vm.store(VReg.FP, accOffset, VReg.RET);
         } else {
             // 无初始值时，使用第一个元素作为初始值
-            // 使用 _subscript_get 统一处理 Array 和 TypedArray
+            // 使用 _array_get
             this.vm.load(VReg.A0, VReg.FP, arrOffset);
             this.vm.movImm(VReg.A1, 0);
-            this.vm.call("_subscript_get");
+            this.vm.call("_array_get");
             this.vm.store(VReg.FP, accOffset, VReg.RET);
         }
 
@@ -652,10 +657,10 @@ export const BuiltinMethodCompiler = {
         this.vm.cmp(VReg.V0, VReg.V1);
         this.vm.jge(endLabel);
 
-        // 获取当前元素 - 使用 _subscript_get 统一处理 Array 和 TypedArray
+        // 获取当前元素 - 使用 _array_get
         this.vm.load(VReg.A0, VReg.FP, arrOffset);
         this.vm.load(VReg.A1, VReg.FP, idxOffset);
-        this.vm.call("_subscript_get");
+        this.vm.call("_array_get");
 
         // 保存当前元素
         this.vm.store(VReg.FP, elemOffset, VReg.RET);
@@ -856,11 +861,25 @@ export const BuiltinMethodCompiler = {
     compileRegExpMethod(obj, method, args) {
         // 先编译 RegExp 对象
         this.compileExpression(obj);
-        this.vm.push(VReg.RET); // 保存 regexp 对象
+        // 从 NaN-boxed 值中提取指针（低 48 位）
+        this.vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        this.vm.and(VReg.RET, VReg.RET, VReg.V1);
+        this.vm.push(VReg.RET); // 保存 regexp 对象指针
 
         // 编译参数（输入字符串）
         if (args.length > 0) {
             this.compileExpression(args[0]);
+            // 从 NaN-boxed 值中提取字符串指针
+            this.vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+            this.vm.and(VReg.RET, VReg.RET, VReg.V1);
+            // 如果是堆字符串，跳过 16 字节头部
+            this.vm.lea(VReg.V2, "_heap_base");
+            this.vm.load(VReg.V2, VReg.V2, 0);
+            this.vm.cmp(VReg.RET, VReg.V2);
+            const doneLabel = this.ctx.newLabel("regexp_str_done");
+            this.vm.jlt(doneLabel);
+            this.vm.addImm(VReg.RET, VReg.RET, 16);
+            this.vm.label(doneLabel);
             this.vm.mov(VReg.A1, VReg.RET);
         } else {
             // 默认空字符串
@@ -913,11 +932,16 @@ export const BuiltinMethodCompiler = {
             case "charAt":
                 // str.charAt(index) - 返回单字符字符串
                 if (args.length > 0) {
-                    this.compileExpression(args[0]);
-                    // 索引是浮点数表示，转为整数 (使用 VM 统一接口)
-                    this.vm.fmovToFloat(0, VReg.RET);
-                    this.vm.fcvtzs(VReg.RET, 0);
-                    this.vm.mov(VReg.A1, VReg.RET);
+                    // 数字字面量直接使用整数值
+                    if (args[0].type === "Literal" && typeof args[0].value === "number") {
+                        this.vm.movImm(VReg.A1, Math.trunc(args[0].value));
+                    } else {
+                        // 其他表达式返回 Number 对象，需要 unbox
+                        this.compileExpression(args[0]);
+                        this.unboxNumber(VReg.RET);
+                        this.vm.fmovToFloat(0, VReg.RET);
+                        this.vm.fcvtzs(VReg.A1, 0);
+                    }
                 } else {
                     this.vm.movImm(VReg.A1, 0);
                 }
@@ -928,16 +952,23 @@ export const BuiltinMethodCompiler = {
             case "charCodeAt":
                 // str.charCodeAt(index) - 返回字符编码
                 if (args.length > 0) {
-                    this.compileExpression(args[0]);
-                    // 索引是浮点数表示，转为整数 (使用 VM 统一接口)
-                    this.vm.fmovToFloat(0, VReg.RET);
-                    this.vm.fcvtzs(VReg.RET, 0);
-                    this.vm.mov(VReg.A1, VReg.RET);
+                    // 数字字面量直接使用整数值
+                    if (args[0].type === "Literal" && typeof args[0].value === "number") {
+                        this.vm.movImm(VReg.A1, Math.trunc(args[0].value));
+                    } else {
+                        // 其他表达式返回 Number 对象，需要 unbox
+                        this.compileExpression(args[0]);
+                        this.unboxNumber(VReg.RET);
+                        this.vm.fmovToFloat(0, VReg.RET);
+                        this.vm.fcvtzs(VReg.A1, 0);
+                    }
                 } else {
                     this.vm.movImm(VReg.A1, 0);
                 }
                 this.vm.pop(VReg.A0);
                 this.vm.call("_str_charCodeAt");
+                // 装箱返回值为 Number 对象
+                this.boxIntAsNumber(VReg.RET);
                 return true;
 
             case "trim":
@@ -997,16 +1028,26 @@ export const BuiltinMethodCompiler = {
 
             case "indexOf":
                 // str.indexOf(search) - 返回索引或 -1
+                // 先获取原字符串内容指针
+                this.vm.pop(VReg.A0);
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容指针
+
+                // 获取 search 内容指针
                 if (args.length > 0) {
                     this.compileExpression(args[0]);
                     this.vm.mov(VReg.A0, VReg.RET);
                     this.vm.call("_getStrContent");
-                    this.vm.mov(VReg.A1, VReg.RET);
+                    this.vm.mov(VReg.A1, VReg.RET); // A1 = search 内容
                 } else {
                     this.vm.lea(VReg.A1, "_str_empty");
                 }
-                this.vm.pop(VReg.A0);
+
+                // 调用 _str_indexOf(str, search)
+                this.vm.pop(VReg.A0); // A0 = str 内容
                 this.vm.call("_str_indexOf");
+                // 装箱返回值为 Number 对象
+                this.boxIntAsNumber(VReg.RET);
                 return true;
 
             case "concat":

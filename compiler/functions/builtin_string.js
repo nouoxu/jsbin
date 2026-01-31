@@ -102,15 +102,26 @@ export const StringMethodCompiler = {
 
             case "indexOf":
                 // str.indexOf(search) - 返回索引或 -1
+                // 栈上有原字符串 [str]
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容 [strContent]
+
+                // 2. 编译并获取 search 内容指针
                 if (args.length > 0) {
                     this.compileExpression(args[0]);
-                    this.vm.mov(VReg.A1, VReg.RET);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
+                    this.vm.mov(VReg.A1, VReg.RET); // A1 = search 内容
                 } else {
                     this.vm.lea(VReg.A1, "_str_empty");
                 }
-                this.vm.pop(VReg.A0);
+
+                // 3. 调用 _str_indexOf(str, search)
+                this.vm.pop(VReg.A0); // A0 = str 内容
                 this.vm.call("_str_indexOf");
-                // 装箱返回值为 Number 对象
+                // 返回值是整数，需要装箱为 Number 对象
                 this.boxIntAsNumber(VReg.RET);
                 return true;
 

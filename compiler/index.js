@@ -22,7 +22,7 @@ import { ARM64Assembler } from "../asm/arm64.js";
 import { X64Assembler } from "../asm/x64.js";
 
 // 运行时
-import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator } from "../runtime/index.js";
+import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator, ErrorGenerator } from "../runtime/index.js";
 
 // 编译上下文和平台
 import { CompileContext, CompileOptions, CompileResult } from "./core/context.js";
@@ -575,7 +575,50 @@ export class Compiler {
             }
         }
 
+        // 输出生成的指令序列（调试用）
+        if (this.options.dumpAsm) {
+            this.dumpAssembly();
+        }
+
         return this.generateExecutable();
+    }
+
+    // 输出生成的指令/汇编序列（调试用）
+    dumpAssembly() {
+        console.log("\n=== Generated Instructions ===");
+        console.log(`Target: ${this.target} (${this.arch})`);
+        console.log(`Total VM instructions: ${this.vm.instructions.length}`);
+        console.log("");
+
+        // 分组显示指令
+        let currentLabel = null;
+        for (const inst of this.vm.instructions) {
+            if (inst.op === "label") {
+                currentLabel = inst.operands[0];
+                console.log(`\n${currentLabel}:`);
+            } else {
+                console.log(`    ${inst.toString()}`);
+            }
+        }
+
+        console.log("\n=== Labels ===");
+        const labels = Object.keys(this.asm.labels);
+        console.log(`Total labels: ${labels.length}`);
+        // 只显示用户定义的标签（以 _user_ 开头的）
+        const userLabels = labels.filter((l) => l.startsWith("_user_"));
+        if (userLabels.length > 0) {
+            console.log("User functions:");
+            for (const label of userLabels) {
+                console.log(`    ${label}: offset ${this.asm.labels[label]}`);
+            }
+        }
+
+        console.log("\n=== Data Section ===");
+        console.log(`Data size: ${this.asm.data.length} bytes`);
+
+        console.log("\n=== Code Section ===");
+        console.log(`Code size: ${this.asm.code.length} bytes`);
+        console.log("==============================\n");
     }
 
     compileFile(inputFile, outputFile) {
@@ -672,6 +715,27 @@ export class Compiler {
         // Iterator 数据段
         const iteratorGen = new IteratorGenerator(this.vm, this.ctx);
         iteratorGen.generateDataSection(this.asm);
+        // Error 数据段
+        const errorGen = new ErrorGenerator(this.vm, this.ctx);
+        errorGen.generateDataSection(this.asm);
+        // 私有字段字符串常量
+        this.generatePrivateFieldStrings();
+    }
+
+    generatePrivateFieldStrings() {
+        // 私有字段相关的字符串常量
+        this._addPrivateString("_str_private_prefix", "__private_");
+        this._addPrivateString("_str_brand_prefix", "__brand_");
+        this._addPrivateString("_str_underscore", "_");
+        this._addPrivateString("_str_private_error", "TypeError: Cannot access private field");
+    }
+
+    _addPrivateString(label, str) {
+        this.asm.addDataLabel(label);
+        for (let i = 0; i < str.length; i++) {
+            this.asm.addDataByte(str.charCodeAt(i));
+        }
+        this.asm.addDataByte(0); // null 终止
     }
 
     generateSharedLibraryRuntime() {
@@ -732,6 +796,8 @@ export class Compiler {
         vm.label("_main");
         // 分配较大的栈空间以容纳动态分配的局部变量（如数组方法的临时变量）
         vm.prologue(512, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+        // 保留 callee-saved 寄存器占用的栈空间
+        this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
         this.ctx.returnLabel = "_main_return";
 
         for (const stmt of ast.body) {
@@ -786,6 +852,13 @@ export class Compiler {
         const returnLabel = funcLabel + "_return";
 
         const isAsync = isAsyncFunction(func);
+        const isGenerator = func.generator === true;
+
+        // Generator 函数需要特殊处理
+        if (isGenerator) {
+            this.compileGeneratorFunction(name, func);
+            return;
+        }
 
         const savedCtx = this.ctx;
         this.ctx = savedCtx.clone(name);
@@ -797,6 +870,8 @@ export class Compiler {
 
         vm.label(funcLabel);
         vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+        // 保留 callee-saved 寄存器占用的栈空间
+        this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
 
         const params = func.params || [];
         const paramOffsets = [];
@@ -842,6 +917,169 @@ export class Compiler {
         }
 
         this.generatePendingFunctions();
+        this.ctx = savedCtx;
+    }
+
+    // 编译顶层 Generator 函数声明
+    compileGeneratorFunction(name, func) {
+        const vm = this.vm;
+        const funcLabel = "_user_" + name;
+        const bodyLabel = "_gen_body_" + name;
+
+        // 创建 Generator 工厂函数
+        vm.label(funcLabel);
+        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+
+        const params = func.params || [];
+
+        // 计算局部变量数量
+        const localsCount = this.countGeneratorLocals(func);
+
+        // 创建 Generator 对象
+        vm.lea(VReg.A0, bodyLabel); // func_ptr = body 函数
+        vm.movImm(VReg.A1, 0); // 没有闭包
+        vm.movImm(VReg.A2, localsCount + params.length); // locals_count
+        vm.call("_generator_create");
+        vm.mov(VReg.S1, VReg.RET); // S1 = Generator 对象
+
+        // 将参数存储到 Generator 的 locals 区域
+        for (let i = 0; i < params.length && i < 6; i++) {
+            if (params[i].type === "Identifier") {
+                vm.movImm(VReg.V0, 112 + i * 8);
+                vm.add(VReg.V1, VReg.S1, VReg.V0);
+                vm.store(VReg.V1, 0, vm.getArgReg(i));
+            }
+        }
+
+        // 返回 Generator 对象
+        vm.mov(VReg.RET, VReg.S1);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 48);
+
+        // 生成 Generator body 函数
+        this.compileTopLevelGeneratorBody(func, bodyLabel, params.length);
+    }
+
+    // 计算 Generator 函数需要的局部变量数量
+    countGeneratorLocals(func) {
+        let count = 0;
+        const countInBlock = (body) => {
+            if (!body) return;
+            const stmts = body.body || [body];
+            for (const stmt of stmts) {
+                if (stmt.type === "VariableDeclaration") {
+                    count += stmt.declarations.length;
+                } else if (stmt.type === "ForStatement" && stmt.init && stmt.init.type === "VariableDeclaration") {
+                    count += stmt.init.declarations.length;
+                }
+            }
+        };
+        if (func.body && func.body.type === "BlockStatement") {
+            countInBlock(func.body);
+        }
+        return count;
+    }
+
+    // 编译 Generator body 函数 (状态机方法)
+    compileTopLevelGeneratorBody(func, bodyLabel, paramCount) {
+        const vm = this.vm;
+        const returnLabel = bodyLabel + "_return";
+        const yieldReturnLabel = bodyLabel + "_yield_return";
+        const startLabel = bodyLabel + "_start";
+
+        // 保存和设置上下文
+        const savedCtx = this.ctx;
+        this.ctx = savedCtx.clone("gen_" + bodyLabel);
+
+        vm.label(bodyLabel);
+        vm.prologue(80, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+
+        // A0 = Generator 对象
+        // A1 = resume_point (从 _generator_resume 传入)
+        vm.mov(VReg.S5, VReg.A0); // generator pointer
+        vm.mov(VReg.S4, VReg.A1); // resume_point
+
+        // 同时保存到栈上的固定位置作为备份
+        const genStackOffset = -72;
+        vm.store(VReg.FP, genStackOffset, VReg.A0);
+
+        // 设置上下文
+        this.ctx.locals = {};
+        this.ctx.stackOffset = 0;
+        this.ctx.reserveCalleeSavedSpace(6);
+        this.ctx.boxedVars = new Set();
+        this.ctx.inGenerator = true;
+        this.ctx.generatorReg = VReg.S5;
+        this.ctx.generatorStackOffset = genStackOffset;
+        this.ctx.returnLabel = returnLabel;
+        this.ctx.yieldReturnLabel = yieldReturnLabel; // yield 专用返回标签
+        this.ctx.generatorBodyLabel = bodyLabel;
+        this.ctx.yieldCount = 0;
+        this.ctx.resumeLabels = [];
+
+        // 为参数创建局部变量引用
+        const params = func.params || [];
+        for (let i = 0; i < params.length; i++) {
+            if (params[i].type === "Identifier") {
+                vm.movImm(VReg.V0, 112 + i * 8);
+                vm.add(VReg.V1, VReg.S5, VReg.V0);
+                vm.load(VReg.V2, VReg.V1, 0);
+                const offset = this.ctx.allocLocal(params[i].name);
+                vm.store(VReg.FP, offset, VReg.V2);
+            }
+        }
+
+        // 检查 resume_point，如果是 0 则从头开始，否则跳转到对应位置
+        // 先生成一个临时的跳转检查（resume_point == 0 -> startLabel）
+        vm.cmpImm(VReg.S4, 0);
+        vm.jeq(startLabel);
+
+        // 占位：跳转表将在函数体编译后生成
+        const jumpTableLabel = bodyLabel + "_jumptable";
+        vm.jmp(jumpTableLabel);
+
+        // 函数开始标签
+        vm.label(startLabel);
+
+        // 编译函数体
+        if (func.body && func.body.type === "BlockStatement") {
+            for (const stmt of func.body.body) {
+                this.compileStatement(stmt);
+            }
+        }
+
+        // 如果函数自然结束（没有 return），返回 undefined
+        vm.lea(VReg.RET, "_js_undefined");
+        vm.load(VReg.RET, VReg.RET, 0);
+
+        // 返回标签 - return 语句会跳转到这里
+        vm.label(returnLabel);
+
+        // 从栈上恢复 generator 指针
+        vm.load(VReg.S5, VReg.FP, genStackOffset);
+
+        // 设置状态为完成
+        vm.movImm(VReg.V1, 3); // COMPLETED
+        vm.store(VReg.S5, 8, VReg.V1);
+
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
+
+        // yield 返回标签 - yield 会跳转到这里
+        // 注意：yield 已经设置好了 state 和 yield_value
+        vm.label(yieldReturnLabel);
+        vm.movImm(VReg.RET, 0xdead); // 特殊标记
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
+
+        // 生成跳转表
+        vm.label(jumpTableLabel);
+        const resumeLabels = this.ctx.resumeLabels || [];
+        for (const item of resumeLabels) {
+            vm.cmpImm(VReg.S4, item.id);
+            vm.jeq(item.label);
+        }
+        // 如果没有匹配的 resume_point，跳转到开始
+        vm.jmp(startLabel);
+
+        // 恢复上下文
         this.ctx = savedCtx;
     }
 

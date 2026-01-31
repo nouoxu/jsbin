@@ -4,6 +4,7 @@ export const OpCode = {
     // === 数据移动 ===
     MOV: "mov", // mov dest, src
     MOV_IMM: "mov_imm", // mov dest, #imm
+    MOV_FROM_LR: "mov_from_lr", // mov dest, LR (读取返回地址)
     LOAD: "load", // load dest, [base + offset]
     LOAD_BYTE: "load_byte", // load dest, [base + offset] (8-bit, 零扩展)
     STORE: "store", // store [base + offset], src

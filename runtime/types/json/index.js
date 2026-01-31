@@ -424,6 +424,7 @@ export class JSONGenerator {
         vm.mov(VReg.S0, VReg.A0); // text
 
         // 获取字符串内容
+        vm.mov(VReg.A0, VReg.S0); // 传参给 _getStrContent
         vm.call("_getStrContent");
         vm.mov(VReg.S1, VReg.RET);
 
@@ -459,6 +460,7 @@ export class JSONGenerator {
         vm.cmpImm(VReg.V0, 0x6e); // 'n'
         vm.jne("_jpv_not_null");
         vm.lea(VReg.RET, "_js_null");
+        vm.load(VReg.RET, VReg.RET, 0);
         vm.epilogue([VReg.S0], 16);
 
         vm.label("_jpv_not_null");
@@ -466,6 +468,7 @@ export class JSONGenerator {
         vm.cmpImm(VReg.V0, 0x74); // 't'
         vm.jne("_jpv_not_true");
         vm.lea(VReg.RET, "_js_true");
+        vm.load(VReg.RET, VReg.RET, 0);
         vm.epilogue([VReg.S0], 16);
 
         vm.label("_jpv_not_true");
@@ -473,6 +476,7 @@ export class JSONGenerator {
         vm.cmpImm(VReg.V0, 0x66); // 'f'
         vm.jne("_jpv_not_false");
         vm.lea(VReg.RET, "_js_false");
+        vm.load(VReg.RET, VReg.RET, 0);
         vm.epilogue([VReg.S0], 16);
 
         vm.label("_jpv_not_false");
@@ -516,6 +520,7 @@ export class JSONGenerator {
         vm.label("_jpv_default");
         // 无法解析，返回 undefined
         vm.lea(VReg.RET, "_js_undefined");
+        vm.load(VReg.RET, VReg.RET, 0);
         vm.epilogue([VReg.S0], 16);
     }
 
@@ -555,7 +560,7 @@ export class JSONGenerator {
         const vm = this.vm;
 
         vm.label("_json_parse_string");
-        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
         vm.mov(VReg.S0, VReg.A0);
         vm.addImm(VReg.S0, VReg.S0, 1); // 跳过开始引号
@@ -578,27 +583,30 @@ export class JSONGenerator {
         // 分配字符串
         vm.addImm(VReg.A0, VReg.S2, 17);
         vm.call("_alloc");
-        vm.mov(VReg.V1, VReg.RET);
+        vm.mov(VReg.S3, VReg.RET); // 使用 S3 (callee-saved) 保存字符串指针
 
         // 写入头部
         vm.movImm(VReg.V2, TYPE_STRING);
-        vm.store(VReg.V1, 0, VReg.V2);
-        vm.store(VReg.V1, 8, VReg.S2);
+        vm.store(VReg.S3, 0, VReg.V2);
+        vm.store(VReg.S3, 8, VReg.S2);
 
         // 复制内容
-        vm.addImm(VReg.A0, VReg.V1, 16);
+        vm.addImm(VReg.A0, VReg.S3, 16);
         vm.mov(VReg.A1, VReg.S0);
         vm.mov(VReg.A2, VReg.S2);
         vm.call("_memcpy");
 
         // null 终止符
-        vm.add(VReg.V2, VReg.V1, VReg.S2);
+        vm.add(VReg.V2, VReg.S3, VReg.S2);
         vm.addImm(VReg.V2, VReg.V2, 16);
         vm.movImm(VReg.V3, 0);
         vm.storeByte(VReg.V2, 0, VReg.V3);
 
-        vm.mov(VReg.RET, VReg.V1);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
+        // 装箱为 NaN-boxed 字符串
+        vm.mov(VReg.A0, VReg.S3);
+        vm.call("_js_box_string");
+
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
     }
 
     // _json_parse_number(text) -> Number 对象
@@ -606,7 +614,7 @@ export class JSONGenerator {
         const vm = this.vm;
 
         vm.label("_json_parse_number");
-        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
         vm.mov(VReg.S0, VReg.A0);
         vm.movImm(VReg.S1, 0); // 结果
@@ -639,16 +647,17 @@ export class JSONGenerator {
         vm.mul(VReg.S1, VReg.S1, VReg.S2);
 
         // 装箱为 Number
-        vm.emit("scvtf", 0, VReg.S1);
-        vm.emit("fmov_to_int", VReg.V0, 0);
+        // 先转换为浮点并保存到 callee-saved 寄存器
+        vm.scvtf(0, VReg.S1);
+        vm.fmovToInt(VReg.S3, 0); // 保存到 S3（callee-saved）
 
         vm.movImm(VReg.A0, 16);
         vm.call("_alloc");
         vm.movImm(VReg.V1, TYPE_NUMBER);
         vm.store(VReg.RET, 0, VReg.V1);
-        vm.store(VReg.RET, 8, VReg.V0);
+        vm.store(VReg.RET, 8, VReg.S3); // 从 S3 恢复浮点值
 
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
     }
 
     // _json_parse_array(text) -> Array 对象
@@ -724,18 +733,108 @@ export class JSONGenerator {
         const vm = this.vm;
 
         vm.label("_json_parse_object");
-        vm.prologue(32, [VReg.S0, VReg.S1]);
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
-        vm.mov(VReg.S0, VReg.A0);
+        vm.mov(VReg.S0, VReg.A0); // S0 = 当前文本指针
+        vm.addImm(VReg.S0, VReg.S0, 1); // 跳过 '{'
 
         // 创建空对象
         vm.call("_object_new");
-        vm.mov(VReg.S1, VReg.RET);
+        vm.mov(VReg.S1, VReg.RET); // S1 = 对象指针
 
-        // 简化实现：返回空对象
-        // TODO: 完整解析对象属性
+        vm.label("_jpo_loop");
+        // 跳过空白
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_json_skip_whitespace");
+        vm.mov(VReg.S0, VReg.RET);
 
+        // 检查是否结束
+        vm.loadByte(VReg.V0, VReg.S0, 0);
+        vm.cmpImm(VReg.V0, 0x7d); // '}'
+        vm.jeq("_jpo_done");
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_jpo_done");
+
+        // 跳过逗号
+        vm.cmpImm(VReg.V0, 0x2c); // ','
+        vm.jne("_jpo_parse_key");
+        vm.addImm(VReg.S0, VReg.S0, 1);
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_json_skip_whitespace");
+        vm.mov(VReg.S0, VReg.RET);
+
+        vm.label("_jpo_parse_key");
+        // 解析键（字符串）
+        vm.loadByte(VReg.V0, VReg.S0, 0);
+        vm.cmpImm(VReg.V0, 0x22); // '"'
+        vm.jne("_jpo_done"); // 不是字符串，结束
+
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_json_parse_string");
+        vm.mov(VReg.S2, VReg.RET); // S2 = key 字符串对象
+
+        // 找到键字符串的结束位置（跳过引号和内容）
+        vm.addImm(VReg.S0, VReg.S0, 1); // 跳过开始引号
+        vm.label("_jpo_skip_key");
+        vm.loadByte(VReg.V0, VReg.S0, 0);
+        vm.cmpImm(VReg.V0, 0x22); // '"'
+        vm.jeq("_jpo_key_end");
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_jpo_key_end");
+        vm.addImm(VReg.S0, VReg.S0, 1);
+        vm.jmp("_jpo_skip_key");
+
+        vm.label("_jpo_key_end");
+        vm.addImm(VReg.S0, VReg.S0, 1); // 跳过结束引号
+
+        // 跳过空白和冒号
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_json_skip_whitespace");
+        vm.mov(VReg.S0, VReg.RET);
+
+        vm.loadByte(VReg.V0, VReg.S0, 0);
+        vm.cmpImm(VReg.V0, 0x3a); // ':'
+        vm.jne("_jpo_done");
+        vm.addImm(VReg.S0, VReg.S0, 1);
+
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_json_skip_whitespace");
+        vm.mov(VReg.S0, VReg.RET);
+
+        // 解析值
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_json_parse_value");
+        vm.mov(VReg.S3, VReg.RET); // S3 = value
+
+        // 设置对象属性：obj[key] = value
+        // _getStrContent 需要原始堆字符串指针，所以需要先 unbox
+        vm.mov(VReg.A0, VReg.S2); // key NaN-boxed 字符串
+        vm.call("_js_unbox"); // 获取原始堆字符串指针
+        vm.mov(VReg.A0, VReg.RET);
+        vm.call("_getStrContent"); // 获取 C 字符串指针
+        vm.mov(VReg.S4, VReg.RET); // S4 = key C 字符串
+
+        // _object_set(obj, key, value)
+        vm.mov(VReg.A0, VReg.S1); // obj
+        vm.mov(VReg.A1, VReg.S4); // key (C 字符串)
+        vm.mov(VReg.A2, VReg.S3); // value
+        vm.call("_object_set");
+
+        // 简化：跳过值（需要知道值的长度）
+        // 查找下一个逗号或右大括号
+        vm.label("_jpo_skip_value");
+        vm.loadByte(VReg.V0, VReg.S0, 0);
+        vm.cmpImm(VReg.V0, 0x2c); // ','
+        vm.jeq("_jpo_loop");
+        vm.cmpImm(VReg.V0, 0x7d); // '}'
+        vm.jeq("_jpo_done");
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_jpo_done");
+        vm.addImm(VReg.S0, VReg.S0, 1);
+        vm.jmp("_jpo_skip_value");
+
+        vm.label("_jpo_done");
         vm.mov(VReg.RET, VReg.S1);
-        vm.epilogue([VReg.S0, VReg.S1], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
     }
 }

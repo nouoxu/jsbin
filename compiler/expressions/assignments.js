@@ -71,9 +71,22 @@ export const AssignmentCompiler = {
                 } else {
                     // x ??= y => x ?? (x = y)
                     // 如果 x 不是 null/undefined，不赋值，返回 x
-                    // 简化：检查 x !== 0 (null/undefined = 0)
-                    this.vm.cmpImm(VReg.RET, 0);
-                    this.vm.jne(endLabel);
+
+                    const doAssignLabel = this.ctx.newLabel("assign_do");
+                    const notNullLabel = this.ctx.newLabel("assign_not_null");
+
+                    // 检查是否为 null (0x7FFA000000000000)
+                    this.vm.movImm64(VReg.V1, 0x7ffa000000000000n);
+                    this.vm.cmp(VReg.RET, VReg.V1);
+                    this.vm.jeq(doAssignLabel); // 是 null，执行赋值
+
+                    // 检查是否为 undefined (0x7FFB000000000000)
+                    this.vm.movImm64(VReg.V1, 0x7ffb000000000000n);
+                    this.vm.cmp(VReg.RET, VReg.V1);
+                    this.vm.jne(endLabel); // 既不是 null 也不是 undefined，跳过赋值
+
+                    this.vm.label(doAssignLabel);
+                    // 执行赋值...
                 }
 
                 // 执行赋值

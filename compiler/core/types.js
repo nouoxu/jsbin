@@ -18,6 +18,7 @@ export const Type = {
     REGEXP: "RegExp",
     TYPED_ARRAY: "TypedArray", // TypedArray (Int8Array, Float64Array 等)
     VOID: "void", // 函数无返回值
+    GENERATOR: "Generator", // Generator 对象
 
     // Number 子类型
     INT8: "int8",
@@ -183,7 +184,7 @@ export function inferType(node, ctx) {
             if (typeof node.value === "boolean") return Type.BOOLEAN;
             if (node.value === null) return Type.NULL;
             if (node.value === undefined) return Type.UNDEFINED;
-            if (node.value instanceof RegExp) return Type.REGEXP;
+            if (node.value instanceof RegExp || node.regex) return Type.REGEXP;
             return Type.UNKNOWN;
 
         case "StringLiteral":
@@ -310,14 +311,19 @@ export function inferType(node, ctx) {
                     return Type.INT64; // length 通常返回整数
                 }
             }
-            // 数组元素访问 arr[i] 返回 NUMBER（假设是数字数组）
-            if (node.computed) {
-                return Type.NUMBER;
-            }
+            // 数组元素访问 arr[i] - 无法静态确定类型，返回 UNKNOWN
+            // 让运行时的 _print_value 通用函数处理
             return Type.UNKNOWN;
 
         case "CallExpression":
             // 函数调用的返回类型
+            // 检查是否是 Generator 函数调用
+            if (node.callee && node.callee.type === "Identifier" && ctx && ctx.functions) {
+                const funcDef = ctx.functions[node.callee.name];
+                if (funcDef && funcDef.generator === true) {
+                    return Type.GENERATOR;
+                }
+            }
             // 特殊处理已知返回类型的函数
             if (node.callee && node.callee.type === "MemberExpression") {
                 const obj = node.callee.object;

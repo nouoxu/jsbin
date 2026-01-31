@@ -71,6 +71,23 @@ export const RUNTIME_STRINGS = {
     debugColon: { label: "_str_debug_colon", value: ":" },
     debugNumObj: { label: "_str_debug_numobj", value: "NUM:" },
     debugFlt: { label: "_str_debug_flt", value: "FLT:" },
+    debugVnl: { label: "_str_debug_vnl", value: "VNL value=" },
+    debugHeapBase: { label: "_str_debug_heap_base", value: "heap_base=" },
+    debugHeapPtr: { label: "_str_debug_heap_ptr", value: "heap_ptr=" },
+    debugType: { label: "_str_debug_type", value: "type=" },
+    newline: { label: "_str_newline", value: "\n" },
+    debugResume: { label: "_str_debug_resume", value: "[DEBUG] _generator_resume_start\n" },
+    debugResumeYield: { label: "_str_debug_resume_yield", value: "[DEBUG] _generator_resume_yield\n" },
+    debugGenNext: { label: "_str_debug_gen_next", value: "[DEBUG] _generator_next state=" },
+    debugGenResume: { label: "_str_debug_gen_resume", value: "[DEBUG] _generator_resume\n" },
+    debugGenResumeState: { label: "_str_debug_gen_resume_state", value: "[DEBUG] _generator_resume state=" },
+    debugFuncPtr: { label: "_str_debug_func_ptr", value: "[DEBUG] func_ptr=" },
+    debugAfterCall: { label: "_str_debug_after_call", value: "[DEBUG] after call to generator body\n" },
+    debugCalling: { label: "_str_debug_calling", value: "[DEBUG] calling generator body...\n" },
+    debugGenReturn: { label: "_str_debug_gen_return", value: "[DEBUG] generator body return label\n" },
+    debugGenS0: { label: "_str_debug_gen_s0", value: "[DEBUG] S0 (generator ptr)=" },
+    debugRetval: { label: "_str_debug_retval", value: "[DEBUG] return value ptr=" },
+    debugRetval2: { label: "_str_debug_retval2", value: ", type=" },
 };
 
 // 字符串常量生成器

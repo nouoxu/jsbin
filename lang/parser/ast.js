@@ -58,6 +58,7 @@ export const NodeType = {
     MethodDefinition: "MethodDefinition",
     PropertyDefinition: "PropertyDefinition",
     PrivateIdentifier: "PrivateIdentifier",
+    Decorator: "Decorator",
     ImportSpecifier: "ImportSpecifier",
     ExportSpecifier: "ExportSpecifier",
     VariableDeclarator: "VariableDeclarator",
@@ -102,43 +103,55 @@ export class VariableDeclarator extends Node {
 }
 
 export class FunctionDeclaration extends Node {
-    constructor(id, params, body, isAsync) {
+    constructor(id, params, body, isAsync, isGenerator) {
         super(NodeType.FunctionDeclaration);
         this.id = id;
         this.params = params || [];
         this.body = body;
         this.isAsync = isAsync || false;
+        this.generator = isGenerator || false;
     }
 }
 
 export class ClassDeclaration extends Node {
-    constructor(id, superClass, body) {
+    constructor(id, superClass, body, decorators = []) {
         super(NodeType.ClassDeclaration);
         this.id = id;
         this.superClass = superClass;
         this.body = body || [];
+        this.decorators = decorators; // 类装饰器
+    }
+}
+
+// 装饰器节点 (TC39 Stage 3)
+export class Decorator extends Node {
+    constructor(expression) {
+        super(NodeType.Decorator);
+        this.expression = expression; // 装饰器表达式 (@foo, @bar.baz, @wrap(options))
     }
 }
 
 export class MethodDefinition extends Node {
-    constructor(key, value, kind, isStatic, computed) {
+    constructor(key, value, kind, isStatic, computed, decorators = []) {
         super(NodeType.MethodDefinition);
         this.key = key;
         this.value = value;
         this.kind = kind; // "constructor", "method", "get", "set"
         this.static = isStatic || false;
         this.computed = computed || false;
+        this.decorators = decorators; // 方法装饰器
     }
 }
 
 // 类字段定义 (ES2022)
 export class PropertyDefinition extends Node {
-    constructor(key, value, computed, isStatic) {
+    constructor(key, value, computed, isStatic, decorators = []) {
         super(NodeType.PropertyDefinition);
         this.key = key;
         this.value = value;
         this.computed = computed || false;
         this.static = isStatic || false;
+        this.decorators = decorators; // 字段装饰器
     }
 }
 
@@ -375,12 +388,13 @@ export class Property extends Node {
 }
 
 export class FunctionExpression extends Node {
-    constructor(id, params, body, isAsync) {
+    constructor(id, params, body, isAsync, isGenerator) {
         super(NodeType.FunctionExpression);
         this.id = id;
         this.params = params || [];
         this.body = body;
         this.isAsync = isAsync || false;
+        this.generator = isGenerator || false;
     }
 }
 

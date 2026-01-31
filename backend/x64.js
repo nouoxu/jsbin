@@ -144,6 +144,18 @@ export class X64Backend extends Backend {
         this.asm.movImm64(this.mapReg(dest), imm);
     }
 
+    movFromLR(dest) {
+        // x64: 返回地址在调用时被推入栈
+        // 但在函数内，我们需要从栈上读取返回地址
+        // 在 prologue 之后，返回地址在 [RBP + 8]
+        if (this.isS5(dest)) {
+            this.asm.movLoadOffset(Reg.RAX, Reg.RBP, 8);
+            this.asm.movStoreOffset(Reg.RBP, this.s5StackOffset, Reg.RAX);
+        } else {
+            this.asm.movLoadOffset(this.mapReg(dest), Reg.RBP, 8);
+        }
+    }
+
     load(dest, base, offset) {
         // 处理 S5 作为 dest 或 base
         if (this.isS5(base)) {

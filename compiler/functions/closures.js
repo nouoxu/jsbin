@@ -1,5 +1,5 @@
 // JSBin 编译器 - 闭包编译
-// 编译函数表达式、闭包、函数体
+// 编译函数表达式、闭包、函数体、Generator
 
 import { VReg } from "../../vm/index.js";
 import { analyzeCapturedVariables, analyzeSharedVariables } from "../../lang/analysis/closure.js";
@@ -7,6 +7,13 @@ import { ASYNC_CLOSURE_MAGIC, isAsyncFunction } from "../async/index.js";
 
 // 闭包魔数 - 用于区分普通函数指针和闭包对象
 const CLOSURE_MAGIC = 0xc105;
+// Generator 魔数
+const GENERATOR_MAGIC = 0x6e47; // "Gn" in little endian
+
+// 判断是否是 Generator 函数
+function isGeneratorFunction(expr) {
+    return expr.generator === true;
+}
 
 // 闭包编译方法混入
 export const ClosureCompiler = {
@@ -18,6 +25,13 @@ export const ClosureCompiler = {
 
         const funcLabel = this.ctx.newLabel("fn");
         const isAsync = isAsyncFunction(expr);
+        const isGenerator = isGeneratorFunction(expr);
+
+        // 对于 Generator 函数，编译为返回 Generator 对象的工厂函数
+        if (isGenerator) {
+            this.compileGeneratorFunctionExpression(expr, funcLabel, captured, outerLocals, outerBoxedVars);
+            return;
+        }
 
         // 总是创建闭包对象，即使没有捕获变量
         // 这样可以统一闭包调用机制，避免区分普通函数指针和闭包对象
@@ -72,6 +86,58 @@ export const ClosureCompiler = {
         });
     },
 
+    // 编译 Generator 函数表达式
+    compileGeneratorFunctionExpression(expr, funcLabel, captured, outerLocals, outerBoxedVars) {
+        const vm = this.vm;
+        const genBodyLabel = this.ctx.newLabel("gen_body");
+
+        // 创建 Generator 工厂函数的闭包
+        // 闭包结构: [magic, factory_ptr, captured...]
+        const closureSize = 16 + captured.length * 8;
+
+        vm.movImm(VReg.A0, closureSize);
+        vm.call("_alloc");
+        vm.push(VReg.RET);
+
+        // 写入 Generator 魔数
+        vm.movImm(VReg.V1, GENERATOR_MAGIC);
+        vm.store(VReg.RET, 0, VReg.V1);
+
+        // 写入工厂函数指针
+        vm.lea(VReg.V1, funcLabel);
+        vm.store(VReg.RET, 8, VReg.V1);
+
+        // 写入捕获变量
+        for (let i = 0; i < captured.length; i++) {
+            const varName = captured[i];
+            const offset = outerLocals[varName];
+            if (offset !== undefined) {
+                if (outerBoxedVars.has(varName)) {
+                    vm.load(VReg.V1, VReg.FP, offset);
+                } else {
+                    vm.load(VReg.V1, VReg.FP, offset);
+                }
+                vm.pop(VReg.V2);
+                vm.push(VReg.V2);
+                vm.store(VReg.V2, 16 + i * 8, VReg.V1);
+            }
+        }
+
+        vm.pop(VReg.RET);
+
+        // 添加到待处理函数列表
+        if (!this.pendingFunctions) {
+            this.pendingFunctions = [];
+        }
+        this.pendingFunctions.push({
+            label: funcLabel,
+            expr: expr,
+            captured: captured,
+            isGenerator: true,
+            bodyLabel: genBodyLabel,
+        });
+    },
+
     // 生成待处理的函数体
     generatePendingFunctions() {
         if (!this.pendingFunctions || this.pendingFunctions.length === 0) {
@@ -80,10 +146,141 @@ export const ClosureCompiler = {
 
         for (const func of this.pendingFunctions) {
             this.vm.label(func.label);
-            this.compileFunctionBody(func.expr, func.captured);
+            if (func.isGenerator) {
+                this.compileGeneratorFunctionBody(func.expr, func.captured, func.bodyLabel);
+            } else {
+                this.compileFunctionBody(func.expr, func.captured);
+            }
         }
 
         this.pendingFunctions = [];
+    },
+
+    // 编译 Generator 函数体 - 工厂函数
+    // 调用时创建并返回 Generator 对象
+    compileGeneratorFunctionBody(expr, captured, bodyLabel) {
+        const vm = this.vm;
+        const params = expr.params || [];
+
+        // 工厂函数入口
+        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+
+        // 计算局部变量数量
+        const localsCount = this.countGeneratorLocals(expr);
+
+        // S0 = 闭包指针（由调用者传入）
+        // 创建 Generator 对象
+        vm.lea(VReg.A0, bodyLabel); // func_ptr = body 函数
+        vm.mov(VReg.A1, VReg.S0); // closure_ptr
+        vm.movImm(VReg.A2, localsCount + params.length); // locals_count
+        vm.call("_generator_create");
+        vm.mov(VReg.S1, VReg.RET); // S1 = Generator 对象
+
+        // 将参数存储到 Generator 的 locals 区域
+        for (let i = 0; i < params.length && i < 6; i++) {
+            if (params[i].type === "Identifier") {
+                // Generator.locals[i] = arg[i]
+                vm.movImm(VReg.V0, 112 + i * 8); // locals 起始偏移
+                vm.add(VReg.V1, VReg.S1, VReg.V0);
+                vm.store(VReg.V1, 0, vm.getArgReg(i));
+            }
+        }
+
+        // 返回 Generator 对象
+        vm.mov(VReg.RET, VReg.S1);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 48);
+
+        // 生成 Generator body 函数
+        this.compileGeneratorBodyFunction(expr, captured, bodyLabel, params.length);
+    },
+
+    // 计算 Generator 函数需要的局部变量数量
+    countGeneratorLocals(expr) {
+        let count = 0;
+        const countInBlock = (body) => {
+            if (!body) return;
+            const stmts = body.body || [body];
+            for (const stmt of stmts) {
+                if (stmt.type === "VariableDeclaration") {
+                    count += stmt.declarations.length;
+                } else if (stmt.type === "ForStatement" && stmt.init && stmt.init.type === "VariableDeclaration") {
+                    count += stmt.init.declarations.length;
+                }
+            }
+        };
+        if (expr.body && expr.body.type === "BlockStatement") {
+            countInBlock(expr.body);
+        }
+        return count;
+    },
+
+    // 编译 Generator body 函数
+    // 这是状态机驱动的函数，根据 resume_point 跳转到正确的位置
+    compileGeneratorBodyFunction(expr, captured, bodyLabel, paramCount) {
+        const vm = this.vm;
+
+        vm.label(bodyLabel);
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+
+        // A0 = Generator 对象
+        vm.mov(VReg.S0, VReg.A0);
+
+        // 保存上下文
+        const prevLocals = this.ctx.locals;
+        const prevStackOffset = this.ctx.stackOffset;
+        const prevReturnLabel = this.ctx.returnLabel;
+        const prevBoxedVars = this.ctx.boxedVars;
+        const prevInGenerator = this.ctx.inGenerator;
+        const prevGeneratorReg = this.ctx.generatorReg;
+
+        this.ctx.locals = {};
+        this.ctx.stackOffset = 0;
+        // 保留 callee-saved 寄存器占用的栈空间
+        this.ctx.reserveCalleeSavedSpace(5); // S0, S1, S2, S3, S4 = 5 个寄存器
+        this.ctx.boxedVars = new Set();
+        this.ctx.inGenerator = true;
+        this.ctx.generatorReg = VReg.S0; // Generator 对象在 S0
+
+        // 为参数创建局部变量引用 (指向 Generator.locals)
+        const params = expr.params || [];
+        for (let i = 0; i < params.length; i++) {
+            if (params[i].type === "Identifier") {
+                // 从 Generator.locals[i] 加载到栈
+                vm.movImm(VReg.V0, 112 + i * 8);
+                vm.add(VReg.V1, VReg.S0, VReg.V0);
+                vm.load(VReg.V2, VReg.V1, 0);
+                const offset = this.ctx.allocLocal(params[i].name);
+                vm.store(VReg.FP, offset, VReg.V2);
+            }
+        }
+
+        const returnLabel = this.ctx.newLabel("gen_return");
+        this.ctx.returnLabel = returnLabel;
+
+        // 编译函数体
+        if (expr.body.type === "BlockStatement") {
+            for (const stmt of expr.body.body) {
+                this.compileStatement(stmt);
+            }
+        }
+
+        // 设置状态为完成
+        vm.movImm(VReg.V0, 3); // COMPLETED
+        vm.store(VReg.S0, 8, VReg.V0);
+
+        // 返回 undefined
+        vm.label(returnLabel);
+        vm.lea(VReg.RET, "_js_undefined");
+        vm.load(VReg.RET, VReg.RET, 0);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
+
+        // 恢复上下文
+        this.ctx.locals = prevLocals;
+        this.ctx.stackOffset = prevStackOffset;
+        this.ctx.returnLabel = prevReturnLabel;
+        this.ctx.boxedVars = prevBoxedVars;
+        this.ctx.inGenerator = prevInGenerator;
+        this.ctx.generatorReg = prevGeneratorReg;
     },
 
     // 编译函数体
@@ -104,6 +301,8 @@ export const ClosureCompiler = {
 
         this.ctx.locals = {};
         this.ctx.stackOffset = 0;
+        // 保留 callee-saved 寄存器占用的栈空间
+        this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
         this.ctx.inAsyncFunction = isAsync;
 
         // 分析函数体中哪些变量会被内部闭包捕获

@@ -4,10 +4,16 @@
 import { VReg } from "../../../vm/registers.js";
 import { JS_UNDEFINED } from "../../core/jsvalue.js";
 
-const ARRAY_HEADER_SIZE = 16; // length + capacity
+// 数组布局 (24 bytes header + elements):
+//   offset 0:  type (8 bytes) - TYPE_ARRAY = 1
+//   offset 8:  length (8 bytes) - 当前元素数量
+//   offset 16: capacity (8 bytes) - 最大容量
+//   offset 24: elements[0]
+//   ...
+const ARRAY_HEADER_SIZE = 24;
 const ARRAY_MIN_CAPACITY = 8;
 
-// 数组基础操作 Mixin
+// 数组基础操作 Mixin (unused - see index.js for actual implementation)
 export const ArrayBaseMixin = {
     // 数组 push（带容量检查和自动扩容）
     // _array_push(arr_jsvalue, value) -> 数组 JSValue（扩容后可能变化）

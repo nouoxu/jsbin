@@ -40,6 +40,8 @@ export const FunctionCompiler = {
                 return "Object";
             case Type.STRING:
                 return "String";
+            case Type.GENERATOR:
+                return "Generator";
             default:
                 return "unknown";
         }
@@ -68,6 +70,59 @@ export const FunctionCompiler = {
                 return true;
             }
         }
+        return false;
+    },
+
+    // 编译 Generator 方法调用
+    compileGeneratorMethod(obj, methodName, args) {
+        const vm = this.vm;
+
+        // 编译 Generator 对象
+        this.compileExpression(obj);
+        vm.mov(VReg.A0, VReg.RET);
+
+        if (methodName === "next") {
+            // g.next(value) -> { value, done }
+            if (args && args.length > 0) {
+                vm.push(VReg.A0); // 保存 generator
+                this.compileExpression(args[0]);
+                vm.mov(VReg.A1, VReg.RET);
+                vm.pop(VReg.A0);
+            } else {
+                // 没有参数时传 undefined
+                vm.lea(VReg.A1, "_js_undefined");
+                vm.load(VReg.A1, VReg.A1, 0);
+            }
+            vm.call("_generator_next");
+            return true;
+        } else if (methodName === "return") {
+            // g.return(value) -> { value, done: true }
+            if (args && args.length > 0) {
+                vm.push(VReg.A0);
+                this.compileExpression(args[0]);
+                vm.mov(VReg.A1, VReg.RET);
+                vm.pop(VReg.A0);
+            } else {
+                vm.lea(VReg.A1, "_js_undefined");
+                vm.load(VReg.A1, VReg.A1, 0);
+            }
+            vm.call("_generator_return");
+            return true;
+        } else if (methodName === "throw") {
+            // g.throw(error)
+            if (args && args.length > 0) {
+                vm.push(VReg.A0);
+                this.compileExpression(args[0]);
+                vm.mov(VReg.A1, VReg.RET);
+                vm.pop(VReg.A0);
+            } else {
+                vm.lea(VReg.A1, "_js_undefined");
+                vm.load(VReg.A1, VReg.A1, 0);
+            }
+            vm.call("_generator_throw");
+            return true;
+        }
+
         return false;
     },
 
@@ -158,7 +213,8 @@ export const FunctionCompiler = {
 
     // 编译方法调用 - 类似闭包调用但传递 this
     // funcReg: 存放函数指针或闭包对象的寄存器
-    // thisReg: 存放 this 对象的寄存器
+    // thisReg: 存放 this 对象 (NaN-boxed) 的寄存器
+    // 类方法调用约定: A0 = this (解包后的指针), A1-A5 = 参数
     compileMethodCall(funcReg, thisReg, args) {
         const vm = this.vm;
 
@@ -166,24 +222,42 @@ export const FunctionCompiler = {
         vm.push(thisReg);
         vm.push(funcReg);
 
-        // 编译参数
-        this.compileCallArguments(args);
+        // 编译参数并压栈（逆序，因为栈是 LIFO）
+        // 参数将从 A1 开始，所以最多 5 个参数 (A1-A5)
+        const argCount = Math.min(args.length, 5);
+        for (let i = argCount - 1; i >= 0; i--) {
+            this.compileExpression(args[i]);
+            vm.push(VReg.RET);
+        }
 
         // 恢复函数指针和 this
+        // 注意：需要跳过已压栈的参数
+        // 栈结构: [thisReg][funcReg][arg_n-1]...[arg_0] <- SP
+        // 先把参数弹到临时位置（S4, S5 是 callee-saved）
+        // 为了简化，直接用栈操作：先弹所有参数到栈顶，处理完再弹回
+
+        // 方案：用临时寄存器保存参数值
+        // 暂时只支持最多 2 个参数（使用 S4, S5）
+        if (argCount > 0) vm.pop(VReg.S4); // arg0
+        if (argCount > 1) vm.pop(VReg.S5); // arg1
+        // 超过 2 个参数的情况暂不处理
+
         vm.pop(VReg.S0); // 函数指针/闭包
-        vm.pop(VReg.S3); // this 对象
+        vm.pop(VReg.S3); // this 对象 (NaN-boxed)
 
-        // 通过 A5 寄存器传递 this（这是额外的隐藏参数）
-        vm.mov(VReg.A5, VReg.S3);
+        // 解包 this 到 S2（避免与 A0 冲突）
+        vm.mov(VReg.A0, VReg.S3);
+        vm.call("_js_unbox");
+        vm.mov(VReg.S2, VReg.RET); // S2 = 解包后的 this 指针
 
-        // 检查是否是闭包
+        // 检查是否是闭包 (使用 V7 作为临时寄存器，避免覆盖参数寄存器)
         const notClosureLabel = this.ctx.newLabel("method_not_closure");
         const callLabel = this.ctx.newLabel("method_do_call");
 
         // 加载 magic
         vm.load(VReg.S1, VReg.S0, 0);
-        vm.movImm(VReg.S2, CLOSURE_MAGIC);
-        vm.cmp(VReg.S1, VReg.S2);
+        vm.movImm(VReg.V7, CLOSURE_MAGIC); // 使用 V7 而不是 V0
+        vm.cmp(VReg.S1, VReg.V7);
         vm.jne(notClosureLabel);
 
         // 是闭包：加载函数指针
@@ -196,6 +270,11 @@ export const FunctionCompiler = {
         vm.movImm(VReg.S0, 0);
 
         vm.label(callLabel);
+        // 现在设置参数寄存器（在闭包检查之后，确保不会被覆盖）
+        vm.mov(VReg.A0, VReg.S2); // this
+        if (argCount > 0) vm.mov(VReg.A1, VReg.S4); // arg0
+        if (argCount > 1) vm.mov(VReg.A2, VReg.S5); // arg1
+
         vm.callIndirect(VReg.S1);
     },
 
@@ -254,9 +333,58 @@ export const FunctionCompiler = {
         vm.mov(VReg.RET, VReg.S3);
     },
 
+    // 编译 super() 调用
+    compileSuperCall(args) {
+        const superClass = this.ctx.superClass;
+        if (!superClass) {
+            console.warn("super() called outside of a subclass constructor");
+            this.vm.movImm(VReg.RET, 0);
+            return;
+        }
+
+        // 获取父类构造函数标签
+        const parentClassInfo = this.ctx.classes[superClass];
+        if (!parentClassInfo) {
+            console.warn("Parent class not found:", superClass);
+            this.vm.movImm(VReg.RET, 0);
+            return;
+        }
+
+        const parentConstructorLabel = parentClassInfo.constructorLabel;
+
+        // 加载 this (从 __this)
+        const thisOffset = this.ctx.getLocal("__this");
+        if (thisOffset === undefined) {
+            console.warn("__this not found in super() call");
+            this.vm.movImm(VReg.RET, 0);
+            return;
+        }
+        this.vm.load(VReg.A0, VReg.FP, thisOffset); // A0 = this
+
+        // 编译参数（从 A1 开始）
+        for (let i = 0; i < (args || []).length; i++) {
+            this.vm.push(VReg.A0); // 保存 this
+            this.compileExpression(args[i]);
+            this.vm.mov(this.vm.getArgReg(i + 1), VReg.RET);
+            this.vm.pop(VReg.A0); // 恢复 this
+        }
+
+        // 调用父类构造函数
+        this.vm.call(parentConstructorLabel);
+
+        // super() 的返回值是 this（已经初始化）
+        this.vm.load(VReg.RET, VReg.FP, thisOffset);
+    },
+
     // 编译函数调用
     compileCallExpression(expr) {
         const callee = expr.callee;
+
+        // 处理 super() 调用
+        if (callee.type === "SuperExpression") {
+            this.compileSuperCall(expr.arguments);
+            return;
+        }
 
         // 内置函数处理
         if (callee.type === "Identifier") {
@@ -591,6 +719,14 @@ export const FunctionCompiler = {
                                     this.vm.call("_print_number_no_nl");
                                     this.vm.call("_print_space");
                                 }
+                            } else if (argType === Type.BOOLEAN) {
+                                // 布尔类型使用 _print_bool
+                                if (isLast) {
+                                    this.vm.call("_print_bool");
+                                } else {
+                                    this.vm.call("_print_bool_no_nl");
+                                    this.vm.call("_print_space");
+                                }
                             } else if (argType === Type.STRING) {
                                 // 字符串类型 - 使用智能打印（处理数据段和堆字符串）
                                 if (isLast) {
@@ -823,6 +959,16 @@ export const FunctionCompiler = {
             // 根据对象类型推断，调用正确的方法
             const objType = this.inferObjectType(obj);
 
+            // Generator 方法
+            if (objType === "Generator" || objType === "unknown") {
+                const generatorMethods = ["next", "return", "throw"];
+                if (generatorMethods.includes(prop.name)) {
+                    if (this.compileGeneratorMethod(obj, prop.name, expr.arguments)) {
+                        return;
+                    }
+                }
+            }
+
             // String 方法 - 优先检查，因为 slice/indexOf 在字符串和数组中都有
             if (objType === "String") {
                 const stringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "slice", "substring", "indexOf", "concat"];
@@ -835,7 +981,7 @@ export const FunctionCompiler = {
 
             // 数组方法 - Array 和 TypedArray 共享
             if (objType === "Array" || objType === "TypedArray" || objType === "unknown") {
-                const arrayMethods = ["push", "pop", "shift", "unshift", "length", "at", "slice", "indexOf", "includes", "forEach", "map", "filter", "reduce"];
+                const arrayMethods = ["push", "pop", "shift", "unshift", "length", "at", "slice", "indexOf", "includes", "forEach", "map", "filter", "reduce", "flat", "flatMap", "sort", "reverse"];
                 if (arrayMethods.includes(prop.name)) {
                     this.compileArrayMethod(obj, prop.name, expr.arguments);
                     return;
@@ -920,10 +1066,12 @@ export const FunctionCompiler = {
             // 通用对象方法调用 - obj.method(args)
             // 获取方法（闭包或函数指针）并传递 this
             this.compileExpression(obj); // obj -> RET
-            this.vm.push(VReg.RET); // 保存 obj 作为 this
+            this.vm.push(VReg.RET); // 保存 obj 作为 this (NaN-boxed)
 
-            // 获取方法属性
+            // 获取方法属性 - 需要先解包对象
             const propLabel = this.asm.addString(prop.name || prop.value);
+            this.vm.mov(VReg.A0, VReg.RET);
+            this.vm.call("_js_unbox"); // 解包对象指针
             this.vm.mov(VReg.A0, VReg.RET);
             this.vm.lea(VReg.A1, propLabel);
             this.vm.call("_object_get"); // 获取方法 -> RET

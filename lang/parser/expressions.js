@@ -40,7 +40,18 @@ export const ExpressionParser = {
         if (raw.includes(".") || raw.includes("e") || raw.includes("E")) {
             return new AST.Literal(parseFloat(raw), raw);
         } else {
-            return new AST.Literal(parseInt(raw), raw);
+            // 处理不同进制的数字
+            let value;
+            if (raw.startsWith("0x") || raw.startsWith("0X")) {
+                value = parseInt(raw, 16);
+            } else if (raw.startsWith("0b") || raw.startsWith("0B")) {
+                value = parseInt(raw.slice(2), 2); // 去掉 0b 前缀
+            } else if (raw.startsWith("0o") || raw.startsWith("0O")) {
+                value = parseInt(raw.slice(2), 8); // 去掉 0o 前缀
+            } else {
+                value = parseInt(raw, 10);
+            }
+            return new AST.Literal(value, raw);
         }
     },
 
@@ -370,6 +381,14 @@ export const ExpressionParser = {
 
     parseFunctionExpression() {
         let isAsync = false;
+        let isGenerator = false;
+
+        // 检查 function* (generator)
+        if (this.peekTokenIs(TokenType.ASTERISK)) {
+            isGenerator = true;
+            this.nextToken();
+        }
+
         if (!this.expectPeek(TokenType.LPAREN)) {
             if (this.peekTokenIs(TokenType.IDENT)) {
                 this.nextToken();
@@ -377,13 +396,13 @@ export const ExpressionParser = {
                 if (!this.expectPeek(TokenType.LPAREN)) return null;
                 let params = this.parseFunctionParams();
                 if (!this.expectPeek(TokenType.LBRACE)) return null;
-                return new AST.FunctionExpression(id, params, this.parseBlockStatement(), isAsync);
+                return new AST.FunctionExpression(id, params, this.parseBlockStatement(), isAsync, isGenerator);
             }
             return null;
         }
         let params = this.parseFunctionParams();
         if (!this.expectPeek(TokenType.LBRACE)) return null;
-        return new AST.FunctionExpression(null, params, this.parseBlockStatement(), isAsync);
+        return new AST.FunctionExpression(null, params, this.parseBlockStatement(), isAsync, isGenerator);
     },
 
     parseAsyncExpression() {
@@ -507,5 +526,27 @@ export const ExpressionParser = {
             argument = this.parseExpression(Precedence.LOWEST);
         }
         return new AST.YieldExpression(argument, delegate);
+    },
+
+    // 解析正则表达式字面量
+    // 当 / 出现在表达式开始位置时，解析为正则
+    parseRegExpLiteral() {
+        // 当前 token 是 /，获取其在源码中的位置
+        const startPos = this.curToken.position;
+
+        // 调用 lexer 的 scanRegExpFromPosition 方法来扫描完整的正则表达式
+        const regexToken = this.lexer.scanRegExpFromPosition(startPos);
+
+        // 更新 token 流
+        this.curToken = regexToken;
+        this.nextToken();
+
+        // 创建正则表达式字面量 AST 节点
+        const pattern = regexToken.pattern;
+        const flags = regexToken.flags;
+        const regex = new RegExp(pattern, flags);
+        const node = new AST.Literal(regex, regexToken.literal);
+        node.regex = { pattern, flags };
+        return node;
     },
 };

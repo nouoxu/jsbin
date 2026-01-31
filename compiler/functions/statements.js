@@ -13,8 +13,16 @@ const BOX_SIZE = 8;
 export const StatementCompiler = {
     // 编译语句
     compileStatement(stmt) {
+        if (!stmt) {
+            // 空语句，跳过
+            return;
+        }
         switch (stmt.type) {
             case "ExpressionStatement":
+                if (!stmt.expression) {
+                    // 空表达式语句，跳过（如单独的分号）
+                    return;
+                }
                 this.compileExpression(stmt.expression);
                 break;
             case "VariableDeclaration":
@@ -165,7 +173,105 @@ export const StatementCompiler = {
                         this.vm.store(VReg.FP, offset, VReg.RET);
                     }
                 }
+            } else if (decl.id.type === "ArrayPattern") {
+                // 数组解构赋值: const [a, b] = [1, 2]
+                this.compileArrayDestructuring(decl.id, decl.init);
+            } else if (decl.id.type === "ObjectPattern") {
+                // 对象解构赋值: const { x, y } = { x: 1, y: 2 }
+                this.compileObjectDestructuring(decl.id, decl.init);
             }
+        }
+    },
+
+    // 编译数组解构赋值
+    compileArrayDestructuring(pattern, init) {
+        if (!init) return;
+
+        // 先编译右侧数组，结果在 RET（返回的是 boxed 数组）
+        this.compileExpression(init);
+
+        // 保存 boxed 数组指针到临时变量
+        const tempOffset = this.ctx.allocLocal("_destruct_arr_" + this.ctx.tempCounter++);
+        this.vm.store(VReg.FP, tempOffset, VReg.RET);
+
+        // 遍历每个元素
+        for (let i = 0; i < pattern.elements.length; i++) {
+            const element = pattern.elements[i];
+            if (!element) continue; // 跳过空位 [a, , b]
+
+            if (element.type === "Identifier") {
+                const name = element.name;
+                let offset = this.ctx.getLocal(name);
+                if (offset === undefined) {
+                    offset = this.ctx.allocLocal(name);
+                }
+
+                // 使用 _array_get 获取元素（处理 boxed 数组）
+                this.vm.load(VReg.A0, VReg.FP, tempOffset); // A0 = boxed array
+                this.vm.movImm(VReg.A1, i); // A1 = index
+                this.vm.call("_array_get"); // RET = element
+                this.vm.store(VReg.FP, offset, VReg.RET);
+            } else if (element.type === "RestElement") {
+                // 剩余元素 ...rest
+                // TODO: 实现 rest 元素
+            }
+        }
+    },
+
+    // 编译对象解构赋值
+    compileObjectDestructuring(pattern, init) {
+        if (!init) return;
+
+        // 先编译右侧对象，结果在 RET
+        this.compileExpression(init);
+
+        // 保存对象指针到临时变量
+        const tempOffset = this.ctx.allocLocal("_destruct_obj_" + this.ctx.tempCounter++);
+        this.vm.store(VReg.FP, tempOffset, VReg.RET);
+
+        // 遍历每个属性
+        for (const prop of pattern.properties) {
+            if (prop.type === "RestElement") {
+                // TODO: 实现 rest 元素
+                continue;
+            }
+
+            // 获取属性名
+            let keyName;
+            if (prop.key.type === "Identifier") {
+                keyName = prop.key.name;
+            } else if (prop.key.type === "Literal") {
+                keyName = String(prop.key.value);
+            } else {
+                continue;
+            }
+
+            // 获取变量名（可能有别名 { x: alias }）
+            let varName;
+            if (prop.value.type === "Identifier") {
+                varName = prop.value.name;
+            } else if (prop.value.type === "AssignmentPattern") {
+                // 带默认值的解构 { x = 10 }
+                varName = prop.value.left.name;
+                // TODO: 实现默认值
+            } else {
+                continue;
+            }
+
+            // 分配变量
+            let offset = this.ctx.getLocal(varName);
+            if (offset === undefined) {
+                offset = this.ctx.allocLocal(varName);
+            }
+
+            // 加载对象指针
+            this.vm.load(VReg.A0, VReg.FP, tempOffset);
+            // 将属性名存入数据段
+            const keyLabel = this.ctx.addString(keyName);
+            this.vm.lea(VReg.A1, keyLabel);
+            // 调用 _obj_get
+            this.vm.call("_obj_get");
+            this.vm.store(VReg.FP, offset, VReg.RET);
         }
     },
 
@@ -194,6 +300,7 @@ export const StatementCompiler = {
             body: stmt.body,
             id: stmt.id,
             async: stmt.async, // 保留 async 标志
+            generator: stmt.generator, // 保留 generator 标志
         };
 
         this.compileFunctionExpression(funcExpr);
@@ -222,10 +329,27 @@ export const StatementCompiler = {
 
     // 编译 if 语句
     compileIfStatement(stmt) {
+        // 死代码消除：如果条件是常量，只编译对应的分支
+        const constValue = this.evaluateConstantCondition(stmt.test);
+        if (constValue !== null) {
+            if (constValue) {
+                // 条件恒为真，只编译 consequent
+                this.compileStatement(stmt.consequent);
+            } else if (stmt.alternate) {
+                // 条件恒为假，只编译 alternate
+                this.compileStatement(stmt.alternate);
+            }
+            // 否则什么都不生成
+            return;
+        }
+
         const elseLabel = this.ctx.newLabel("else");
         const endLabel = this.ctx.newLabel("endif");
 
+        // 编译条件表达式并转换为布尔值
         this.compileExpression(stmt.test);
+        this.vm.mov(VReg.A0, VReg.RET);
+        this.vm.call("_to_boolean");
         this.vm.cmpImm(VReg.RET, 0);
         this.vm.jeq(stmt.alternate ? elseLabel : endLabel);
 
@@ -240,8 +364,93 @@ export const StatementCompiler = {
         this.vm.label(endLabel);
     },
 
+    // 尝试在编译时计算条件表达式的值
+    // 返回 true/false（常量值）或 null（无法确定）
+    evaluateConstantCondition(expr) {
+        if (!expr) return null;
+
+        // 字面量
+        if (expr.type === "Literal") {
+            return !!expr.value;
+        }
+
+        // 布尔字面量
+        if (expr.type === "BooleanLiteral") {
+            return expr.value;
+        }
+
+        // 数字字面量
+        if (expr.type === "NumericLiteral") {
+            return !!expr.value;
+        }
+
+        // 字符串字面量
+        if (expr.type === "StringLiteral") {
+            return expr.value.length > 0;
+        }
+
+        // 一元运算符 !
+        if (expr.type === "UnaryExpression" && expr.operator === "!") {
+            const inner = this.evaluateConstantCondition(expr.argument);
+            if (inner !== null) return !inner;
+        }
+
+        // 二元比较运算符（两边都是字面量时）
+        if (expr.type === "BinaryExpression") {
+            const left = expr.left;
+            const right = expr.right;
+            const leftLit = left.type === "Literal" || left.type === "NumericLiteral";
+            const rightLit = right.type === "Literal" || right.type === "NumericLiteral";
+
+            if (leftLit && rightLit) {
+                const a = left.value;
+                const b = right.value;
+                switch (expr.operator) {
+                    case "<":
+                        return a < b;
+                    case "<=":
+                        return a <= b;
+                    case ">":
+                        return a > b;
+                    case ">=":
+                        return a >= b;
+                    case "==":
+                        return a == b;
+                    case "===":
+                        return a === b;
+                    case "!=":
+                        return a != b;
+                    case "!==":
+                        return a !== b;
+                }
+            }
+        }
+
+        // 逻辑运算符
+        if (expr.type === "LogicalExpression") {
+            const leftVal = this.evaluateConstantCondition(expr.left);
+            const rightVal = this.evaluateConstantCondition(expr.right);
+
+            if (expr.operator === "&&") {
+                if (leftVal === false) return false;
+                if (leftVal === true && rightVal !== null) return rightVal;
+            } else if (expr.operator === "||") {
+                if (leftVal === true) return true;
+                if (leftVal === false && rightVal !== null) return rightVal;
+            }
+        }
+
+        return null;
+    },
+
     // 编译 while 语句
     compileWhileStatement(stmt) {
+        // 死代码消除：如果条件恒为假，跳过整个循环
+        const constValue = this.evaluateConstantCondition(stmt.test);
+        if (constValue === false) {
+            return; // 永远不执行的循环
+        }
+
         const loopLabel = this.ctx.newLabel("while");
         const endLabel = this.ctx.newLabel("endwhile");
 
@@ -252,9 +461,16 @@ export const StatementCompiler = {
         this.ctx.continueLabel = loopLabel;
 
         this.vm.label(loopLabel);
-        this.compileExpression(stmt.test);
-        this.vm.cmpImm(VReg.RET, 0);
-        this.vm.jeq(endLabel);
+
+        // 如果条件恒为真，不需要生成条件检查代码（无限循环，依赖 break）
+        if (constValue !== true) {
+            // 编译条件表达式并转换为布尔值
+            this.compileExpression(stmt.test);
+            this.vm.mov(VReg.A0, VReg.RET);
+            this.vm.call("_to_boolean");
+            this.vm.cmpImm(VReg.RET, 0);
+            this.vm.jeq(endLabel);
+        }
 
         this.compileStatement(stmt.body);
         this.vm.jmp(loopLabel);
@@ -289,7 +505,10 @@ export const StatementCompiler = {
         this.vm.label(loopLabel);
 
         if (stmt.test) {
+            // 编译条件表达式并转换为布尔值
             this.compileExpression(stmt.test);
+            this.vm.mov(VReg.A0, VReg.RET);
+            this.vm.call("_to_boolean");
             this.vm.cmpImm(VReg.RET, 0);
             this.vm.jeq(endLabel);
         }
@@ -575,26 +794,78 @@ export const StatementCompiler = {
     },
 
     // 编译 try 语句
+    // 简化实现：使用 setjmp/longjmp 风格的异常处理
     compileTryStatement(stmt) {
-        // 简化实现：直接执行 try 块，忽略异常处理
+        const labelId = this.nextLabelId();
+        const catchLabel = `_try_catch_${labelId}`;
+        const finallyLabel = `_try_finally_${labelId}`;
+        const endLabel = `_try_end_${labelId}`;
+
+        // 保存当前的异常处理标签到上下文
+        const savedExceptionLabel = this.ctx.exceptionLabel;
+        if (stmt.handler) {
+            this.ctx.exceptionLabel = catchLabel;
+        }
+
+        // 执行 try 块
         this.compileStatement(stmt.block);
 
+        // try 块正常结束
+        this.ctx.exceptionLabel = savedExceptionLabel;
+
+        // 跳过 catch 块
         if (stmt.finalizer) {
+            this.vm.jmp(finallyLabel);
+        } else {
+            this.vm.jmp(endLabel);
+        }
+
+        // catch 块
+        if (stmt.handler) {
+            this.vm.label(catchLabel);
+
+            // 异常对象在 RET 中（由 throw 设置）
+
+            // 如果有参数，将异常对象绑定到局部变量
+            if (stmt.handler.param) {
+                const paramName = stmt.handler.param.name;
+                const offset = this.ctx.allocLocal(paramName);
+                this.vm.store(VReg.FP, offset, VReg.RET);
+            }
+
+            // 执行 catch 块
+            this.compileStatement(stmt.handler.body);
+        }
+
+        // finally 块
+        if (stmt.finalizer) {
+            this.vm.label(finallyLabel);
             this.compileStatement(stmt.finalizer);
         }
+
+        this.vm.label(endLabel);
     },
 
     // 编译 throw 语句
     compileThrowStatement(stmt) {
-        // 简化实现：调用 exit
+        // 编译异常对象
         if (stmt.argument) {
             this.compileExpression(stmt.argument);
-        }
-        this.vm.movImm(VReg.A0, 1);
-        if (this.arch === "arm64") {
-            this.vm.syscall(this.os === "linux" ? 93 : 1);
         } else {
-            this.vm.syscall(this.os === "linux" ? 60 : 0x2000001);
+            // throw; 没有参数，使用 undefined
+            this.vm.lea(VReg.RET, "_js_undefined");
+            this.vm.load(VReg.RET, VReg.RET, 0);
+        }
+
+        // 如果在 try 块内，跳转到 catch
+        if (this.ctx.exceptionLabel) {
+            // RET 中是异常对象，直接跳转到 catch
+            this.vm.jmp(this.ctx.exceptionLabel);
+        } else {
+            // 没有异常处理器，退出程序
+            // 保存异常对象
+            this.vm.mov(VReg.A0, VReg.RET);
+            this.vm.call("_exception_throw_unhandled");
         }
     },
 
@@ -646,6 +917,14 @@ export const StatementCompiler = {
         const constructorEndLabel = `_class_${className}_end_${labelId}`;
         const protoLabel = `_class_${className}_proto_${labelId}`;
 
+        // 注册类信息到上下文（供方法内部的 new 表达式使用）
+        this.ctx.classes[className] = {
+            constructorLabel: constructorLabel,
+            prototypeLabel: protoLabel,
+            labelId: labelId,
+            localOffset: classOffset,
+        };
+
         // 跳过类代码区域
         this.vm.jmp(constructorEndLabel);
 
@@ -656,7 +935,9 @@ export const StatementCompiler = {
         const savedCtx = this.ctx;
         this.ctx = this.ctx.clone(className);
         this.ctx.locals = {};
-        this.ctx.localOffset = 0;
+        this.ctx.stackOffset = 0;
+        // 保留 callee-saved 寄存器占用的栈空间
+        this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
         this.ctx.inClass = true;
         this.ctx.className = className;
         this.ctx.superClass = superClass ? superClass.name : null;
@@ -710,10 +991,8 @@ export const StatementCompiler = {
                 const paramName = param.name || (param.left && param.left.name);
                 if (paramName) {
                     const paramOffset = this.ctx.allocLocal(paramName);
-                    const argReg = VReg.A0 + i + 1; // A1, A2, ...
-                    if (argReg <= VReg.A7) {
-                        this.vm.store(VReg.FP, paramOffset, argReg);
-                    }
+                    const argReg = this.vm.getArgReg(i + 1); // A1, A2, ...
+                    this.vm.store(VReg.FP, paramOffset, argReg);
                 }
             }
 
@@ -767,6 +1046,18 @@ export const StatementCompiler = {
         this.vm.movImm(VReg.V0, 2); // TYPE_OBJECT = 2
         this.vm.store(VReg.S1, 0, VReg.V0);
 
+        // 如果有父类，设置子类 prototype.__proto__ 指向父类 prototype
+        if (superClass) {
+            const superClassName = superClass.name;
+            const superClassGlobalLabel = `_class_info_${superClassName}`;
+            // 加载父类的类信息对象
+            this.vm.lea(VReg.V0, superClassGlobalLabel);
+            this.vm.load(VReg.V0, VReg.V0, 0); // 父类信息对象
+            this.vm.load(VReg.V0, VReg.V0, 16); // 父类 prototype（在类信息偏移 16）
+            // 设置子类 prototype.__proto__ = 父类 prototype
+            this.vm.store(VReg.S1, 16, VReg.V0); // __proto__ 在对象偏移 16
+        }
+
         // 存储 prototype 地址到类信息
         this.vm.store(VReg.S0, 16, VReg.S1);
 
@@ -809,6 +1100,13 @@ export const StatementCompiler = {
 
         // 存储类对象到局部变量
         this.vm.store(VReg.FP, classOffset, VReg.S0);
+
+        // 将类信息对象地址存储到全局数据段（供方法内的 new 使用）
+        const classGlobalLabel = `_class_info_${className}`;
+        this.asm.addDataLabel(classGlobalLabel);
+        this.asm.addDataQword(0); // 占位，运行时会被填充
+        this.vm.lea(VReg.V0, classGlobalLabel);
+        this.vm.store(VReg.V0, 0, VReg.S0);
     },
 
     // 编译类方法
@@ -824,7 +1122,9 @@ export const StatementCompiler = {
         const savedCtx = this.ctx;
         this.ctx = this.ctx.clone(`${className}.${methodName}`);
         this.ctx.locals = {};
-        this.ctx.localOffset = 0;
+        this.ctx.stackOffset = 0;
+        // 保留 callee-saved 寄存器占用的栈空间
+        this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
         this.ctx.inClass = true;
         this.ctx.className = className;
         this.ctx.returnLabel = returnLabel;
@@ -840,10 +1140,8 @@ export const StatementCompiler = {
             const paramName = param.name || (param.left && param.left.name);
             if (paramName) {
                 const paramOffset = this.ctx.allocLocal(paramName);
-                const argReg = VReg.A0 + i + 1;
-                if (argReg <= VReg.A7) {
-                    this.vm.store(VReg.FP, paramOffset, argReg);
-                }
+                const argReg = this.vm.getArgReg(i + 1); // A1, A2, ...
+                this.vm.store(VReg.FP, paramOffset, argReg);
             }
         }
 

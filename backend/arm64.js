@@ -109,6 +109,11 @@ export class ARM64Backend extends Backend {
         this.asm.movImm64(this.mapReg(dest), imm);
     }
 
+    movFromLR(dest) {
+        // ARM64: LR 是 X30
+        this.asm.movReg(this.mapReg(dest), Reg.X30);
+    }
+
     load(dest, base, offset) {
         const rd = this.mapReg(dest);
         const rb = this.mapReg(base);
@@ -313,7 +318,15 @@ export class ARM64Backend extends Backend {
     }
 
     cmpImm(a, imm) {
-        this.asm.cmpImm(this.mapReg(a), imm);
+        // ARM64 CMP 只支持 12 位立即数 (0-4095)
+        // 对于更大的立即数，需要先加载到临时寄存器
+        if (imm >= 0 && imm <= 4095) {
+            this.asm.cmpImm(this.mapReg(a), imm);
+        } else {
+            // 使用 X16 作为临时寄存器
+            this.asm.movImm(Reg.X16, imm);
+            this.asm.cmpReg(this.mapReg(a), Reg.X16);
+        }
     }
 
     jmp(label) {

@@ -90,6 +90,7 @@ export const BasePrintGenerator = {
     },
 
     // 打印布尔值
+    // A0 contains NaN-boxed boolean: JS_TRUE (0x7FF9000000000001) or JS_FALSE (0x7FF9000000000000)
     generatePrintBool() {
         const vm = this.vm;
 
@@ -97,6 +98,9 @@ export const BasePrintGenerator = {
         vm.prologue(16, [VReg.S0]);
         vm.mov(VReg.S0, VReg.A0);
 
+        // 提取最低位来判断 true/false
+        // NaN-boxed: JS_TRUE = ...001, JS_FALSE = ...000
+        vm.andImm(VReg.S0, VReg.S0, 1);
         vm.cmpImm(VReg.S0, 0);
         const falseLabel = "_print_bool_false";
         vm.jeq(falseLabel);
@@ -112,6 +116,7 @@ export const BasePrintGenerator = {
     },
 
     // 打印布尔值（无换行）
+    // A0 contains NaN-boxed boolean: JS_TRUE (0x7FF9000000000001) or JS_FALSE (0x7FF9000000000000)
     generatePrintBoolNoNL() {
         const vm = this.vm;
 
@@ -119,6 +124,8 @@ export const BasePrintGenerator = {
         vm.prologue(16, [VReg.S0]);
         vm.mov(VReg.S0, VReg.A0);
 
+        // 提取最低位来判断 true/false
+        vm.andImm(VReg.S0, VReg.S0, 1);
         vm.cmpImm(VReg.S0, 0);
         const falseLabel = "_print_bool_no_nl_false";
         vm.jeq(falseLabel);

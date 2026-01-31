@@ -8,6 +8,16 @@ export const DataStructureCompiler = {
     // 编译数组表达式 [a, b, c]
     compileArrayExpression(expr) {
         const elements = expr.elements || [];
+
+        // 检查是否有展开元素
+        const hasSpread = elements.some((el) => el && el.type === "SpreadElement");
+
+        if (hasSpread) {
+            // 有展开元素，使用动态方式构建数组
+            this.compileArrayExpressionWithSpread(expr);
+            return;
+        }
+
         const count = elements.length;
 
         // 统一走数组运行时封装，避免手写数组头/布局导致的不一致
@@ -27,6 +37,42 @@ export const DataStructureCompiler = {
             this.vm.load(VReg.A0, VReg.FP, arrOffset);
             this.vm.movImm(VReg.A1, i);
             this.vm.call("_array_set");
+        }
+
+        // 返回 boxed 数组 - _array_new_with_size 已经返回 boxed 值，直接加载即可
+        this.vm.load(VReg.RET, VReg.FP, arrOffset);
+    },
+
+    // 编译包含展开元素的数组表达式 [...arr1, x, ...arr2]
+    compileArrayExpressionWithSpread(expr) {
+        const elements = expr.elements || [];
+
+        // 创建空数组
+        this.vm.movImm(VReg.A0, 0);
+        this.vm.call("_array_new_with_size");
+
+        // 保存数组指针
+        const arrTempName = `__arr_spread_${this.nextLabelId()}`;
+        const arrOffset = this.ctx.allocLocal(arrTempName);
+        this.vm.store(VReg.FP, arrOffset, VReg.RET);
+
+        for (let i = 0; i < elements.length; i++) {
+            const el = elements[i];
+            if (!el) continue;
+
+            if (el.type === "SpreadElement") {
+                // 展开元素：将源数组的所有元素 push 到目标数组
+                this.compileExpression(el.argument);
+                this.vm.mov(VReg.A1, VReg.RET); // A1 = 源数组
+                this.vm.load(VReg.A0, VReg.FP, arrOffset); // A0 = 目标数组
+                this.vm.call("_array_concat_into"); // 将源数组元素追加到目标数组
+            } else {
+                // 普通元素：push 到数组
+                this.compileExpression(el);
+                this.vm.mov(VReg.A1, VReg.RET); // A1 = 值
+                this.vm.load(VReg.A0, VReg.FP, arrOffset); // A0 = 数组
+                this.vm.call("_array_push");
+            }
         }
 
         this.vm.load(VReg.RET, VReg.FP, arrOffset);

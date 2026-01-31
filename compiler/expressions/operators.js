@@ -121,8 +121,12 @@ export const OperatorCompiler = {
                 return;
             }
         }
-        // 其他情况正常编译
+        // 其他情况：编译表达式得到 Number 对象指针，然后解包成整数
         this.compileExpression(expr);
+        // Number 对象的 offset 8 是 float64 位模式
+        this.unboxNumber(VReg.RET);
+        // 将 float64 位模式转换为整数
+        this.vm.f2i(VReg.RET, VReg.RET);
     },
 
     // 编译二元表达式
@@ -152,6 +156,9 @@ export const OperatorCompiler = {
                 case "%":
                     result = a % b;
                     break;
+                case "**":
+                    result = a ** b;
+                    break;
                 case "<":
                     result = a < b;
                     break;
@@ -176,17 +183,45 @@ export const OperatorCompiler = {
                 case "!==":
                     result = a !== b;
                     break;
+                // 位运算常量折叠
+                case "&":
+                    result = (a | 0) & (b | 0);
+                    break;
+                case "|":
+                    result = a | 0 | (b | 0);
+                    break;
+                case "^":
+                    result = (a | 0) ^ (b | 0);
+                    break;
+                case "<<":
+                    result = (a | 0) << (b | 0);
+                    break;
+                case ">>":
+                    result = (a | 0) >> (b | 0);
+                    break;
+                case ">>>":
+                    result = (a | 0) >>> (b | 0);
+                    break;
                 default:
                     result = null;
             }
             if (result !== null) {
                 if (typeof result === "boolean") {
-                    this.vm.movImm(VReg.RET, result ? 1 : 0);
+                    const label = result ? "_js_true" : "_js_false";
+                    this.vm.lea(VReg.RET, label);
+                    this.vm.load(VReg.RET, VReg.RET, 0);
                 } else {
                     this.compileNumericLiteral(result);
                 }
                 return;
             }
+        }
+
+        // 字符串常量折叠
+        if (op === "+" && leftLit && rightLit && typeof expr.left.value === "string" && typeof expr.right.value === "string") {
+            const result = expr.left.value + expr.right.value;
+            this.compileStringValue(result);
+            return;
         }
 
         // 字符串连接处理
@@ -197,6 +232,27 @@ export const OperatorCompiler = {
                 this.compileStringConcat(expr);
                 return;
             }
+        }
+
+        // 相等性比较运算符（===, !==, ==, !=）可以用于任何类型
+        // 需要调用运行时函数来处理不同类型的比较
+        const isEqualityOp = ["===", "!==", "==", "!="].includes(op);
+        if (isEqualityOp) {
+            // 编译两个操作数
+            this.compileExpression(expr.right);
+            this.vm.push(VReg.RET);
+            this.compileExpression(expr.left);
+            this.vm.pop(VReg.A1); // 右操作数 -> A1
+            this.vm.mov(VReg.A0, VReg.RET); // 左操作数 -> A0
+
+            // 调用运行时严格相等比较函数
+            if (op === "===" || op === "==") {
+                this.vm.call("_js_strict_eq");
+            } else {
+                this.vm.call("_js_strict_ne");
+            }
+            // 结果已在 RET，是 NaN-boxed boolean
+            return;
         }
 
         // 检测是否为 int 类型运算
@@ -357,6 +413,25 @@ export const OperatorCompiler = {
             case ">>>":
                 this.vm.shr(VReg.RET, VReg.RET, VReg.V1);
                 break;
+            case "**":
+                // 指数运算：调用 Math.pow(base, exp)
+                // 此时 RET = left (base) 的 float64 位模式, V1 = right (exp) 的 float64 位模式
+                // _math_pow 期望 Number 对象指针，所以需要先装箱
+                // 注意: boxNumber 会使用 S0 和 S1，所以用 S2, S3 保存中间值
+
+                // 先装箱 exp (V1)，保存到 S2
+                this.vm.mov(VReg.S2, VReg.RET); // 临时保存 base 到 S2
+                this.boxNumber(VReg.V1); // exp -> Number
+                this.vm.mov(VReg.S3, VReg.RET); // 保存 exp Number 到 S3
+
+                // 装箱 base (原来在 S2)
+                this.boxNumber(VReg.S2); // base -> Number
+                this.vm.mov(VReg.A0, VReg.RET); // base Number -> A0
+                this.vm.mov(VReg.A1, VReg.S3); // exp Number -> A1
+
+                this.vm.call("_math_pow");
+                // 结果已是 Number 对象
+                break;
             case "<":
                 this.compileComparison("jlt");
                 break;
@@ -398,20 +473,25 @@ export const OperatorCompiler = {
     },
 
     // 编译比较运算
+    // 返回 NaN-boxed 布尔值: JS_TRUE (0x7FF9000000000001) 或 JS_FALSE (0x7FF9000000000000)
     compileComparison(jumpOp) {
         const trueLabel = this.ctx.newLabel("cmp_true");
         const endLabel = this.ctx.newLabel("cmp_end");
 
         this.vm.cmp(VReg.RET, VReg.V1);
         this.vm[jumpOp](trueLabel);
-        this.vm.movImm(VReg.RET, 0);
+        // false: 加载 NaN-boxed false (0x7FF9000000000000)
+        this.vm.lea(VReg.RET, "_js_false");
+        this.vm.load(VReg.RET, VReg.RET, 0);
         this.vm.jmp(endLabel);
         this.vm.label(trueLabel);
-        this.vm.movImm(VReg.RET, 1);
+        // true: 加载 NaN-boxed true (0x7FF9000000000001)
+        this.vm.lea(VReg.RET, "_js_true");
+        this.vm.load(VReg.RET, VReg.RET, 0);
         this.vm.label(endLabel);
     },
 
-    // 编译逻辑表达式 (&&, ||)
+    // 编译逻辑表达式 (&&, ||, ??)
     compileLogicalExpression(expr) {
         const endLabel = this.ctx.newLabel("logical_end");
 
@@ -425,6 +505,31 @@ export const OperatorCompiler = {
             this.vm.cmpImm(VReg.RET, 0);
             this.vm.jne(endLabel);
             this.compileExpression(expr.right);
+        } else if (expr.operator === "??") {
+            // 空值合并: 只有当左侧是 null 或 undefined 时才使用右侧
+            // NaN-boxing: null = 0x7FFA000000000000, undefined = 0x7FFB000000000000
+            const notNullLabel = this.ctx.newLabel("not_null");
+            const notUndefLabel = this.ctx.newLabel("not_undef");
+
+            // 检查是否为 null (0x7FFA000000000000)
+            this.vm.movImm64(VReg.V1, 0x7ffa000000000000n);
+            this.vm.cmp(VReg.RET, VReg.V1);
+            this.vm.jne(notNullLabel);
+            // 是 null，使用右侧值
+            this.compileExpression(expr.right);
+            this.vm.jmp(endLabel);
+
+            this.vm.label(notNullLabel);
+            // 检查是否为 undefined (0x7FFB000000000000)
+            this.vm.movImm64(VReg.V1, 0x7ffb000000000000n);
+            this.vm.cmp(VReg.RET, VReg.V1);
+            this.vm.jne(notUndefLabel);
+            // 是 undefined，使用右侧值
+            this.compileExpression(expr.right);
+            this.vm.jmp(endLabel);
+
+            this.vm.label(notUndefLabel);
+            // 不是 null 也不是 undefined，保持左侧值 (RET 已经是左侧值)
         }
 
         this.vm.label(endLabel);

@@ -32,9 +32,48 @@ export const LiteralCompiler = {
             // 使用 NaN-boxing 格式的 null
             this.vm.lea(VReg.RET, "_js_null");
             this.vm.load(VReg.RET, VReg.RET, 0);
+        } else if (value === undefined || expr.raw === "undefined") {
+            // 使用 NaN-boxing 格式的 undefined
+            this.vm.lea(VReg.RET, "_js_undefined");
+            this.vm.load(VReg.RET, VReg.RET, 0);
+        } else if (value instanceof RegExp || expr.regex) {
+            // 正则表达式字面量
+            this.compileRegExpLiteral(expr);
         } else {
             this.vm.movImm(VReg.RET, 0);
         }
+    },
+
+    // 编译正则表达式字面量
+    compileRegExpLiteral(expr) {
+        const regex = expr.regex || { pattern: expr.value.source, flags: expr.value.flags };
+        const pattern = regex.pattern;
+        const flags = regex.flags || "";
+
+        // 将 flags 字符串转换为整数
+        // g=1, i=2, m=4, s=8, u=16, y=32
+        let flagsInt = 0;
+        if (flags.includes("g")) flagsInt |= 1;
+        if (flags.includes("i")) flagsInt |= 2;
+        if (flags.includes("m")) flagsInt |= 4;
+        if (flags.includes("s")) flagsInt |= 8;
+        if (flags.includes("u")) flagsInt |= 16;
+        if (flags.includes("y")) flagsInt |= 32;
+
+        // 分配 pattern 字符串
+        const patternLabel = this.asm.addString(pattern);
+
+        // 调用 _regexp_new(pattern, flags) 创建 RegExp 对象
+        this.vm.lea(VReg.A0, patternLabel);
+        this.vm.movImm(VReg.A1, flagsInt);
+        this.vm.call("_regexp_new");
+        // RET (X0) = RegExp 对象原始指针
+
+        // 将原始指针转换为 NaN-boxed object
+        // object tag = 0x7ffd000000000000
+        // 注意：V0 映射到 X0，与 RET 冲突，所以用 V1 (X1)
+        this.vm.movImm64(VReg.V1, 0x7ffd000000000000n);
+        this.vm.or(VReg.RET, VReg.RET, VReg.V1);
     },
 
     // 编译数字字面量为 Number 对象

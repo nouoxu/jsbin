@@ -29,6 +29,13 @@ export class ErrorGenerator {
     }
 
     generate() {
+        // 类构造函数入口（供 new Error(...) 调用）
+        this.generateClassError();
+        this.generateClassTypeError();
+        this.generateClassReferenceError();
+        this.generateClassSyntaxError();
+        this.generateClassRangeError();
+
         this.generateErrorNew();
         this.generateErrorNewWithType();
         this.generateErrorGetMessage();
@@ -50,6 +57,84 @@ export class ErrorGenerator {
         this.generateStackPush();
         this.generateStackPop();
         this.generateStackCapture();
+
+        // 异常处理
+        this.generateExceptionPush();
+        this.generateExceptionPop();
+        this.generateExceptionThrow();
+    }
+
+    // _class_Error(this, message) -> Error 对象
+    // new Error(message) 的构造函数入口
+    // 注意：this (A0) 是编译器预分配的对象，但我们忽略它，自己创建 Error 对象
+    generateClassError() {
+        const vm = this.vm;
+
+        vm.label("_class_Error");
+        vm.prologue(0, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0); // S0 = this（保存但不使用）
+        vm.mov(VReg.A0, VReg.A1); // A0 = message 参数
+        vm.call("_error_new");
+        // RET = 新创建的 Error 对象
+
+        vm.epilogue([VReg.S0], 0);
+    }
+
+    // _class_TypeError(this, message) -> TypeError 对象
+    generateClassTypeError() {
+        const vm = this.vm;
+
+        vm.label("_class_TypeError");
+        vm.prologue(0, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0);
+        vm.mov(VReg.A0, VReg.A1);
+        vm.call("_typeerror_new");
+
+        vm.epilogue([VReg.S0], 0);
+    }
+
+    // _class_ReferenceError(this, message) -> ReferenceError 对象
+    generateClassReferenceError() {
+        const vm = this.vm;
+
+        vm.label("_class_ReferenceError");
+        vm.prologue(0, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0);
+        vm.mov(VReg.A0, VReg.A1);
+        vm.call("_referenceerror_new");
+
+        vm.epilogue([VReg.S0], 0);
+    }
+
+    // _class_SyntaxError(this, message) -> SyntaxError 对象
+    generateClassSyntaxError() {
+        const vm = this.vm;
+
+        vm.label("_class_SyntaxError");
+        vm.prologue(0, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0);
+        vm.mov(VReg.A0, VReg.A1);
+        vm.call("_syntaxerror_new");
+
+        vm.epilogue([VReg.S0], 0);
+    }
+
+    // _class_RangeError(this, message) -> RangeError 对象
+    generateClassRangeError() {
+        const vm = this.vm;
+
+        vm.label("_class_RangeError");
+        vm.prologue(0, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0);
+        vm.mov(VReg.A0, VReg.A1);
+        vm.call("_rangeerror_new");
+
+        vm.epilogue([VReg.S0], 0);
     }
 
     // _stack_push(name_ptr) -> void
@@ -453,6 +538,131 @@ export class ErrorGenerator {
         vm.epilogue([VReg.S0], 16);
     }
 
+    // _exception_push(catch_addr, sp, fp) -> void
+    // 将异常处理器压入栈
+    // 异常处理器栈布局: [catch_addr:8][sp:8][fp:8] = 24 字节/条目
+    generateExceptionPush() {
+        const vm = this.vm;
+
+        vm.label("_exception_push");
+        vm.prologue(0, [VReg.S0, VReg.S1]);
+
+        // 获取当前栈顶索引
+        vm.lea(VReg.S0, "_exception_stack_top");
+        vm.load(VReg.S1, VReg.S0, 0);
+
+        // 检查是否超出最大深度 (32)
+        vm.cmpImm(VReg.S1, 32);
+        vm.jge("_exception_push_done");
+
+        // 计算槽位位置: _exception_stack + index * 24
+        vm.movImm(VReg.V0, 24);
+        vm.mul(VReg.V1, VReg.S1, VReg.V0); // V1 = index * 24
+        vm.lea(VReg.V2, "_exception_stack");
+        vm.add(VReg.V2, VReg.V2, VReg.V1); // V2 = &_exception_stack[index]
+
+        // 存储 catch 地址
+        vm.store(VReg.V2, 0, VReg.A0);
+        // 存储 SP
+        vm.store(VReg.V2, 8, VReg.A1);
+        // 存储 FP
+        vm.store(VReg.V2, 16, VReg.A2);
+
+        // 增加栈顶索引
+        vm.addImm(VReg.S1, VReg.S1, 1);
+        vm.store(VReg.S0, 0, VReg.S1);
+
+        vm.label("_exception_push_done");
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+    }
+
+    // _exception_pop() -> void
+    // 弹出异常处理器（正常退出 try 块时调用）
+    generateExceptionPop() {
+        const vm = this.vm;
+
+        vm.label("_exception_pop");
+        vm.prologue(0, [VReg.S0]);
+
+        vm.lea(VReg.S0, "_exception_stack_top");
+        vm.load(VReg.V0, VReg.S0, 0);
+
+        // 检查是否已空
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_exception_pop_done");
+
+        // 减少栈顶索引
+        vm.subImm(VReg.V0, VReg.V0, 1);
+        vm.store(VReg.S0, 0, VReg.V0);
+
+        vm.label("_exception_pop_done");
+        vm.epilogue([VReg.S0], 0);
+    }
+
+    // _exception_throw(error) -> noreturn
+    // 抛出异常：恢复上下文并跳转到 catch
+    // 如果没有处理器，则退出程序
+    generateExceptionThrow() {
+        const vm = this.vm;
+
+        vm.label("_exception_throw");
+        // 不需要 prologue，因为我们会恢复栈
+
+        // 保存异常对象到全局变量
+        vm.lea(VReg.V0, "_current_exception");
+        vm.store(VReg.V0, 0, VReg.A0);
+
+        // 获取栈顶索引
+        vm.lea(VReg.V0, "_exception_stack_top");
+        vm.load(VReg.V1, VReg.V0, 0);
+
+        // 检查是否有处理器
+        vm.cmpImm(VReg.V1, 0);
+        vm.jeq("_exception_throw_unhandled");
+
+        // 减少索引
+        vm.subImm(VReg.V1, VReg.V1, 1);
+        vm.store(VReg.V0, 0, VReg.V1);
+
+        // 计算槽位位置
+        vm.movImm(VReg.V0, 24);
+        vm.mul(VReg.V2, VReg.V1, VReg.V0);
+        vm.lea(VReg.V3, "_exception_stack");
+        vm.add(VReg.V2, VReg.V3, VReg.V2);
+
+        // 加载 catch 地址、SP、FP
+        vm.load(VReg.V0, VReg.V2, 0); // catch_addr
+        vm.load(VReg.V1, VReg.V2, 8); // sp
+        vm.load(VReg.V3, VReg.V2, 16); // fp
+
+        // 恢复 SP 和 FP
+        vm.mov(VReg.SP, VReg.V1);
+        vm.mov(VReg.FP, VReg.V3);
+
+        // 跳转到 catch 块（间接跳转）
+        vm.jmpIndirect(VReg.V0);
+
+        // 未处理异常处理函数（可由编译器直接调用）
+        vm.label("_exception_throw_unhandled");
+        // 打印 "Uncaught " + error
+        vm.prologue(16, [VReg.S0]);
+        vm.mov(VReg.S0, VReg.A0); // 保存异常对象
+
+        vm.lea(VReg.A0, "_str_uncaught");
+        vm.call("_print_value");
+
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_print_value"); // 直接打印异常对象
+
+        // 打印换行
+        vm.lea(VReg.A0, "_str_newline");
+        vm.call("_print_value");
+
+        // 退出
+        vm.movImm(VReg.A0, 1);
+        vm.syscall(1); // exit(1) - macOS
+    }
+
     // 生成数据段
     generateDataSection(asm) {
         // 辅助函数：添加静态字符串（纯 char* 格式，无头部）
@@ -501,5 +711,28 @@ export class ErrorGenerator {
         for (let i = 0; i < 64 * 8; i++) {
             asm.addDataByte(0);
         }
+
+        // 异常处理器栈
+        // _exception_stack_top: 当前栈顶索引 (8 字节)
+        asm.addDataLabel("_exception_stack_top");
+        for (let i = 0; i < 8; i++) {
+            asm.addDataByte(0);
+        }
+
+        // _exception_stack: 异常处理器数组 (32 条目 * 24 字节 = 768 字节)
+        // 每条目: [catch_addr:8][sp:8][fp:8]
+        asm.addDataLabel("_exception_stack");
+        for (let i = 0; i < 32 * 24; i++) {
+            asm.addDataByte(0);
+        }
+
+        // _current_exception: 当前异常对象指针 (8 字节)
+        asm.addDataLabel("_current_exception");
+        for (let i = 0; i < 8; i++) {
+            asm.addDataByte(0);
+        }
+
+        // "Uncaught " 字符串
+        addStaticString("_str_uncaught", "Uncaught ");
     }
 }

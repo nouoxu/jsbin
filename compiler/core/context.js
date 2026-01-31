@@ -11,9 +11,11 @@ export class CompileContext {
         this.varInitExprs = {}; // 变量名 -> 初始化表达式 AST（用于类型推断）
         this.stackOffset = 0; // 当前栈偏移
         this.labelCounter = 0; // 标签计数器
+        this.tempCounter = 0; // 临时变量计数器
         this.returnLabel = ""; // 当前函数的返回标签
         this.functions = {}; // 函数声明: 函数名 -> AST 节点
         this.isAsync = false; // 是否是异步函数
+        this.classes = {}; // 类注册表: 类名 -> { constructorLabel, prototypeLabel, labelId }
 
         // 使用函数名作为标签前缀，避免跨函数标签冲突
         this.labelPrefix = this.funcName + "_";
@@ -37,6 +39,9 @@ export class CompileContext {
         // 循环控制
         this.breakLabel = null; // break 目标标签
         this.continueLabel = null; // continue 目标标签
+
+        // 异常处理
+        this.exceptionLabel = null; // catch 目标标签
     }
 
     // 兼容旧接口
@@ -77,6 +82,18 @@ export class CompileContext {
     // 获取主程序被捕获变量的全局标签
     getMainCapturedVar(name) {
         return this.mainCapturedVars[name];
+    }
+
+    // 保留 callee-saved 寄存器占用的栈空间
+    // 在 prologue 后调用，确保局部变量不会与保存的寄存器重叠
+    // savedRegsCount: 保存的 callee-saved 寄存器数量
+    reserveCalleeSavedSpace(savedRegsCount) {
+        // 每对寄存器占用 16 bytes（通过 stp 指令保存）
+        // 但实际位置是从 FP-8 开始（因为 stp 是 pre-decrement）
+        // 第一对 stp r1,r2,[sp,#-16]! 后：r1@SP, r2@SP+8 = r1@FP-16, r2@FP-8
+        // 所以需要保留的空间是 ceil(count/2) * 16
+        const numPairs = Math.ceil(savedRegsCount / 2);
+        this.stackOffset = numPairs * 16;
     }
 
     // 分配局部变量（带类型）
@@ -180,6 +197,10 @@ export class CompileContext {
         // 复制主程序被捕获变量
         for (let key in this.mainCapturedVars) {
             newCtx.mainCapturedVars[key] = this.mainCapturedVars[key];
+        }
+        // 复制类注册表
+        for (let key in this.classes) {
+            newCtx.classes[key] = this.classes[key];
         }
         return newCtx;
     }

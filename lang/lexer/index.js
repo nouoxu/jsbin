@@ -286,6 +286,7 @@ export class Lexer {
 
         let startLine = this.line;
         let startColumn = this.column;
+        let startPosition = this.position; // 保存 token 开始位置
 
         if (this.ch === "=") {
             if (this.peekChar() === "=") {
@@ -339,7 +340,7 @@ export class Lexer {
                 this.readChar();
                 tok = newToken(TokenType.SLASH_ASSIGN, "/=", startLine, startColumn);
             } else {
-                tok = newToken(TokenType.SLASH, "/", startLine, startColumn);
+                tok = newToken(TokenType.SLASH, "/", startLine, startColumn, startPosition);
             }
         } else if (this.ch === "*") {
             if (this.peekChar() === "*") {
@@ -485,6 +486,9 @@ export class Lexer {
                 return newToken(TokenType.IDENT, "#" + ident, startLine, startColumn);
             }
             tok = newToken(TokenType.HASH, "#", startLine, startColumn);
+        } else if (this.ch === "@") {
+            // 装饰器: @decorator
+            tok = newToken(TokenType.AT, "@", startLine, startColumn);
         } else if (this.ch === '"' || this.ch === "'") {
             let str = this.readString(this.ch);
             return newToken(TokenType.STRING, str, startLine, startColumn);
@@ -509,6 +513,66 @@ export class Lexer {
         }
 
         this.readChar();
+        return tok;
+    }
+
+    // 扫描正则表达式字面量
+    // startPos: 正则表达式 / 在 input 中的位置
+    scanRegExpFromPosition(startPos) {
+        // 解析正则表达式模式
+        let pattern = "";
+        let i = startPos + 1; // 跳过开始的 /
+        let escaped = false;
+        let inCharClass = false;
+
+        while (i < this.input.length) {
+            const ch = this.input[i];
+            if (escaped) {
+                pattern += ch;
+                escaped = false;
+            } else if (ch === "\\") {
+                pattern += ch;
+                escaped = true;
+            } else if (ch === "[") {
+                pattern += ch;
+                inCharClass = true;
+            } else if (ch === "]" && inCharClass) {
+                pattern += ch;
+                inCharClass = false;
+            } else if (ch === "/" && !inCharClass) {
+                break;
+            } else {
+                pattern += ch;
+            }
+            i++;
+        }
+
+        // 跳过结束的 /
+        i++;
+
+        // 解析标志
+        let flags = "";
+        while (i < this.input.length && /[gimsuy]/.test(this.input[i])) {
+            flags += this.input[i];
+            i++;
+        }
+
+        // 更新 lexer 位置到正则表达式之后
+        this.position = i - 1;
+        this.readPosition = i;
+        if (i < this.input.length) {
+            this.ch = this.input[i - 1];
+        } else {
+            this.ch = "\0";
+        }
+        // 读取下一个字符
+        this.readChar();
+
+        // 返回正则表达式 token
+        let literal = `/${pattern}/${flags}`;
+        let tok = newToken(TokenType.REGEX, literal, this.line, this.column);
+        tok.pattern = pattern;
+        tok.flags = flags;
         return tok;
     }
 }

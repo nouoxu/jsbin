@@ -272,6 +272,39 @@ export const ArrayBasicCompiler = {
                 this.vm.mov(VReg.A0, VReg.RET);
                 this.vm.call("_array_entries");
                 break;
+            case "flat":
+                // arr.flat(depth?) - 扁平化数组
+                this.vm.push(VReg.RET);
+                if (args.length > 0) {
+                    this.compileExpressionAsInt(args[0]);
+                    this.vm.mov(VReg.A1, VReg.RET); // depth (int)
+                } else {
+                    this.vm.movImm(VReg.A1, 1); // 默认 depth = 1
+                }
+                this.vm.pop(VReg.A0);
+                this.vm.call("_array_flat");
+                break;
+            case "flatMap":
+                // arr.flatMap(callback) - map + flat(1)
+                if (args.length > 0) {
+                    this.vm.push(VReg.RET);
+                    this.compileExpression(args[0]);
+                    this.vm.mov(VReg.A1, VReg.RET); // callback
+                    this.vm.pop(VReg.A0);
+                    this.vm.call("_array_flatmap");
+                }
+                break;
+            case "sort":
+                // arr.sort() - 原地排序（数字升序）
+                // TODO: 支持 compareFn 参数
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_array_sort");
+                break;
+            case "reverse":
+                // arr.reverse() - 原地反转
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_array_reverse");
+                break;
             default:
                 break;
         }

@@ -45,6 +45,18 @@ export const CollectionMethodCompiler = {
                     this.vm.mov(VReg.A1, VReg.RET); // key
                     this.vm.pop(VReg.A0); // map
                     this.vm.call("_map_has");
+                    // 转换 0/1 为 boxed boolean
+                    const hasTrue = this.ctx.newLabel("map_has_true");
+                    const hasDone = this.ctx.newLabel("map_has_done");
+                    this.vm.cmpImm(VReg.RET, 0);
+                    this.vm.jne(hasTrue);
+                    this.vm.lea(VReg.RET, "_js_false");
+                    this.vm.load(VReg.RET, VReg.RET, 0);
+                    this.vm.jmp(hasDone);
+                    this.vm.label(hasTrue);
+                    this.vm.lea(VReg.RET, "_js_true");
+                    this.vm.load(VReg.RET, VReg.RET, 0);
+                    this.vm.label(hasDone);
                     return true;
                 }
                 break;
@@ -64,6 +76,8 @@ export const CollectionMethodCompiler = {
                 // map.size - 直接从头部读取 length 字段 (统一头部结构 +8)
                 this.vm.pop(VReg.RET);
                 this.vm.load(VReg.RET, VReg.RET, 8);
+                // box 整数为 Number 对象
+                this.boxIntAsNumber(VReg.RET);
                 return true;
 
             case "clear":
@@ -125,6 +139,18 @@ export const CollectionMethodCompiler = {
                     this.vm.mov(VReg.A1, VReg.RET); // value
                     this.vm.pop(VReg.A0); // set
                     this.vm.call("_set_has");
+                    // 转换 0/1 为 boxed boolean
+                    const setHasTrue = this.ctx.newLabel("set_has_true");
+                    const setHasDone = this.ctx.newLabel("set_has_done");
+                    this.vm.cmpImm(VReg.RET, 0);
+                    this.vm.jne(setHasTrue);
+                    this.vm.lea(VReg.RET, "_js_false");
+                    this.vm.load(VReg.RET, VReg.RET, 0);
+                    this.vm.jmp(setHasDone);
+                    this.vm.label(setHasTrue);
+                    this.vm.lea(VReg.RET, "_js_true");
+                    this.vm.load(VReg.RET, VReg.RET, 0);
+                    this.vm.label(setHasDone);
                     return true;
                 }
                 break;

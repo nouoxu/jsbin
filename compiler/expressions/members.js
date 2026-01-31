@@ -150,17 +150,25 @@ export const MemberCompiler = {
                     this.vm.mov(VReg.A1, VReg.V1);
                     this.vm.call("_str_charAt");
                 }
-            } else {
+            } else if (objType === "Array" || objType === "TypedArray" || objType === "unknown") {
                 // 数组元素访问：arr[idx]
+                // 对于 unknown 类型，检查属性是否是数字
                 if (expr.property.type === "Literal" && typeof expr.property.value === "number") {
-                    // 静态索引：arr[0]
+                    // 静态数字索引：arr[0]
                     const idx = Math.trunc(expr.property.value);
                     this.compileExpression(expr.object);
                     this.vm.mov(VReg.A0, VReg.RET);
                     this.vm.movImm(VReg.A1, idx);
                     this.vm.call("_array_get");
+                } else if (expr.property.type === "Literal" && typeof expr.property.value === "string") {
+                    // 静态字符串键：obj["key"]
+                    this.compileExpression(expr.object);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.lea(VReg.A1, this.addStringConstant(expr.property.value));
+                    this.vm.call("_object_get");
                 } else {
-                    // 动态索引：arr[i]
+                    // 动态索引：arr[i] 或 obj[key]
+                    // 需要在运行时判断，这里暂时按数字索引处理
                     this.compileExpression(expr.property);
                     this.vm.push(VReg.RET);
                     this.compileExpression(expr.object);
@@ -172,6 +180,22 @@ export const MemberCompiler = {
                     this.vm.mov(VReg.A0, VReg.RET);
                     this.vm.mov(VReg.A1, VReg.V1);
                     this.vm.call("_array_get");
+                }
+            } else {
+                // 对象字符串键访问：obj["key"]
+                if (expr.property.type === "Literal" && typeof expr.property.value === "string") {
+                    this.compileExpression(expr.object);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.lea(VReg.A1, this.addStringConstant(expr.property.value));
+                    this.vm.call("_object_get");
+                } else {
+                    // 动态字符串键
+                    this.compileExpression(expr.property);
+                    this.vm.push(VReg.RET);
+                    this.compileExpression(expr.object);
+                    this.vm.pop(VReg.A1);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_object_get");
                 }
             }
         } else {
@@ -198,6 +222,22 @@ export const MemberCompiler = {
                     this.vm.call("_str_length");
                     // _str_length 返回原始整数，按 JS number 语义封装
                     this.boxIntAsNumber(VReg.RET);
+                }
+            } else if (propName === "size") {
+                // 特殊处理 Map/Set 的 .size 属性
+                const objType = this.inferObjectType ? this.inferObjectType(expr.object) : "unknown";
+                if (objType === "Map" || objType === "Set") {
+                    this.compileExpression(expr.object);
+                    // Map/Set 内存布局: [type:8][size:8][...]
+                    this.vm.load(VReg.RET, VReg.RET, 8);
+                    this.boxIntAsNumber(VReg.RET);
+                } else {
+                    // 未知类型，回退到通用属性访问
+                    const propLabel = this.asm.addString(propName);
+                    this.compileExpression(expr.object);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.lea(VReg.A1, propLabel);
+                    this.vm.call("_object_get");
                 }
             } else {
                 const propLabel = this.asm.addString(propName);

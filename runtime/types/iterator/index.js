@@ -109,9 +109,9 @@ export class IteratorGenerator {
         vm.mov(VReg.S0, VReg.A0); // value
         vm.mov(VReg.S1, VReg.A1); // done
 
-        // 创建对象（简化版：使用固定布局）
-        // 布局: [type:8 | count:8 | "value":8 | value:8 | "done":8 | done:8]
-        vm.movImm(VReg.A0, 48);
+        // 创建对象（使用与普通对象一致的布局）
+        // 布局: [type:8 | count:8 | __proto__:8 | "value":8 | value:8 | "done":8 | done:8]
+        vm.movImm(VReg.A0, 56);
         vm.call("_alloc");
         vm.mov(VReg.S2, VReg.RET); // S2 = 对象指针
 
@@ -123,23 +123,27 @@ export class IteratorGenerator {
         vm.movImm(VReg.V1, 2);
         vm.store(VReg.S2, 8, VReg.V1);
 
-        // "value" 键
-        vm.lea(VReg.V1, "_str_value");
+        // __proto__ = 0 (null)
+        vm.movImm(VReg.V1, 0);
         vm.store(VReg.S2, 16, VReg.V1);
 
+        // "value" 键
+        vm.lea(VReg.V1, "_str_value");
+        vm.store(VReg.S2, 24, VReg.V1);
+
         // value 值
-        vm.store(VReg.S2, 24, VReg.S0);
+        vm.store(VReg.S2, 32, VReg.S0);
 
         // "done" 键
         vm.lea(VReg.V1, "_str_done");
-        vm.store(VReg.S2, 32, VReg.V1);
+        vm.store(VReg.S2, 40, VReg.V1);
 
         // done 值 (boxed boolean: 使用 NaN-boxing)
         // Tag 1 = boolean, JS_TAG_BOOL_BASE = 0x7FF9000000000000
         // true = 0x7FF9000000000001, false = 0x7FF9000000000000
         vm.movImm64(VReg.V1, 0x7ff9000000000000n);
         vm.or(VReg.V1, VReg.V1, VReg.S1);
-        vm.store(VReg.S2, 40, VReg.V1);
+        vm.store(VReg.S2, 48, VReg.V1);
 
         // 返回对象指针
         vm.mov(VReg.RET, VReg.S2);
@@ -316,7 +320,7 @@ export class IteratorGenerator {
         const vm = this.vm;
 
         vm.label("_string_iterator_next");
-        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2]);
+        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
         vm.mov(VReg.S0, VReg.A0); // iterator
 
@@ -334,7 +338,7 @@ export class IteratorGenerator {
         // 获取字符: str + 16 + index
         vm.addImm(VReg.V1, VReg.S1, 16);
         vm.add(VReg.V1, VReg.V1, VReg.S2);
-        vm.loadByte(VReg.V2, VReg.V1, 0); // char code
+        vm.loadByte(VReg.S3, VReg.V1, 0); // char code -> S3 (callee-saved)
 
         // 递增索引
         vm.addImm(VReg.S2, VReg.S2, 1);
@@ -343,21 +347,22 @@ export class IteratorGenerator {
         // 创建单字符字符串
         vm.movImm(VReg.A0, 24); // 16 header + 1 char + padding
         vm.call("_alloc");
-        vm.mov(VReg.S3, VReg.RET);
+        vm.mov(VReg.S4, VReg.RET); // S4 = 新字符串 (callee-saved)
+
         // type = TYPE_STRING
         vm.movImm(VReg.V0, TYPE_STRING);
-        vm.store(VReg.S3, 0, VReg.V0);
+        vm.store(VReg.S4, 0, VReg.V0);
         // length = 1
         vm.movImm(VReg.V0, 1);
-        vm.store(VReg.S3, 8, VReg.V0);
-        // char
-        vm.storeByte(VReg.S3, 16, VReg.V2);
+        vm.store(VReg.S4, 8, VReg.V0);
+        // char (从 S3 读取，在 _alloc 后仍然有效)
+        vm.storeByte(VReg.S4, 16, VReg.S3);
         // null terminator
         vm.movImm(VReg.V0, 0);
-        vm.storeByte(VReg.S3, 17, VReg.V0);
+        vm.storeByte(VReg.S4, 17, VReg.V0);
 
         // 返回 { value: char, done: false }
-        vm.mov(VReg.A0, VReg.S3);
+        vm.mov(VReg.A0, VReg.S4);
         vm.movImm(VReg.A1, 0);
         vm.call("_iterator_result");
         vm.jmp("_string_iter_return");
@@ -371,7 +376,7 @@ export class IteratorGenerator {
         vm.call("_iterator_result");
 
         vm.label("_string_iter_return");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 48);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
     }
 
     /**
@@ -556,7 +561,19 @@ export class IteratorGenerator {
         vm.cmpImm(VReg.S2, 0);
         vm.jeq("_get_iter_not_iterable");
 
-        // ============ 读取堆对象类型 ============
+        // ============ 检查是否在堆范围内 ============
+        // 如果不在堆范围内，可能是数据段字符串
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S2, VReg.V0);
+        vm.jlt("_get_iter_check_data_string");
+
+        vm.lea(VReg.V0, "_heap_ptr");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S2, VReg.V0);
+        vm.jge("_get_iter_check_data_string");
+
+        // ============ 在堆范围内，读取堆对象类型 ============
         vm.load(VReg.V0, VReg.S2, 0);
         vm.andImm(VReg.V0, VReg.V0, 0xff);
 
@@ -564,7 +581,7 @@ export class IteratorGenerator {
         vm.cmpImm(VReg.V0, TYPE_ARRAY);
         vm.jeq("_get_iter_array");
         vm.cmpImm(VReg.V0, TYPE_STRING);
-        vm.jeq("_get_iter_string");
+        vm.jeq("_get_iter_string_heap");
         vm.cmpImm(VReg.V0, TYPE_MAP);
         vm.jeq("_get_iter_map");
         vm.cmpImm(VReg.V0, TYPE_SET);
@@ -572,6 +589,12 @@ export class IteratorGenerator {
 
         // 未知类型，不可迭代
         vm.jmp("_get_iter_not_iterable");
+
+        // ============ 数据段字符串检查 ============
+        // 不在堆范围内的指针被当作数据段字符串处理
+        vm.label("_get_iter_check_data_string");
+        // 直接创建字符串迭代器（数据段字符串）
+        vm.jmp("_get_iter_string_data");
 
         // ============ 数组迭代器 ============
         vm.label("_get_iter_array");
@@ -581,9 +604,20 @@ export class IteratorGenerator {
         vm.call("_iterator_create");
         vm.jmp("_get_iter_return");
 
-        // ============ 字符串迭代器 ============
-        vm.label("_get_iter_string");
+        // ============ 堆字符串迭代器 ============
+        vm.label("_get_iter_string_heap");
         vm.mov(VReg.A0, VReg.S2);
+        vm.movImm(VReg.A1, ITER_KIND_VALUES);
+        vm.movImm(VReg.A2, ITER_SOURCE_STRING);
+        vm.call("_iterator_create");
+        vm.jmp("_get_iter_return");
+
+        // ============ 数据段字符串迭代器 ============
+        // 需要先将数据段字符串包装为堆字符串
+        vm.label("_get_iter_string_data");
+        vm.mov(VReg.A0, VReg.S2);
+        vm.call("_createStrFromCStr"); // 将 C 字符串转为 JSString
+        vm.mov(VReg.A0, VReg.RET);
         vm.movImm(VReg.A1, ITER_KIND_VALUES);
         vm.movImm(VReg.A2, ITER_SOURCE_STRING);
         vm.call("_iterator_create");

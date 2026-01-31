@@ -2,7 +2,7 @@
 // 提供输出函数
 
 import { VReg } from "../../vm/registers.js";
-import { TYPE_STRING, TYPE_ARRAY, TYPE_OBJECT, TYPE_CLOSURE, TYPE_DATE, TYPE_PROMISE, TYPE_INT8, TYPE_FLOAT64, HEADER_SIZE } from "./allocator.js";
+import { TYPE_STRING, TYPE_ARRAY, TYPE_OBJECT, TYPE_CLOSURE, TYPE_DATE, TYPE_PROMISE, TYPE_INT8, TYPE_FLOAT64, HEADER_SIZE, TYPE_REGEXP } from "./allocator.js";
 import { TYPE_INT8_ARRAY, TYPE_FLOAT64_ARRAY, TYPE_ARRAY_BUFFER, TYPE_NUMBER } from "./types.js";
 
 export class PrintGenerator {
@@ -199,7 +199,9 @@ export class PrintGenerator {
         vm.prologue(16, [VReg.S0]);
         vm.mov(VReg.S0, VReg.A0);
 
-        // 如果值为 0，打印 "false"，否则打印 "true"
+        // 提取最低位来判断 true/false
+        // NaN-boxed: JS_TRUE = ...001, JS_FALSE = ...000
+        vm.andImm(VReg.S0, VReg.S0, 1);
         vm.cmpImm(VReg.S0, 0);
         const falseLabel = "_print_bool_false";
         vm.jeq(falseLabel);
@@ -224,7 +226,9 @@ export class PrintGenerator {
         vm.prologue(16, [VReg.S0]);
         vm.mov(VReg.S0, VReg.A0);
 
-        // 如果值为 0，打印 "false"，否则打印 "true"
+        // 提取最低位来判断 true/false
+        // NaN-boxed: JS_TRUE = ...001, JS_FALSE = ...000
+        vm.andImm(VReg.S0, VReg.S0, 1);
         vm.cmpImm(VReg.S0, 0);
         const falseLabel = "_print_bool_no_nl_false";
         vm.jeq(falseLabel);
@@ -291,18 +295,18 @@ export class PrintGenerator {
         const notNanBoxedLabel = "_print_value_not_nanboxed";
 
         // ============ 检查是否是 NaN-boxed 值 ============
-        // NaN-boxed 值的高 13 位是 0x1FFF（检查 (value >> 51) == 0x1FFF）
-        // 即高 12 位是 0x7FF（指数全1）且第 51 位（quiet bit）为 1
+        // NaN-boxed: 高 16 位在 0x7FF8 到 0x7FFF 范围内
         vm.mov(VReg.V0, VReg.S0);
-        vm.shrImm(VReg.V0, VReg.V0, 51); // 右移 51 位得到高 13 位
-        vm.movImm(VReg.V1, 0x1fff); // 0x1FFF = 8191
+        vm.shrImm(VReg.V0, VReg.V0, 48); // 右移 48 位得到高 16 位
+        vm.movImm(VReg.V1, 0x7ff8);
         vm.cmp(VReg.V0, VReg.V1);
-        vm.jne(notNanBoxedLabel); // 不是 NaN-boxed，可能是纯浮点数或其他
+        vm.jlt(notNanBoxedLabel); // < 0x7FF8，不是 NaN-boxed
+        vm.movImm(VReg.V1, 0x7fff);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jgt(notNanBoxedLabel); // > 0x7FFF，不是 NaN-boxed
 
         // ============ 是 NaN-boxed 值，提取 tag ============
-        // tag 在 bits 48-50 (3 bits)
-        vm.mov(VReg.V0, VReg.S0);
-        vm.shrImm(VReg.V0, VReg.V0, 48); // 右移 48 位
+        // tag 在低 3 位 of 高 16 位
         vm.andImm(VReg.V0, VReg.V0, 0x7); // 取低 3 位 = tag
         vm.mov(VReg.S1, VReg.V0); // S1 = tag
 
@@ -402,7 +406,20 @@ export class PrintGenerator {
 
         // object pointer
         vm.label("_print_value_object_ptr");
-        // 打印 "[object Object]" 或调用 toString
+        // 提取 48 位指针
+        vm.mov(VReg.S0, VReg.S0); // S0 已经是原始值
+        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        vm.and(VReg.S0, VReg.S0, VReg.V1); // S0 = 堆指针
+        // 检查堆对象的具体类型
+        vm.load(VReg.V2, VReg.S0, 0);
+        vm.andImm(VReg.V2, VReg.V2, 0xff);
+        // 检查是否是 RegExp
+        vm.cmpImm(VReg.V2, TYPE_REGEXP);
+        vm.jeq("_print_value_heap_regexp");
+        // 检查是否是 Date
+        vm.cmpImm(VReg.V2, TYPE_DATE);
+        vm.jeq("_print_value_heap_date");
+        // 默认打印 "[object Object]"
         vm.lea(VReg.A0, "_str_object");
         vm.call("_print_str");
         vm.jmp(doneLabel);
@@ -476,6 +493,8 @@ export class PrintGenerator {
         vm.jeq("_print_value_heap_string");
         vm.cmpImm(VReg.V2, TYPE_DATE);
         vm.jeq("_print_value_heap_date");
+        vm.cmpImm(VReg.V2, TYPE_REGEXP);
+        vm.jeq("_print_value_heap_regexp");
         // 检查 Number 对象 (TYPE_NUMBER = 13 或 TYPE_FLOAT64 = 29)
         vm.cmpImm(VReg.V2, TYPE_NUMBER);
         vm.jeq("_print_value_heap_number");
@@ -515,6 +534,67 @@ export class PrintGenerator {
         vm.call("_date_toISOString");
         vm.addImm(VReg.A0, VReg.RET, 16);
         vm.call("_print_str");
+        vm.jmp(doneLabel);
+
+        // RegExp: 打印 /pattern/flags
+        vm.label("_print_value_heap_regexp");
+        // 先打印 '/'
+        vm.movImm(VReg.V0, 0x2f); // '/'
+        vm.push(VReg.V0);
+        vm.movImm(VReg.A0, 1);
+        vm.mov(VReg.A1, VReg.SP);
+        vm.movImm(VReg.A2, 1);
+        this.emitWriteCall();
+        vm.pop(VReg.V0);
+        // 打印 pattern (offset +8 是 pattern 指针)
+        vm.load(VReg.A0, VReg.S0, 8);
+        vm.call("_print_str_no_nl");
+        // 打印 '/'
+        vm.movImm(VReg.V0, 0x2f);
+        vm.push(VReg.V0);
+        vm.movImm(VReg.A0, 1);
+        vm.mov(VReg.A1, VReg.SP);
+        vm.movImm(VReg.A2, 1);
+        this.emitWriteCall();
+        vm.pop(VReg.V0);
+        // 打印 flags (offset +16 是整数 flags)
+        vm.load(VReg.S1, VReg.S0, 16);
+        // g=1, i=2, m=4, s=8, u=16, y=32
+        vm.andImm(VReg.V0, VReg.S1, 1);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_print_value_regexp_no_g");
+        vm.movImm(VReg.V0, 0x67); // 'g'
+        vm.push(VReg.V0);
+        vm.movImm(VReg.A0, 1);
+        vm.mov(VReg.A1, VReg.SP);
+        vm.movImm(VReg.A2, 1);
+        this.emitWriteCall();
+        vm.pop(VReg.V0);
+        vm.label("_print_value_regexp_no_g");
+        vm.andImm(VReg.V0, VReg.S1, 2);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_print_value_regexp_no_i");
+        vm.movImm(VReg.V0, 0x69); // 'i'
+        vm.push(VReg.V0);
+        vm.movImm(VReg.A0, 1);
+        vm.mov(VReg.A1, VReg.SP);
+        vm.movImm(VReg.A2, 1);
+        this.emitWriteCall();
+        vm.pop(VReg.V0);
+        vm.label("_print_value_regexp_no_i");
+        vm.andImm(VReg.V0, VReg.S1, 4);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_print_value_regexp_no_m");
+        vm.movImm(VReg.V0, 0x6d); // 'm'
+        vm.push(VReg.V0);
+        vm.movImm(VReg.A0, 1);
+        vm.mov(VReg.A1, VReg.SP);
+        vm.movImm(VReg.A2, 1);
+        this.emitWriteCall();
+        vm.pop(VReg.V0);
+        vm.label("_print_value_regexp_no_m");
+        // 打印换行
+        vm.call("_print_nl");
         vm.jmp(doneLabel);
 
         vm.label("_print_value_not_heap");
@@ -567,7 +647,7 @@ export class PrintGenerator {
         vm.lea(VReg.A0, "_str_lbracket");
         vm.call("_print_str_no_nl");
 
-        // 获取数组长度 (在偏移 8 处)
+        // 获取数组长度 (在偏移 8 处，布局: [type:8][length:8][capacity:8][elements...])
         vm.load(VReg.S1, VReg.S0, 8); // length
 
         // 索引从 0 开始
@@ -589,12 +669,13 @@ export class PrintGenerator {
 
         vm.label(notFirstLabel);
         // 获取元素值: array[index] = *(array + 24 + index * 8)
+        // 数组布局: [type:8][length:8][capacity:8][elements...], header = 24 bytes
         vm.mov(VReg.V0, VReg.S2);
         vm.shlImm(VReg.V0, VReg.V0, 3); // index * 8
         vm.addImm(VReg.V0, VReg.V0, 24); // + header size (type + length + capacity)
         vm.add(VReg.V0, VReg.S0, VReg.V0);
-        vm.load(VReg.A0, VReg.V0, 0); // 加载元素（Number 对象指针）
-        vm.call("_print_number_no_nl");
+        vm.load(VReg.A0, VReg.V0, 0); // 加载元素（JSValue）
+        vm.call("_print_value_no_nl"); // 使用通用打印支持各种类型
 
         // 索引加 1
         vm.addImm(VReg.S2, VReg.S2, 1);
@@ -604,6 +685,60 @@ export class PrintGenerator {
         // 打印 "]" 和换行
         vm.lea(VReg.A0, "_str_rbracket");
         vm.call("_print_str");
+
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
+    }
+
+    // 数组打印（无换行版本，用于嵌套数组）
+    generatePrintArrayNoNL() {
+        const vm = this.vm;
+
+        vm.label("_print_array_no_nl");
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+
+        // 保存原始输入到 S3 供调试用
+        vm.mov(VReg.S3, VReg.A0);
+
+        // 调用 _js_unbox 获取原始指针
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET);
+
+        // 打印 "["
+        vm.lea(VReg.A0, "_str_lbracket");
+        vm.call("_print_str_no_nl");
+
+        // 获取数组长度 (在偏移 8 处)
+        vm.load(VReg.S1, VReg.S0, 8);
+        vm.movImm(VReg.S2, 0);
+
+        const loopLabel = "_print_array_no_nl_loop";
+        const endLabel = "_print_array_no_nl_end";
+        const notFirstLabel = "_print_array_no_nl_not_first";
+
+        vm.label(loopLabel);
+        vm.cmp(VReg.S2, VReg.S1);
+        vm.jge(endLabel);
+
+        vm.cmpImm(VReg.S2, 0);
+        vm.jeq(notFirstLabel);
+        vm.lea(VReg.A0, "_str_comma");
+        vm.call("_print_str_no_nl");
+
+        vm.label(notFirstLabel);
+        vm.mov(VReg.V0, VReg.S2);
+        vm.shlImm(VReg.V0, VReg.V0, 3);
+        vm.addImm(VReg.V0, VReg.V0, 24); // header = 24 bytes
+        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.load(VReg.A0, VReg.V0, 0);
+        vm.call("_print_value_no_nl");
+
+        vm.addImm(VReg.S2, VReg.S2, 1);
+        vm.jmp(loopLabel);
+
+        vm.label(endLabel);
+        // 只打印 "]"，不换行
+        vm.lea(VReg.A0, "_str_rbracket");
+        vm.call("_print_str_no_nl");
 
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
     }
@@ -788,6 +923,7 @@ export class PrintGenerator {
     }
 
     // 打印值（无换行版本，用于数组元素）
+    // 支持 NaN-boxed JSValue 和堆对象
     generatePrintValueNoNL() {
         const vm = this.vm;
 
@@ -795,130 +931,211 @@ export class PrintGenerator {
         vm.prologue(32, [VReg.S0, VReg.S1]);
         vm.mov(VReg.S0, VReg.A0);
 
-        const notZeroLabel = "_print_vnl_not_zero";
         const doneLabel = "_print_vnl_done";
-        const isNumberLabel = "_print_vnl_number";
-        const isStringLabel = "_print_vnl_string";
-        const isArrayLabel = "_print_vnl_array";
-        const isPromiseLabel = "_print_vnl_promise";
-        const checkDataStrLabel = "_print_vnl_check_data_str";
-        const maybeFloatLabel = "_print_vnl_maybe_float";
+        const notNanBoxedLabel = "_print_vnl_not_nanboxed";
+        const checkHeapLabel = "_print_vnl_check_heap";
 
-        vm.cmpImm(VReg.S0, 0);
-        vm.jne(notZeroLabel);
+        // ============ 首先检查是否是 NaN-boxed 值 ============
+        // NaN-boxed: 高 16 位在 0x7FF8 到 0x7FFF 范围内
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 48); // 右移 48 位得到高 16 位
+        vm.movImm(VReg.V1, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jlt(notNanBoxedLabel); // < 0x7FF8，不是 NaN-boxed
+        vm.movImm(VReg.V1, 0x7fff);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jgt(notNanBoxedLabel); // > 0x7FFF，不是 NaN-boxed
+
+        // ============ 是 NaN-boxed 值，提取 tag ============
+        // tag 在 bits 48-50 (低 3 位 of 高 16 位)
+        vm.andImm(VReg.V0, VReg.V0, 0x7); // 取低 3 位 = tag
+        vm.mov(VReg.S1, VReg.V0);
+
+        // tag 0: int32
+        vm.cmpImm(VReg.S1, 0);
+        vm.jeq("_print_vnl_int32");
+
+        // tag 1: boolean
+        vm.cmpImm(VReg.S1, 1);
+        vm.jeq("_print_vnl_bool");
+
+        // tag 2: null
+        vm.cmpImm(VReg.S1, 2);
+        vm.jeq("_print_vnl_null");
+
+        // tag 3: undefined
+        vm.cmpImm(VReg.S1, 3);
+        vm.jeq("_print_vnl_undefined");
+
+        // tag 4: string pointer
+        vm.cmpImm(VReg.S1, 4);
+        vm.jeq("_print_vnl_string_ptr");
+
+        // tag 5: object pointer
+        vm.cmpImm(VReg.S1, 5);
+        vm.jeq("_print_vnl_object_ptr");
+
+        // tag 6: array pointer
+        vm.cmpImm(VReg.S1, 6);
+        vm.jeq("_print_vnl_array_ptr");
+
+        // tag 7: function pointer
+        vm.cmpImm(VReg.S1, 7);
+        vm.jeq("_print_vnl_function_ptr");
+
+        // 未知 tag
+        vm.lea(VReg.A0, "_str_unknown");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
+
+        // ============ NaN-boxed tag 处理 ============
+
+        // int32
+        vm.label("_print_vnl_int32");
         vm.mov(VReg.A0, VReg.S0);
+        vm.shl(VReg.A0, VReg.A0, 32);
+        vm.sarImm(VReg.A0, VReg.A0, 32);
         vm.call("_print_int_no_nl");
         vm.jmp(doneLabel);
 
-        vm.label(notZeroLabel);
+        // boolean
+        vm.label("_print_vnl_bool");
+        vm.andImm(VReg.V0, VReg.S0, 1);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_print_vnl_false");
+        vm.lea(VReg.A0, "_str_true");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
+        vm.label("_print_vnl_false");
+        vm.lea(VReg.A0, "_str_false");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
+
+        // null
+        vm.label("_print_vnl_null");
+        vm.lea(VReg.A0, "_str_null");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
+
+        // undefined
+        vm.label("_print_vnl_undefined");
+        vm.lea(VReg.A0, "_str_undefined");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
+
+        // string pointer (tag 4)
+        vm.label("_print_vnl_string_ptr");
+        vm.mov(VReg.A0, VReg.S0);
+        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        vm.and(VReg.A0, VReg.A0, VReg.V1);
+        // 检查是否是堆字符串
         vm.lea(VReg.V1, "_heap_base");
         vm.load(VReg.V1, VReg.V1, 0);
-        vm.cmp(VReg.S0, VReg.V1);
-        vm.jlt(checkDataStrLabel);
+        vm.cmp(VReg.A0, VReg.V1);
+        vm.jlt("_print_vnl_str_data");
+        // 堆字符串，跳过头部
+        vm.addImm(VReg.A0, VReg.A0, 16);
+        vm.label("_print_vnl_str_data");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
 
-        // 只有 heap_base <= ptr < heap_ptr 才认为是堆对象；否则很可能是浮点位模式
+        // object pointer (tag 5)
+        vm.label("_print_vnl_object_ptr");
+        vm.lea(VReg.A0, "_str_object");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
+
+        // array pointer (tag 6)
+        vm.label("_print_vnl_array_ptr");
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_print_array_no_nl");
+        vm.jmp(doneLabel);
+
+        // function pointer (tag 7)
+        vm.label("_print_vnl_function_ptr");
+        vm.lea(VReg.A0, "_str_function");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
+
+        // ============ 不是 NaN-boxed ============
+        vm.label(notNanBoxedLabel);
+
+        // 检查是否是 0
+        vm.cmpImm(VReg.S0, 0);
+        vm.jne(checkHeapLabel);
+        vm.movImm(VReg.A0, 0);
+        vm.call("_print_int_no_nl");
+        vm.jmp(doneLabel);
+
+        // 检查是否是堆指针 (使用无符号比较，因为地址是大的正数)
+        vm.label(checkHeapLabel);
+        vm.lea(VReg.V1, "_heap_base");
+        vm.load(VReg.V1, VReg.V1, 0);
+
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jb("_print_vnl_maybe_float"); // 无符号小于
+
         vm.lea(VReg.V4, "_heap_ptr");
         vm.load(VReg.V4, VReg.V4, 0);
-        vm.cmp(VReg.S0, VReg.V4);
-        vm.jge(maybeFloatLabel);
 
-        // 加载用户数据区的第一个字（类型标记在低 8 位）
+        vm.cmp(VReg.S0, VReg.V4);
+        vm.jae("_print_vnl_maybe_float"); // 无符号大于等于
+
+        // 是堆对象，检查类型
         vm.load(VReg.V2, VReg.S0, 0);
         vm.andImm(VReg.V2, VReg.V2, 0xff);
 
         vm.movImm(VReg.V3, TYPE_ARRAY);
         vm.cmp(VReg.V2, VReg.V3);
-        vm.jeq(isArrayLabel);
+        vm.jeq("_print_vnl_heap_array");
 
         vm.movImm(VReg.V3, TYPE_STRING);
         vm.cmp(VReg.V2, VReg.V3);
-        vm.jeq(isStringLabel);
+        vm.jeq("_print_vnl_heap_string");
 
-        vm.movImm(VReg.V3, TYPE_PROMISE);
-        vm.cmp(VReg.V2, VReg.V3);
-        vm.jeq(isPromiseLabel);
+        // 检查是否是 Number 对象 (TYPE_FLOAT64 = 29)
+        vm.cmpImm(VReg.V2, TYPE_FLOAT64);
+        vm.jeq("_print_vnl_heap_number");
 
-        // 检查是否是 Number 带子类型 (TYPE_NUMBER = 13)
-        const isNumberSubtypeLabel = "_print_vnl_number_subtype";
-        vm.cmpImm(VReg.V2, 13);
-        vm.jeq(isNumberSubtypeLabel);
-
-        // 检查是否是 TypedArray (0x40-0x61)
-        const isTypedArrayLabel = "_print_vnl_typedarray";
-        vm.cmpImm(VReg.V2, 0x40);
-        vm.jge(isTypedArrayLabel);
-
-        // 检查是否是 Number 类型 (TYPE_INT8=20 到 TYPE_FLOAT64=29)
-        const isObjectLabel = "_print_vnl_object";
+        // 检查是否是其他数字类型 (TYPE_INT8=20 到 TYPE_FLOAT64=29)
         vm.movImm(VReg.V3, TYPE_INT8);
         vm.cmp(VReg.V2, VReg.V3);
-        vm.jlt(isObjectLabel); // 小于 20，未知类型当作对象
-        vm.movImm(VReg.V3, TYPE_FLOAT64);
-        vm.cmp(VReg.V2, VReg.V3);
-        vm.jgt(isObjectLabel); // 大于 29，未知类型当作对象
-        // 是 Number 对象
-        vm.mov(VReg.A0, VReg.S0);
-        vm.call("_print_number_no_nl");
-        vm.jmp(doneLabel);
+        vm.jge("_print_vnl_check_number_range");
 
-        // Number 带子类型 (TYPE_NUMBER=13)：打印整数值
-        vm.label(isNumberSubtypeLabel);
-        vm.load(VReg.A0, VReg.S0, 8); // 加载值
-        vm.call("_print_int_no_nl"); // 直接打印整数
-        vm.jmp(doneLabel);
-
-        // TypedArray
-        vm.label(isTypedArrayLabel);
-        vm.cmpImm(VReg.V2, 0x70);
-        vm.jge(isObjectLabel); // 超出范围当作 object
-        vm.mov(VReg.A0, VReg.S0);
-        vm.call("_print_typedarray_no_nl");
-        vm.jmp(doneLabel);
-
-        // 其他类型（对象、闭包等）
-        vm.label(isObjectLabel);
+        // 其他堆对象
         vm.lea(VReg.A0, "_str_object");
         vm.call("_print_str_no_nl");
         vm.jmp(doneLabel);
 
-        vm.label(isStringLabel);
-        // 堆分配字符串: 16 字节头部，内容从 +16 开始
+        // 检查是否在数字类型范围内
+        vm.label("_print_vnl_check_number_range");
+        vm.cmpImm(VReg.V2, TYPE_FLOAT64);
+        vm.jgt("_print_vnl_heap_object");
+        // 是数字类型
+        vm.jmp("_print_vnl_heap_number");
+
+        vm.label("_print_vnl_heap_object");
+        vm.lea(VReg.A0, "_str_object");
+        vm.call("_print_str_no_nl");
+        vm.jmp(doneLabel);
+
+        vm.label("_print_vnl_heap_number");
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_print_number_no_nl");
+        vm.jmp(doneLabel);
+
+        vm.label("_print_vnl_heap_array");
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_print_array_no_nl");
+        vm.jmp(doneLabel);
+
+        vm.label("_print_vnl_heap_string");
         vm.addImm(VReg.A0, VReg.S0, 16);
         vm.call("_print_str_no_nl");
         vm.jmp(doneLabel);
 
-        vm.label(isArrayLabel);
-        // 嵌套数组暂时简化处理
-        vm.lea(VReg.A0, "_str_array");
-        vm.call("_print_str_no_nl");
-        vm.jmp(doneLabel);
-
-        vm.label(isPromiseLabel);
-        vm.mov(VReg.A0, VReg.S0);
-        vm.call("_print_promise_no_nl");
-        vm.jmp(doneLabel);
-
-        vm.label(checkDataStrLabel);
-        // 数据段地址通常很大，如果值 < 1MB 当作数字
-        vm.movImm(VReg.V1, 0x100000);
-        vm.cmp(VReg.S0, VReg.V1);
-        vm.jlt(isNumberLabel);
-
-        vm.loadByte(VReg.V1, VReg.S0, 0);
-        vm.cmpImm(VReg.V1, 32);
-        vm.jlt(isNumberLabel);
-        vm.cmpImm(VReg.V1, 127);
-        vm.jge(isNumberLabel);
-
-        vm.mov(VReg.A0, VReg.S0);
-        vm.call("_print_str_no_nl");
-        vm.jmp(doneLabel);
-
-        vm.label(isNumberLabel);
-        vm.mov(VReg.A0, VReg.S0);
-        vm.call("_print_int_no_nl");
-
-        vm.label(maybeFloatLabel);
+        // 可能是浮点数
+        vm.label("_print_vnl_maybe_float");
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_print_float_no_nl");
 
@@ -1271,6 +1488,7 @@ export class PrintGenerator {
         this.generatePrintWrapper();
         this.generatePrintValue();
         this.generatePrintArray();
+        this.generatePrintArrayNoNL();
         this.generatePrintArrayElemNoNL();
         this.generatePrintPromise();
         this.generatePrintPromiseNoNL();

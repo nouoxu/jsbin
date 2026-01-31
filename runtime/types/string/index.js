@@ -42,6 +42,14 @@ export class StringGenerator {
         vm.epilogue([VReg.S0, VReg.S1], 0);
     }
 
+    // _raw_strlen(str) -> length
+    // 与 _strlen 相同，用于 Error 堆栈追踪
+    generateRawStrlen() {
+        const vm = this.vm;
+        vm.label("_raw_strlen");
+        vm.jmp("_strlen"); // 直接跳转到 _strlen
+    }
+
     // 生成字符串比较函数
     // _strcmp(s1, s2) -> 0 if equal, non-zero otherwise
     generateStrcmp() {
@@ -1076,40 +1084,10 @@ export class StringGenerator {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
     }
 
-    // 查找子字符串
-    // _str_indexOf(str, search) -> 索引或 -1
-    generateIndexOf() {
-        const vm = this.vm;
-
-        vm.label("_str_indexOf");
-        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
-
-        vm.mov(VReg.S0, VReg.A0); // S0 = str
-        vm.mov(VReg.S1, VReg.A1); // S1 = search
-
-        // 调用 _strstr
-        vm.mov(VReg.A0, VReg.S0);
-        vm.mov(VReg.A1, VReg.S1);
-        vm.call("_strstr");
-
-        // 如果返回 0，返回 -1
-        const foundLabel = "_indexOf_found";
-        vm.cmpImm(VReg.RET, 0);
-        vm.jne(foundLabel);
-        vm.movImm(VReg.RET, -1);
-        vm.jmp("_indexOf_done");
-
-        vm.label(foundLabel);
-        // 计算偏移: result - str
-        vm.sub(VReg.RET, VReg.RET, VReg.S0);
-
-        vm.label("_indexOf_done");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 64);
-    }
-
     // 生成所有字符串函数
     generate() {
         this.generateStrlen();
+        this.generateRawStrlen(); // Error 的 _stack_capture 需要
         this.generateStrLength(); // 统一 length 访问
         this.generateStrcmp();
         this.generateStrcpy();

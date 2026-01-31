@@ -137,6 +137,57 @@ export const ArrayTransformMixin = {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 32);
     },
 
+    // 数组展开追加 - 将源数组的所有元素追加到目标数组
+    // _array_concat_into(dest, src) -> void
+    // dest 和 src 都是 boxed JSValue（带 NaN-boxing tag）
+    generateArrayConcatInto() {
+        const vm = this.vm;
+
+        vm.label("_array_concat_into");
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+
+        // S0 = dest boxed, S1 = src boxed
+        vm.mov(VReg.S0, VReg.A0);
+        vm.mov(VReg.S1, VReg.A1);
+
+        // 提取 src 的 raw 指针（去掉 NaN-boxing tag）
+        vm.movImm64(VReg.V0, 0x0000ffffffffffffn);
+        vm.and(VReg.S2, VReg.S1, VReg.V0); // S2 = src raw pointer
+
+        // 获取 src 数组长度
+        vm.load(VReg.S3, VReg.S2, 0); // S3 = src.length
+
+        // 循环：逐个元素 push 到 dest
+        vm.movImm(VReg.V0, 0); // V0 = index
+        vm.label("_array_concat_into_loop");
+        vm.cmp(VReg.V0, VReg.S3);
+        vm.jge("_array_concat_into_done");
+
+        // 保存 index
+        vm.push(VReg.V0);
+
+        // 获取 src[index]
+        vm.shl(VReg.V1, VReg.V0, 3);
+        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
+        vm.add(VReg.V2, VReg.S2, VReg.V1);
+        vm.load(VReg.A1, VReg.V2, 0); // A1 = src[index]
+
+        // dest.push(value)
+        vm.mov(VReg.A0, VReg.S0); // A0 = dest boxed
+        vm.call("_array_push");
+        // _array_push 可能返回新的数组指针（扩容后），更新 S0
+        vm.mov(VReg.S0, VReg.RET);
+
+        // 恢复 index 并递增
+        vm.pop(VReg.V0);
+        vm.addImm(VReg.V0, VReg.V0, 1);
+        vm.jmp("_array_concat_into_loop");
+
+        vm.label("_array_concat_into_done");
+        vm.mov(VReg.RET, VReg.S0); // 返回可能更新的 dest
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
+    },
+
     // 数组 join - 连接为字符串
     generateArrayJoin() {
         const vm = this.vm;

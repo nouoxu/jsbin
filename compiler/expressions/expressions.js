@@ -40,7 +40,8 @@ export const ExpressionCompiler = {
                 this.vm.movImm(VReg.RET, expr.value ? 1 : 0);
                 break;
             case "NullLiteral":
-                this.vm.movImm(VReg.RET, 0);
+                // NaN-boxing: null = 0x7FFA000000000000
+                this.vm.movImm64(VReg.RET, 0x7ffa000000000000n);
                 break;
             case "Literal":
                 this.compileLiteral(expr);
@@ -91,8 +92,16 @@ export const ExpressionCompiler = {
             case "AwaitExpression":
                 this.compileAwaitExpression(expr);
                 break;
+            case "YieldExpression":
+                this.compileYieldExpression(expr);
+                break;
             case "ThisExpression":
                 this.compileThisExpression(expr);
+                break;
+            case "SuperExpression":
+                // Super expression 单独出现时，需要结合 CallExpression 处理
+                // 暂时返回 undefined，实际调用在 compileCallExpression 中处理
+                this.vm.movImm(VReg.RET, 0);
                 break;
             default:
                 console.warn("Unhandled expression type:", expr.type);
@@ -269,6 +278,7 @@ export const ExpressionCompiler = {
      */
     compileUserClassNew(className, args) {
         const offset = this.ctx.getLocal(className);
+        const classInfo = this.ctx.classes[className]; // 从类注册表查找
 
         // 1. 分配对象内存
         this.vm.movImm(VReg.A0, 256); // 足够大的对象空间
@@ -285,16 +295,15 @@ export const ExpressionCompiler = {
 
             // 获取 prototype 并设置到新对象的 __proto__
             this.vm.load(VReg.V0, VReg.S1, 16); // prototype 地址
-            this.vm.store(VReg.S0, 24, VReg.V0); // 存储到对象的 __proto__ 槽位
+            this.vm.store(VReg.S0, 16, VReg.V0); // 存储到对象的 __proto__ 槽位 (偏移 16)
 
             // 获取构造函数地址
             this.vm.load(VReg.S2, VReg.S1, 8); // S2 = constructor 地址
 
-            // 准备参数：A0 = this (新对象)
-            this.vm.mov(VReg.A0, VReg.S0);
-
-            // 编译其他参数
-            for (let i = 0; i < args.length && i < 7; i++) {
+            // 编译所有参数并压栈（逆序，因为栈是 LIFO）
+            // 参数从 A1 开始，所以最多 5 个参数 (A1-A5)
+            const argCount = Math.min(args.length, 5);
+            for (let i = argCount - 1; i >= 0; i--) {
                 this.vm.push(VReg.S0);
                 this.vm.push(VReg.S1);
                 this.vm.push(VReg.S2);
@@ -302,13 +311,15 @@ export const ExpressionCompiler = {
                 this.vm.pop(VReg.S2);
                 this.vm.pop(VReg.S1);
                 this.vm.pop(VReg.S0);
-                const argReg = VReg.A0 + i + 1;
-                if (argReg <= VReg.A7) {
-                    this.vm.mov(argReg, VReg.RET);
-                }
+                this.vm.push(VReg.RET); // 压栈保存参数值
             }
 
-            // 重新设置 A0 = this
+            // 按顺序弹出参数到 A1, A2, ...
+            for (let i = 0; i < argCount; i++) {
+                this.vm.pop(this.vm.getArgReg(i + 1));
+            }
+
+            // 设置 A0 = this
             this.vm.mov(VReg.A0, VReg.S0);
 
             // 间接调用构造函数
@@ -316,26 +327,64 @@ export const ExpressionCompiler = {
 
             // 返回新对象
             this.vm.mov(VReg.RET, VReg.S0);
-        } else {
-            // 类不在局部变量中，尝试直接调用全局标签
-            this.vm.mov(VReg.A0, VReg.S0);
+        } else if (classInfo) {
+            // 类在类注册表中（用于方法内部的 new 表达式）
+            // 从全局数据段加载类信息对象
+            const classGlobalLabel = `_class_info_${className}`;
 
-            // 编译参数
-            for (let i = 0; i < args.length && i < 7; i++) {
+            // 加载类信息对象指针到 S1
+            this.vm.lea(VReg.V0, classGlobalLabel);
+            this.vm.load(VReg.S1, VReg.V0, 0);
+
+            // 获取 prototype 并设置到新对象的 __proto__
+            this.vm.load(VReg.V0, VReg.S1, 16); // prototype 地址
+            this.vm.store(VReg.S0, 16, VReg.V0); // 存储到对象的 __proto__ 槽位
+
+            // 编译所有参数并压栈（逆序，因为栈是 LIFO）
+            const argCount = Math.min(args.length, 5);
+            for (let i = argCount - 1; i >= 0; i--) {
                 this.vm.push(VReg.S0);
                 this.compileExpression(args[i]);
                 this.vm.pop(VReg.S0);
-                const argReg = VReg.A0 + i + 1;
-                if (argReg <= VReg.A7) {
-                    this.vm.mov(argReg, VReg.RET);
-                }
+                this.vm.push(VReg.RET);
             }
 
-            // 重新设置 A0 = this
+            // 按顺序弹出参数到 A1, A2, ...
+            for (let i = 0; i < argCount; i++) {
+                this.vm.pop(this.vm.getArgReg(i + 1));
+            }
+
+            // 设置 A0 = this
+            this.vm.mov(VReg.A0, VReg.S0);
+
+            // 调用已注册的类构造函数标签
+            this.vm.call(classInfo.constructorLabel);
+
+            // 返回新对象
+            this.vm.mov(VReg.RET, VReg.S0);
+        } else {
+            // 类既不在局部变量中，也不在类注册表中
+            // 尝试调用全局标签（这可能是错误的）
+            console.warn(`Warning: Class '${className}' not found in context`);
+
+            // 编译所有参数并压栈（逆序，因为栈是 LIFO）
+            const argCount = Math.min(args.length, 5);
+            for (let i = argCount - 1; i >= 0; i--) {
+                this.vm.push(VReg.S0);
+                this.compileExpression(args[i]);
+                this.vm.pop(VReg.S0);
+                this.vm.push(VReg.RET);
+            }
+
+            // 按顺序弹出参数到 A1, A2, ...
+            for (let i = 0; i < argCount; i++) {
+                this.vm.pop(this.vm.getArgReg(i + 1));
+            }
+
+            // 设置 A0 = this
             this.vm.mov(VReg.A0, VReg.S0);
 
             // 调用全局类构造函数
-            // 注意：这里需要在 collectFunctions 中注册类
             this.vm.call(`_class_${className}`);
 
             // 返回新对象
@@ -518,5 +567,62 @@ export const ExpressionCompiler = {
             this.vm.movImm(VReg.A1, 0);
             this.vm.call("_typed_array_new");
         }
+    },
+
+    // 编译 yield 表达式 (状态机方法)
+    compileYieldExpression(expr) {
+        const vm = this.vm;
+
+        // 检查是否在 Generator 函数内
+        if (!this.ctx.inGenerator) {
+            console.warn("yield expression outside of generator function");
+            vm.movImm(VReg.RET, 0);
+            return;
+        }
+
+        // 获取 Generator 对象
+        const genReg = this.ctx.generatorReg || VReg.S5;
+
+        // 分配一个 resume point ID
+        if (this.ctx.yieldCount === undefined) {
+            this.ctx.yieldCount = 0;
+        }
+        const yieldId = ++this.ctx.yieldCount;
+        const resumeLabel = this.ctx.generatorBodyLabel + "_resume_" + yieldId;
+
+        // 编译 yield 的值
+        if (expr.argument) {
+            this.compileExpression(expr.argument);
+            // 保存 yield value 到 Generator.yield_value (offset 72)
+            vm.store(genReg, 72, VReg.RET);
+        } else {
+            vm.lea(VReg.V0, "_js_undefined");
+            vm.load(VReg.V0, VReg.V0, 0);
+            vm.store(genReg, 72, VReg.V0);
+        }
+
+        // 设置 resume_point
+        vm.movImm(VReg.V0, yieldId);
+        vm.store(genReg, 96, VReg.V0);
+
+        // 设置状态为 SUSPENDED_YIELD
+        vm.movImm(VReg.V0, 1); // GEN_STATE_SUSPENDED_YIELD
+        vm.store(genReg, 8, VReg.V0);
+
+        // 跳转到 generator body 的 yield 返回点
+        vm.jmp(this.ctx.yieldReturnLabel);
+
+        // 恢复点标签 - 下次 next() 会跳转到这里
+        vm.label(resumeLabel);
+
+        // 将 resume label 添加到上下文以供后续生成跳转表
+        if (!this.ctx.resumeLabels) {
+            this.ctx.resumeLabels = [];
+        }
+        this.ctx.resumeLabels.push({ id: yieldId, label: resumeLabel });
+
+        // yield 的返回值是 next() 传入的值
+        // 从 Generator.next_value 获取
+        vm.load(VReg.RET, genReg, 80);
     },
 };
