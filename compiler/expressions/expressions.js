@@ -20,6 +20,48 @@ export const ExpressionCompiler = {
     ...MemberCompiler,
     ...AsyncCompiler,
 
+    /**
+     * 编译构造函数调用参数
+     * 支持无限参数：前 5 个通过寄存器 A1-A5，其余通过栈传递
+     * @param {Array} args - 参数表达式数组
+     * @param {Array} savedRegs - 需要在编译参数时保存的寄存器（如 S0, S1, S2）
+     */
+    compileConstructorArgs(args, savedRegs = [VReg.S0]) {
+        const regArgCount = Math.min(args.length, 5); // A1-A5
+        const stackArgCount = Math.max(0, args.length - 5);
+
+        // 先处理栈传递的参数（倒序压栈）
+        for (let i = args.length - 1; i >= 5; i--) {
+            for (const reg of savedRegs) {
+                this.vm.push(reg);
+            }
+            this.compileExpression(args[i]);
+            for (let j = savedRegs.length - 1; j >= 0; j--) {
+                this.vm.pop(savedRegs[j]);
+            }
+            this.vm.push(VReg.RET);
+        }
+
+        // 再编译寄存器传递的参数并压栈
+        for (let i = regArgCount - 1; i >= 0; i--) {
+            for (const reg of savedRegs) {
+                this.vm.push(reg);
+            }
+            this.compileExpression(args[i]);
+            for (let j = savedRegs.length - 1; j >= 0; j--) {
+                this.vm.pop(savedRegs[j]);
+            }
+            this.vm.push(VReg.RET);
+        }
+
+        // 弹出到参数寄存器 A1-A5
+        for (let i = 0; i < regArgCount; i++) {
+            this.vm.pop(this.vm.getArgReg(i + 1));
+        }
+
+        // 栈参数保留在栈上
+    },
+
     // 编译表达式（根据目标类型选择编译方式）
     compileExpressionWithType(expr, targetType) {
         // 统一使用 compileExpression，让所有数值都成为 Number 对象
@@ -29,6 +71,11 @@ export const ExpressionCompiler = {
 
     // 编译表达式
     compileExpression(expr) {
+        // 记录 Source Map 映射
+        if (this.recordSourceMapping) {
+            this.recordSourceMapping(expr);
+        }
+
         switch (expr.type) {
             case "NumericLiteral":
                 this.compileNumericLiteral(expr.value);
@@ -37,11 +84,12 @@ export const ExpressionCompiler = {
                 this.compileStringLiteral(expr);
                 break;
             case "BooleanLiteral":
-                this.vm.movImm(VReg.RET, expr.value ? 1 : 0);
+                // NaN-boxing: true = 0x7FF9000000000001, false = 0x7FF9000000000000
+                this.vm.movImm64(VReg.RET, expr.value ? "0x7ff9000000000001" : "0x7ff9000000000000");
                 break;
             case "NullLiteral":
                 // NaN-boxing: null = 0x7FFA000000000000
-                this.vm.movImm64(VReg.RET, 0x7ffa000000000000n);
+                this.vm.movImm64(VReg.RET, "0x7ffa000000000000");
                 break;
             case "Literal":
                 this.compileLiteral(expr);
@@ -103,6 +151,11 @@ export const ExpressionCompiler = {
                 // 暂时返回 undefined，实际调用在 compileCallExpression 中处理
                 this.vm.movImm(VReg.RET, 0);
                 break;
+            case "SpreadElement":
+                // SpreadElement 通常在数组/对象字面量或函数调用参数中处理
+                // 这里编译被展开的表达式（实际展开逻辑在调用处）
+                this.compileExpression(expr.argument);
+                break;
             default:
                 console.warn("Unhandled expression type:", expr.type);
                 this.vm.movImm(VReg.RET, 0);
@@ -121,6 +174,35 @@ export const ExpressionCompiler = {
                 const args = expr.arguments || [];
                 this.compileNumberSubtype(subtypeName, args);
                 return;
+            }
+
+            // 处理命名空间导入的类，如 new AST.Identifier()
+            if (obj.type === "Identifier" && prop.type === "Identifier") {
+                const namespaceName = obj.name;
+                const className = prop.name;
+                const args = expr.arguments || [];
+
+                // 检查是否是命名空间导入
+                if (this.isImportedSymbol && this.isImportedSymbol(namespaceName)) {
+                    const importInfo = this.getImportedSymbol(namespaceName);
+                    if (importInfo && importInfo.type === "namespace") {
+                        // 从命名空间模块的 exports 中查找类
+                        const nsModuleExports = importInfo.exports;
+                        if (nsModuleExports && nsModuleExports.classes) {
+                            const classInfo = nsModuleExports.classes.get(className);
+                            if (classInfo) {
+                                // 找到类，调用构造函数
+                                this.compileUserClassNewWithInfo(classInfo, args);
+                                return;
+                            }
+                        }
+                        // 未找到类，尝试使用完全限定名作为标签
+                        console.warn(`Warning: Class '${className}' not found in namespace '${namespaceName}', using qualified name`);
+                        // 使用命名空间限定的标签
+                        this.compileUserClassNew(className, args);
+                        return;
+                    }
+                }
             }
         }
 
@@ -262,6 +344,63 @@ export const ExpressionCompiler = {
                 this.compileTypedArrayNew(typeName, args);
                 break;
 
+            case "ArrayBuffer":
+                // new ArrayBuffer(byteLength) - 创建 ArrayBuffer
+                if (args.length > 0) {
+                    this.compileExpression(args[0]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                } else {
+                    this.vm.movImm(VReg.A0, 0);
+                }
+                this.vm.call("_arraybuffer_new");
+                break;
+
+            case "DataView":
+                // new DataView(buffer, byteOffset?, byteLength?) - 创建 DataView
+                if (args.length > 0) {
+                    this.compileExpression(args[0]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    if (args.length > 1) {
+                        this.vm.push(VReg.A0);
+                        this.compileExpression(args[1]);
+                        this.vm.mov(VReg.A1, VReg.RET);
+                        this.vm.pop(VReg.A0);
+                    } else {
+                        this.vm.movImm(VReg.A1, 0);
+                    }
+                    if (args.length > 2) {
+                        this.vm.push(VReg.A0);
+                        this.vm.push(VReg.A1);
+                        this.compileExpression(args[2]);
+                        this.vm.mov(VReg.A2, VReg.RET);
+                        this.vm.pop(VReg.A1);
+                        this.vm.pop(VReg.A0);
+                    } else {
+                        this.vm.movImm(VReg.A2, -1); // -1 表示使用 buffer 的剩余长度
+                    }
+                } else {
+                    this.vm.movImm(VReg.A0, 0);
+                    this.vm.movImm(VReg.A1, 0);
+                    this.vm.movImm(VReg.A2, 0);
+                }
+                this.vm.call("_dataview_new");
+                break;
+
+            case "Error":
+            case "TypeError":
+            case "ReferenceError":
+            case "SyntaxError":
+            case "RangeError":
+                // new Error(message) - 创建 Error 对象
+                if (args.length > 0) {
+                    this.compileExpression(args[0]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                } else {
+                    this.vm.movImm(VReg.A0, 0);
+                }
+                this.vm.call("_error_new");
+                break;
+
             default:
                 // 用户定义的类/构造函数
                 this.compileUserClassNew(typeName, args);
@@ -281,13 +420,9 @@ export const ExpressionCompiler = {
         const classInfo = this.ctx.classes[className]; // 从类注册表查找
 
         // 1. 分配对象内存
-        this.vm.movImm(VReg.A0, 256); // 足够大的对象空间
-        this.vm.call("_alloc");
+        // 统一走对象运行时封装，确保 property_count/__proto__ 初始化一致
+        this.vm.call("_object_new");
         this.vm.mov(VReg.S0, VReg.RET); // S0 = 新对象
-
-        // 2. 设置对象类型
-        this.vm.movImm(VReg.V0, 2); // TYPE_OBJECT = 2
-        this.vm.store(VReg.S0, 0, VReg.V0);
 
         if (offset !== undefined) {
             // 类在局部变量中，加载类信息对象
@@ -300,24 +435,8 @@ export const ExpressionCompiler = {
             // 获取构造函数地址
             this.vm.load(VReg.S2, VReg.S1, 8); // S2 = constructor 地址
 
-            // 编译所有参数并压栈（逆序，因为栈是 LIFO）
-            // 参数从 A1 开始，所以最多 5 个参数 (A1-A5)
-            const argCount = Math.min(args.length, 5);
-            for (let i = argCount - 1; i >= 0; i--) {
-                this.vm.push(VReg.S0);
-                this.vm.push(VReg.S1);
-                this.vm.push(VReg.S2);
-                this.compileExpression(args[i]);
-                this.vm.pop(VReg.S2);
-                this.vm.pop(VReg.S1);
-                this.vm.pop(VReg.S0);
-                this.vm.push(VReg.RET); // 压栈保存参数值
-            }
-
-            // 按顺序弹出参数到 A1, A2, ...
-            for (let i = 0; i < argCount; i++) {
-                this.vm.pop(this.vm.getArgReg(i + 1));
-            }
+            // 编译构造函数参数（支持无限参数）
+            this.compileConstructorArgs(args, [VReg.S0, VReg.S1, VReg.S2]);
 
             // 设置 A0 = this
             this.vm.mov(VReg.A0, VReg.S0);
@@ -330,29 +449,37 @@ export const ExpressionCompiler = {
         } else if (classInfo) {
             // 类在类注册表中（用于方法内部的 new 表达式）
             // 从全局数据段加载类信息对象
-            const classGlobalLabel = `_class_info_${className}`;
+            // 使用预注册的 classInfoLabel（包含模块前缀）或默认标签
+            const classGlobalLabel = classInfo.classInfoLabel || `_class_info_${className}`;
 
             // 加载类信息对象指针到 S1
             this.vm.lea(VReg.V0, classGlobalLabel);
             this.vm.load(VReg.S1, VReg.V0, 0);
 
+            // 如果类信息尚未初始化（例如导入缺失或初始化顺序问题），降级为无原型对象，避免崩溃
+            const labelId = this.nextLabelId ? this.nextLabelId() : this.ctx.nextLabelId();
+            const classInfoMissing = `_class_info_missing_${className}_${labelId}`;
+            const classInfoReady = `_class_info_ready_${className}_${labelId}`;
+            const classInfoDone = `_class_info_done_${className}_${labelId}`;
+            this.vm.cmpImm(VReg.S1, 0);
+            this.vm.jeq(classInfoMissing);
+            this.vm.jmp(classInfoReady);
+
+            // 缺失 classInfo：直接返回一个空对象（无 __proto__），跳过构造函数
+            this.vm.label(classInfoMissing);
+            this.vm.movImm(VReg.V0, 0);
+            this.vm.store(VReg.S0, 16, VReg.V0);
+            this.vm.mov(VReg.RET, VReg.S0);
+            this.vm.jmp(classInfoDone);
+
+            this.vm.label(classInfoReady);
+
             // 获取 prototype 并设置到新对象的 __proto__
             this.vm.load(VReg.V0, VReg.S1, 16); // prototype 地址
             this.vm.store(VReg.S0, 16, VReg.V0); // 存储到对象的 __proto__ 槽位
 
-            // 编译所有参数并压栈（逆序，因为栈是 LIFO）
-            const argCount = Math.min(args.length, 5);
-            for (let i = argCount - 1; i >= 0; i--) {
-                this.vm.push(VReg.S0);
-                this.compileExpression(args[i]);
-                this.vm.pop(VReg.S0);
-                this.vm.push(VReg.RET);
-            }
-
-            // 按顺序弹出参数到 A1, A2, ...
-            for (let i = 0; i < argCount; i++) {
-                this.vm.pop(this.vm.getArgReg(i + 1));
-            }
+            // 编译构造函数参数（支持无限参数）
+            this.compileConstructorArgs(args, [VReg.S0]);
 
             // 设置 A0 = this
             this.vm.mov(VReg.A0, VReg.S0);
@@ -362,34 +489,80 @@ export const ExpressionCompiler = {
 
             // 返回新对象
             this.vm.mov(VReg.RET, VReg.S0);
+
+            this.vm.label(classInfoDone);
         } else {
             // 类既不在局部变量中，也不在类注册表中
-            // 尝试调用全局标签（这可能是错误的）
-            console.warn(`Warning: Class '${className}' not found in context`);
-
-            // 编译所有参数并压栈（逆序，因为栈是 LIFO）
-            const argCount = Math.min(args.length, 5);
-            for (let i = argCount - 1; i >= 0; i--) {
-                this.vm.push(VReg.S0);
-                this.compileExpression(args[i]);
-                this.vm.pop(VReg.S0);
-                this.vm.push(VReg.RET);
+            // 检查是否是导入的类
+            let constructorLabel = null;
+            let classInfoLabel = null;
+            if (this.isImportedSymbol && this.isImportedSymbol(className)) {
+                const importInfo = this.getImportedSymbol(className);
+                if (importInfo && importInfo.type === "class") {
+                    constructorLabel = importInfo.constructorLabel;
+                    classInfoLabel = importInfo.classInfoLabel;
+                }
             }
 
-            // 按顺序弹出参数到 A1, A2, ...
-            for (let i = 0; i < argCount; i++) {
-                this.vm.pop(this.vm.getArgReg(i + 1));
+            if (!constructorLabel) {
+                // 仍然找不到，使用默认标签（这可能是错误的）
+                console.warn(`Warning: Class '${className}' not found in context`);
+                constructorLabel = `_class_${className}`;
             }
+
+            // 如果有 classInfoLabel，设置 prototype
+            if (classInfoLabel) {
+                // 从全局数据段加载类信息对象
+                this.vm.lea(VReg.V0, classInfoLabel);
+                this.vm.load(VReg.V1, VReg.V0, 0); // 类信息对象
+                this.vm.load(VReg.V0, VReg.V1, 16); // prototype 地址
+                this.vm.store(VReg.S0, 16, VReg.V0); // 存储到对象的 __proto__ 槽位
+            }
+
+            // 编译构造函数参数（支持无限参数）
+            this.compileConstructorArgs(args, [VReg.S0]);
 
             // 设置 A0 = this
             this.vm.mov(VReg.A0, VReg.S0);
 
-            // 调用全局类构造函数
-            this.vm.call(`_class_${className}`);
+            // 调用类构造函数
+            this.vm.call(constructorLabel);
 
             // 返回新对象
             this.vm.mov(VReg.RET, VReg.S0);
         }
+    },
+
+    /**
+     * 使用预先获取的类信息编译 new 表达式
+     * @param {object} classInfo - 包含 constructorLabel 和 classInfoLabel 的对象
+     * @param {Array} args - 构造函数参数
+     */
+    compileUserClassNewWithInfo(classInfo, args) {
+        // 1. 分配对象内存
+        // 统一走对象运行时封装，确保 property_count/__proto__ 初始化一致
+        this.vm.call("_object_new");
+        this.vm.mov(VReg.S0, VReg.RET); // S0 = 新对象
+
+        // 2. 如果有 classInfoLabel，设置 prototype
+        if (classInfo.classInfoLabel) {
+            this.vm.lea(VReg.V0, classInfo.classInfoLabel);
+            this.vm.load(VReg.V1, VReg.V0, 0); // 类信息对象
+            this.vm.load(VReg.V0, VReg.V1, 16); // prototype 地址
+            this.vm.store(VReg.S0, 16, VReg.V0); // 存储到对象的 __proto__ 槽位
+        }
+
+        // 3. 编译构造函数参数（支持无限参数）
+        this.compileConstructorArgs(args, [VReg.S0]);
+
+        // 4. 设置 A0 = this
+        this.vm.mov(VReg.A0, VReg.S0);
+
+        // 5. 调用类构造函数
+        this.vm.call(classInfo.constructorLabel);
+
+        // 6. 返回新对象
+        this.vm.mov(VReg.RET, VReg.S0);
     },
 
     /**

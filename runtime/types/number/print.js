@@ -144,6 +144,48 @@ export class NumberPrintGenerator {
         // S0 = 原始值（位表示）
         vm.mov(VReg.S0, VReg.A0);
 
+        // ===== 检查 Infinity 和 NaN (exponent = 0x7FF) =====
+        // 提取高 12 位来检查 exponent
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 52); // 右移 52 位得到 sign + exponent (12 位)
+        vm.andImm(VReg.V0, VReg.V0, 0x7ff); // 屏蔽 sign 位，得到纯 exponent
+        vm.movImm(VReg.V1, 0x7ff);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jne("_print_float_normal");
+
+        // exponent = 0x7FF，是 Infinity 或 NaN
+        // 检查 mantissa 是否为 0 (Infinity) 还是非 0 (NaN)
+        vm.mov(VReg.V0, VReg.S0);
+        vm.movImm64(VReg.V1, "0x000fffffffffffff"); // 52-bit mantissa mask
+        vm.and(VReg.V0, VReg.V0, VReg.V1);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jne("_print_float_nan");
+
+        // mantissa = 0，是 Infinity
+        // 检查 sign bit
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 63);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_print_float_pos_inf");
+
+        // 负无穷
+        vm.lea(VReg.A0, "_str_neg_infinity");
+        vm.call("_print_str");
+        vm.jmp("_print_float_done");
+
+        vm.label("_print_float_pos_inf");
+        vm.lea(VReg.A0, "_str_infinity");
+        vm.call("_print_str");
+        vm.jmp("_print_float_done");
+
+        vm.label("_print_float_nan");
+        vm.lea(VReg.A0, "_str_nan");
+        vm.call("_print_str");
+        vm.jmp("_print_float_done");
+
+        // ===== 正常浮点数处理 =====
+        vm.label("_print_float_normal");
+
         // 将位表示移动到浮点寄存器
         vm.fmovToFloat(0, VReg.S0);
 
@@ -316,6 +358,45 @@ export class NumberPrintGenerator {
         vm.prologue(128, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
         vm.mov(VReg.S0, VReg.A0);
+
+        // ===== 检查 Infinity 和 NaN (exponent = 0x7FF) =====
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 52);
+        vm.andImm(VReg.V0, VReg.V0, 0x7ff);
+        vm.movImm(VReg.V1, 0x7ff);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jne("_print_float_nonl_normal");
+
+        // 是 Infinity 或 NaN
+        vm.mov(VReg.V0, VReg.S0);
+        vm.movImm64(VReg.V1, "0x000fffffffffffff");
+        vm.and(VReg.V0, VReg.V0, VReg.V1);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jne("_print_float_nonl_nan");
+
+        // mantissa = 0，是 Infinity，检查 sign
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 63);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jeq("_print_float_nonl_pos_inf");
+
+        // 负无穷
+        vm.lea(VReg.A0, "_str_neg_infinity");
+        vm.call("_print_str_no_nl");
+        vm.jmp("_print_float_nonl_done");
+
+        vm.label("_print_float_nonl_pos_inf");
+        vm.lea(VReg.A0, "_str_infinity");
+        vm.call("_print_str_no_nl");
+        vm.jmp("_print_float_nonl_done");
+
+        vm.label("_print_float_nonl_nan");
+        vm.lea(VReg.A0, "_str_nan");
+        vm.call("_print_str_no_nl");
+        vm.jmp("_print_float_nonl_done");
+
+        // ===== 正常浮点数处理 =====
+        vm.label("_print_float_nonl_normal");
 
         vm.fmovToFloat(0, VReg.S0);
 

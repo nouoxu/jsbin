@@ -442,11 +442,14 @@ export class RegExpEngineGenerator {
         vm.jgt("_regexp_parse_cc_range_done");
 
         // 设置 bitmap 位: bitmap[V1 / 8] |= (1 << (V1 % 8))
-        // 注意：不能使用 A0-A3，因为它们与 V0-V3 共享物理寄存器
+        // on x64, SHL uses RCX (V1), so we must preserve V1
+        vm.push(VReg.V1);
         vm.shrImm(VReg.V7, VReg.V1, 3); // V7 = V1 / 8
         vm.andImm(VReg.V0, VReg.V1, 7); // V0 = V1 % 8
         vm.movImm(VReg.V2, 1);
         vm.shl(VReg.V2, VReg.V2, VReg.V0); // V2 = 1 << (V1 % 8)
+        vm.pop(VReg.V1);
+
         vm.add(VReg.V5, VReg.V4, VReg.V7); // V5 = bitmap + V7
         vm.loadByte(VReg.V0, VReg.V5, 0); // V0 = bitmap[V7]
         vm.or(VReg.V0, VReg.V0, VReg.V2);

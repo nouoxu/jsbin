@@ -42,7 +42,7 @@ export class X64Assembler {
         this.code = [];
         this.labels = {};
         this.fixups = [];
-        this.dataSection = [];
+        this.data = [];
         this.strings = Object.create(null);
         this.dataLabels = []; // 用于存储数据标签和预分配空间
         // 外部符号支持 (macOS 动态链接)
@@ -98,7 +98,16 @@ export class X64Assembler {
     }
 
     emitImm64(value) {
-        if (typeof value === "bigint") {
+        if (typeof value === "string") {
+            // 字符串格式 "0x..."，逐字节解析
+            let hex = value.startsWith("0x") ? value.slice(2) : value;
+            hex = hex.padStart(16, "0");
+            // 小端顺序: 低字节先
+            for (let i = 7; i >= 0; i--) {
+                let byteStr = hex.slice(i * 2, i * 2 + 2);
+                this.emit(parseInt(byteStr, 16));
+            }
+        } else if (typeof value === "bigint") {
             // BigInt 版本
             for (let i = 0; i < 8; i++) {
                 this.emit(Number((value >> BigInt(i * 8)) & 0xffn));
@@ -681,6 +690,17 @@ export class X64Assembler {
         }
     }
 
+    // LZCNT dest, src - Count Leading Zeros
+    // F3 REX.W 0F BD /r
+    lzcnt(dest, src) {
+        this.emit(0xf3);
+        let rexByte = this.rex(1, dest >= 8, 0, src >= 8); // W=1 for 64-bit
+        this.emit(rexByte);
+        this.emit(0x0f);
+        this.emit(0xbd);
+        this.emit(this.modrm(3, dest & 7, src & 7));
+    }
+
     // NEG reg - 取负
     negReg(dst) {
         let rexByte = this.rex(1, 0, 0, dst >= 8);
@@ -1033,6 +1053,19 @@ export class X64Assembler {
         this.emit(this.modrm(3, xmmDest & 7, xmmSrc & 7));
     }
 
+    // SQRTSD xmm1, xmm2 - 双精度浮点平方根
+    // F2 0F 51 /r
+    sqrtsd(xmmDest, xmmSrc) {
+        this.emit(0xf2);
+        if (xmmDest >= 8 || xmmSrc >= 8) {
+            let rexByte = this.rex(0, xmmDest >= 8, 0, xmmSrc >= 8);
+            this.emit(rexByte);
+        }
+        this.emit(0x0f);
+        this.emit(0x51);
+        this.emit(this.modrm(3, xmmDest & 7, xmmSrc & 7));
+    }
+
     // MOVQ r64, xmm - 从 XMM 移动到通用寄存器 (64位位模式)
     // 66 REX.W 0F 7E /r
     movqToGp(gpDest, xmmSrc) {
@@ -1287,11 +1320,26 @@ export class X64Assembler {
     // 添加单字节数据
     addDataByte(value) {
         this.dataLabels.push({ type: "byte", value: value });
+        this.data.push(value & 255);
+    }
+
+    // 添加 4 字节数据（小端序）
+    addDataDword(value) {
+        this.dataLabels.push({ type: "dword", value: value });
+        this.data.push(value & 255);
+        this.data.push((value >> 8) & 255);
+        this.data.push((value >> 16) & 255);
+        this.data.push((value >> 24) & 255);
     }
 
     // 添加 8 字节数据
     addDataQword(value) {
         this.dataLabels.push({ type: "qword", value: value });
+        let val = BigInt(value);
+        for (let j = 0; j < 8; j++) {
+            this.data.push(Number(val & 0xffn));
+            val = val >> 8n;
+        }
     }
 
     // 添加 64 位浮点数数据（IEEE 754 double）
@@ -1313,6 +1361,58 @@ export class X64Assembler {
         return labelName;
     }
 
+    // 从字符串添加 64 位整数数据（用于 BigInt 字面量）
+    // numStr 可以是十进制或十六进制字符串（如 "0x7ff8000000000000"）
+    addInt64FromString(numStr) {
+        // 检查是否已存在相同的值
+        this.int64s = this.int64s || new Map();
+        if (this.int64s.has(numStr)) {
+            return this.int64s.get(numStr);
+        }
+
+        let labelIndex = this.int64s.size;
+        let labelName = "_int64_" + labelIndex;
+        this.int64s.set(numStr, labelName);
+
+        // 从字符串解析为 16 进制
+        let hexStr;
+        if (numStr.startsWith("0x") || numStr.startsWith("0X")) {
+            hexStr = numStr.slice(2);
+        } else if (numStr.startsWith("0b") || numStr.startsWith("0B")) {
+            // 二进制转十六进制
+            const binStr = numStr.slice(2);
+            let val = 0n;
+            for (let i = 0; i < binStr.length; i++) {
+                val = val * 2n + BigInt(binStr[i] === "1" ? 1 : 0);
+            }
+            hexStr = val.toString(16);
+        } else if (numStr.startsWith("0o") || numStr.startsWith("0O")) {
+            // 八进制转十六进制
+            const octStr = numStr.slice(2);
+            let val = 0n;
+            for (let i = 0; i < octStr.length; i++) {
+                val = val * 8n + BigInt(parseInt(octStr[i], 8));
+            }
+            hexStr = val.toString(16);
+        } else {
+            // 十进制转十六进制
+            let val = 0n;
+            for (let i = 0; i < numStr.length; i++) {
+                val = val * 10n + BigInt(parseInt(numStr[i], 10));
+            }
+            hexStr = val.toString(16);
+        }
+
+        // 补齐到 16 位十六进制（64 位）
+        hexStr = hexStr.padStart(16, "0");
+
+        // 添加到数据标签（x64 格式）
+        this.dataLabels.push({ type: "label", name: labelName });
+        this.dataLabels.push({ type: "int64", hexStr: hexStr });
+
+        return labelName;
+    }
+
     resolveLabel(label) {
         // 解析标签别名
         let value = this.labels[label];
@@ -1328,6 +1428,9 @@ export class X64Assembler {
         if (codeBase === undefined) codeBase = this.codeVAddr;
         if (dataBase === undefined) dataBase = this.dataVAddr;
 
+        // 清空 data 数组，重新构建以确保标签偏移正确
+        this.data = [];
+
         // 设置数据段起始标签
         this.labels["_data_start"] = dataBase;
 
@@ -1337,9 +1440,9 @@ export class X64Assembler {
             let labelName = this.strings[str];
             this.labels[labelName] = dataBase + dataOffset;
             for (let i = 0; i < str.length; i = i + 1) {
-                this.dataSection.push(str.charCodeAt(i));
+                this.data.push(str.charCodeAt(i));
             }
-            this.dataSection.push(0);
+            this.data.push(0);
             dataOffset = dataOffset + str.length + 1;
         }
 
@@ -1347,21 +1450,29 @@ export class X64Assembler {
         for (let i = 0; i < this.dataLabels.length; i = i + 1) {
             let item = this.dataLabels[i];
             if (item.type === "label") {
-                this.labels[item.name] = dataBase + this.dataSection.length;
+                this.labels[item.name] = dataBase + this.data.length;
             } else if (item.type === "byte") {
-                this.dataSection.push(item.value & 255);
+                this.data.push(item.value & 255);
             } else if (item.type === "qword") {
                 let val = BigInt(item.value);
                 for (let j = 0; j < 8; j++) {
-                    this.dataSection.push(Number(val & 0xffn));
+                    this.data.push(Number(val & 0xffn));
                     val = val >> 8n;
                 }
             } else if (item.type === "float64") {
                 // 将 BigInt 转换为 8 字节小端序
                 let b = item.bits;
                 for (let j = 0; j < 8; j++) {
-                    this.dataSection.push(Number(b & 0xffn));
+                    this.data.push(Number(b & 0xffn));
                     b = b >> 8n;
+                }
+            } else if (item.type === "int64") {
+                // 从十六进制字符串解析并存储为 8 字节小端序
+                const hexStr = item.hexStr;
+                for (let j = 7; j >= 0; j--) {
+                    const byteHex = hexStr.slice(j * 2, j * 2 + 2);
+                    const byteVal = parseInt(byteHex, 16);
+                    this.data.push(byteVal);
                 }
             }
         }
@@ -1474,9 +1585,6 @@ export class X64Assembler {
             // 创建标签指向 stub
             this.labels[sym] = stubOffset;
         }
-
-        // 设置 data 属性以兼容通用接口
-        this.data = this.dataSection;
     }
 
     getCode() {
@@ -1484,7 +1592,7 @@ export class X64Assembler {
     }
 
     getData() {
-        return this.dataSection;
+        return this.data;
     }
 
     // Estimate final data section size as fixupAll would materialize it.

@@ -58,7 +58,8 @@ export const StatementParser = {
                 id = this.parseObjectPattern();
             } else if (this.curTokenIs(TokenType.LBRACKET)) {
                 id = this.parseArrayPattern();
-            } else if (this.curTokenIs(TokenType.IDENT)) {
+            } else if (this.curTokenIs(TokenType.IDENT) || this.curTokenIs(TokenType.SET) || this.curTokenIs(TokenType.GET)) {
+                // 'set' and 'get' can be used as variable names
                 id = new AST.Identifier(this.curToken.literal);
             } else {
                 this.errors.push("expected identifier");

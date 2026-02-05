@@ -50,7 +50,7 @@ export class DateGenerator {
 
             // 转换为 IEEE 754 浮点数位模式
             vm.scvtf(0, VReg.S0); // D0 = (double)ms
-            vm.fmovToInt(VReg.RET, 0); // X0 = D0 的位模式
+            vm.fmovToInt(VReg.S0, 0); // 保存到 S0
         } else if (arch === "arm64" && platform === "linux") {
             // Linux ARM64: 使用 clock_gettime
             vm.movImm(VReg.A0, 0); // CLOCK_REALTIME
@@ -70,7 +70,7 @@ export class DateGenerator {
 
             // 转换为 IEEE 754 浮点数位模式
             vm.scvtf(0, VReg.S0); // D0 = (double)ms
-            vm.fmovToInt(VReg.RET, 0);
+            vm.fmovToInt(VReg.S0, 0); // 保存到 S0
         } else if (arch === "x64" && platform === "macos") {
             // macOS x64: 使用 gettimeofday (syscall 116 + 0x2000000)
             vm.mov(VReg.A0, VReg.SP);
@@ -88,7 +88,7 @@ export class DateGenerator {
 
             // 转换为 IEEE 754 浮点数位模式
             vm.scvtf(0, VReg.S0); // XMM0 = (double)ms
-            vm.fmovToInt(VReg.RET, 0); // RAX = XMM0 的位模式
+            vm.fmovToInt(VReg.S0, 0); // 保存到 S0
         } else if (arch === "x64" && platform === "linux") {
             // Linux x64: 使用 gettimeofday
             vm.mov(VReg.A0, VReg.SP);
@@ -106,7 +106,7 @@ export class DateGenerator {
 
             // 转换为 IEEE 754 浮点数位模式
             vm.scvtf(0, VReg.S0); // XMM0 = (double)ms
-            vm.fmovToInt(VReg.RET, 0); // RAX = XMM0 的位模式
+            vm.fmovToInt(VReg.S0, 0); // 保存到 S0
         } else if (arch === "x64" && platform === "windows") {
             // Windows x64: 使用 GetSystemTimeAsFileTime
             // FILETIME 是 100 纳秒为单位，从 1601-01-01 开始
@@ -141,11 +141,15 @@ export class DateGenerator {
             // 转换为 IEEE 754 浮点数位模式
             vm.scvtf(0, VReg.S0); // XMM0 = (double)ms
 
-            vm.fmovToInt(VReg.RET, 0); // RAX = XMM0 的位模式
+            vm.fmovToInt(VReg.S0, 0); // 保存到 S0
         } else {
             // 其他平台：返回 0
-            vm.movImm(VReg.RET, 0);
+            vm.movImm(VReg.S0, 0);
         }
+
+        // 将 float64 位模式包装成 Number 对象
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_box_float64");
 
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 64);
 

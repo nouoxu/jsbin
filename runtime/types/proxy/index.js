@@ -96,7 +96,7 @@ export class ProxyGenerator {
         vm.call("_object_get");
 
         // 如果 get trap 不存在或为 undefined，直接访问 target
-        vm.movImm64(VReg.V1, JS_UNDEFINED);
+        vm.movImm64(VReg.V1, "0x7ffb000000000000"); // JS_UNDEFINED
         vm.cmp(VReg.RET, VReg.V1);
         vm.jeq("_proxy_get_direct");
 
@@ -121,7 +121,7 @@ export class ProxyGenerator {
 
         vm.label("_proxy_get_revoked");
         // 抛出 TypeError: proxy is revoked
-        vm.movImm64(VReg.RET, JS_UNDEFINED);
+        vm.movImm64(VReg.RET, "0x7ffb000000000000");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
     }
 
@@ -153,7 +153,7 @@ export class ProxyGenerator {
         vm.mov(VReg.A0, VReg.S4);
         vm.call("_object_get");
 
-        vm.movImm64(VReg.V1, JS_UNDEFINED);
+        vm.movImm64(VReg.V1, "0x7ffb000000000000"); // JS_UNDEFINED
         vm.cmp(VReg.RET, VReg.V1);
         vm.jeq("_proxy_set_direct");
 
@@ -210,7 +210,7 @@ export class ProxyGenerator {
         vm.mov(VReg.A0, VReg.S3);
         vm.call("_object_get");
 
-        vm.movImm64(VReg.V1, JS_UNDEFINED);
+        vm.movImm64(VReg.V1, "0x7ffb000000000000"); // JS_UNDEFINED
         vm.cmp(VReg.RET, VReg.V1);
         vm.jeq("_proxy_has_direct");
 

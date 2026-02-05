@@ -212,33 +212,118 @@ export class ARM64Assembler {
     movImm32(rd, imm) {
         this.movImm(rd, imm);
     }
+
+    // 从字符串加载 64 位立即数（用于 selfhost 中的 BigInt 支持）
+    movImm64Str(rd, hexStr) {
+        // hexStr 应该是 "0x..." 格式
+        let str = hexStr;
+        if (str.startsWith("0x") || str.startsWith("0X")) {
+            str = str.slice(2);
+        }
+        // 补齐到 16 位
+        str = str.padStart(16, "0");
+
+        // 提取各部分
+        const high48 = parseInt(str.slice(0, 4), 16) || 0;
+        const high32 = parseInt(str.slice(4, 8), 16) || 0;
+        const high16 = parseInt(str.slice(8, 12), 16) || 0;
+        const imm16 = parseInt(str.slice(12, 16), 16) || 0;
+
+        // MOVZ rd, #imm16, LSL #0
+        const word = (3531603968 | (imm16 << 5) | rd) >>> 0;
+        this.emit32(word);
+
+        if (high16 !== 0) {
+            const word2 = (4070572032 | (high16 << 5) | rd) >>> 0;
+            this.emit32(word2);
+        }
+
+        if (high32 !== 0) {
+            const word3 = (4072669184 | (high32 << 5) | rd) >>> 0;
+            this.emit32(word3);
+        }
+
+        if (high48 !== 0) {
+            const word4 = (4074766336 | (high48 << 5) | rd) >>> 0;
+            this.emit32(word4);
+        }
+    }
+
     movImm64(rd, imm) {
-        // 支持 BigInt 和普通 Number
-        if (typeof imm === "bigint") {
-            // BigInt 版本
-            const imm16 = Number(imm & 0xffffn);
-            const word = 3531603968 | (imm16 << 5) | rd; // 0xD2800000 MOVZ
-            this.emit32(word);
+        // 如果是字符串，使用 movImm64Str
+        if (typeof imm === "string") {
+            return this.movImm64Str(rd, imm);
+        }
 
-            const high16 = Number((imm >> 16n) & 0xffffn);
-            if (high16 !== 0) {
-                const word2 = 4070572032 | (high16 << 5) | rd; // 0xF2A00000 MOVK lsl #16
-                this.emit32(word2);
+        // 统一处理 BigInt 和 Number
+        // 注意：在 selfhost 中，typeof bigint 会返回 "number"，所以不能依赖 typeof 检查
+        // 使用数学运算来提取各个 16 位部分，同时兼容 BigInt 和 Number
+
+        let val = imm;
+        let imm16, high16, high32, high48;
+
+        // 检查是否可以使用 toString(16)
+        // 在 selfhost 中，BigInt 可能没有正确的 toString 实现
+        // 通过尝试调用来检测
+        let hexStr;
+        try {
+            hexStr = val.toString(16);
+            // 验证结果是否合理（应该是十六进制字符串）
+            if (!/^-?[0-9a-f]+$/i.test(hexStr)) {
+                // toString 返回了无效结果，使用备用方法
+                hexStr = null;
+            }
+        } catch (e) {
+            hexStr = null;
+        }
+
+        if (hexStr && hexStr !== "0" && hexStr !== "NaN") {
+            // 处理负数
+            if (hexStr.startsWith("-")) {
+                // 负数用 MOVN
+                // 简化处理：使用小立即数
+                this.movImm(rd, val);
+                return;
             }
 
-            const high32 = Number((imm >> 32n) & 0xffffn);
-            if (high32 !== 0) {
-                const word3 = 4072669184 | (high32 << 5) | rd; // 0xF2C00000 MOVK lsl #32
-                this.emit32(word3);
-            }
+            const paddedHex = hexStr.padStart(16, "0");
 
-            const high48 = Number((imm >> 48n) & 0xffffn);
-            if (high48 !== 0) {
-                const word4 = 4074766336 | (high48 << 5) | rd; // 0xF2E00000 MOVK lsl #48
-                this.emit32(word4);
-            }
+            // 从十六进制字符串直接提取各部分
+            high48 = parseInt(paddedHex.slice(0, 4), 16) || 0;
+            high32 = parseInt(paddedHex.slice(4, 8), 16) || 0;
+            high16 = parseInt(paddedHex.slice(8, 12), 16) || 0;
+            imm16 = parseInt(paddedHex.slice(12, 16), 16) || 0;
         } else {
-            this.movImm(rd, imm);
+            // 备用方法：假设是 Number（可能精度有限）
+            // 使用数学运算
+            if (val < 0) {
+                this.movImm(rd, val);
+                return;
+            }
+            imm16 = val & 65535;
+            high16 = (val >>> 16) & 65535;
+            // 对于大于 32 位的数，使用 Math.floor
+            high32 = Math.floor(val / 4294967296) & 65535;
+            high48 = Math.floor(val / 281474976710656) & 65535;
+        }
+
+        // MOVZ rd, #imm16, LSL #0
+        const word = (3531603968 | (imm16 << 5) | rd) >>> 0;
+        this.emit32(word);
+
+        if (high16 !== 0) {
+            const word2 = (4070572032 | (high16 << 5) | rd) >>> 0;
+            this.emit32(word2);
+        }
+
+        if (high32 !== 0) {
+            const word3 = (4072669184 | (high32 << 5) | rd) >>> 0;
+            this.emit32(word3);
+        }
+
+        if (high48 !== 0) {
+            const word4 = (4074766336 | (high48 << 5) | rd) >>> 0;
+            this.emit32(word4);
         }
     }
 
@@ -268,7 +353,14 @@ export class ARM64Assembler {
         // 对于大的立即数，使用临时寄存器
         if (imm > 4095) {
             this.movImm(Reg.X9, imm);
-            this.addReg(rd, rn, Reg.X9);
+            // 使用 ADD extended 形式来支持 SP
+            if (rd === Reg.SP || rn === Reg.SP) {
+                // ADD Xd|SP, Xn|SP, Xm{, UXTX} - 编码: 0x8B206000
+                let word = 0x8b206000 | (Reg.X9 << 16) | (rn << 5) | rd;
+                this.emit32(word);
+            } else {
+                this.addReg(rd, rn, Reg.X9);
+            }
         } else {
             let imm12 = imm & 4095;
             let word = 2432696320 | (imm12 << 10) | (rn << 5) | rd; // 0x91000000
@@ -285,7 +377,17 @@ export class ARM64Assembler {
         // 对于大的立即数，使用临时寄存器
         if (imm > 4095) {
             this.movImm(Reg.X9, imm);
-            this.subReg(rd, rn, Reg.X9);
+            // 使用 SUB extended 形式来支持 SP
+            // SUB Xd|SP, Xn|SP, Xm, extend
+            // 对于 SP，需要使用扩展寄存器形式
+            if (rd === Reg.SP || rn === Reg.SP) {
+                // SUB Xd|SP, Xn|SP, Xm{, UXTX} - 编码: 0xCB206000
+                // UXTX 是默认的 64 位扩展（无扩展）
+                let word = 0xcb206000 | (Reg.X9 << 16) | (rn << 5) | rd;
+                this.emit32(word);
+            } else {
+                this.subReg(rd, rn, Reg.X9);
+            }
         } else {
             let imm12 = imm & 4095;
             let word = 3506438144 | (imm12 << 10) | (rn << 5) | rd; // 0xD1000000
@@ -1105,7 +1207,17 @@ export class ARM64Assembler {
     }
 
     leaRipRel(rd, labelName) {
-        this.adr(rd, labelName);
+        // 对于大程序，使用 ADRP + ADD 组合来支持 ±4GB 范围
+        // ADRP 加载页地址，ADD 添加页内偏移
+        let fullName = labelName;
+        if (labelName.charAt(0) !== "_") {
+            fullName = this.labelPrefix + labelName;
+        }
+        // 发射 ADRP rd, label
+        this.pendingFixups.push({ type: "adrp_add", offset: this.code.length, label: fullName, rd: rd });
+        this.emit32(2415919104 | rd); // 0x90000000 | rd = ADRP
+        // 发射 ADD rd, rd, #0 (页内偏移将在 finalize 时填充)
+        this.emit32(2432696320 | (rd << 5) | rd); // 0x91000000 | (rd << 5) | rd = ADD rd, rd, #0
     }
 
     // ==================== 系统调用 ====================
@@ -1144,6 +1256,21 @@ export class ARM64Assembler {
             }
         }
         this.data.push(value & 255);
+    }
+
+    // 添加 4 字节数据（小端序）
+    addDataDword(value) {
+        if (this.dataLabels && this.dataLabels.length > 0) {
+            let lastLabel = this.dataLabels[this.dataLabels.length - 1];
+            if (lastLabel.offset === -1) {
+                lastLabel.offset = this.data.length;
+            }
+        }
+        // 写入 4 字节（小端序）
+        this.data.push(value & 255);
+        this.data.push((value >> 8) & 255);
+        this.data.push((value >> 16) & 255);
+        this.data.push((value >> 24) & 255);
     }
 
     // 添加 8 字节数据
@@ -1197,6 +1324,65 @@ export class ARM64Assembler {
         return labelName;
     }
 
+    // 从字符串添加 64 位整数数据（用于 BigInt 字面量）
+    // numStr 可以是十进制或十六进制字符串（如 "0x7ff8000000000000"）
+    addInt64FromString(numStr) {
+        // 检查是否已存在相同的值
+        this.int64s = this.int64s || new Map();
+        if (this.int64s.has(numStr)) {
+            return this.int64s.get(numStr);
+        }
+
+        let labelIndex = this.int64s.size;
+        let labelName = "_int64_" + labelIndex;
+        this.int64s.set(numStr, labelName);
+
+        // 设置数据标签
+        this.dataLabels = this.dataLabels || [];
+        this.dataLabels.push({ name: labelName, offset: this.data.length });
+
+        // 从字符串解析为 16 进制字节
+        // 先将字符串转换为规范化的十六进制
+        let hexStr;
+        if (numStr.startsWith("0x") || numStr.startsWith("0X")) {
+            hexStr = numStr.slice(2);
+        } else if (numStr.startsWith("0b") || numStr.startsWith("0B")) {
+            // 二进制转十六进制
+            const binStr = numStr.slice(2);
+            let val = 0n;
+            for (let i = 0; i < binStr.length; i++) {
+                val = val * 2n + BigInt(binStr[i] === "1" ? 1 : 0);
+            }
+            hexStr = val.toString(16);
+        } else if (numStr.startsWith("0o") || numStr.startsWith("0O")) {
+            // 八进制转十六进制
+            const octStr = numStr.slice(2);
+            let val = 0n;
+            for (let i = 0; i < octStr.length; i++) {
+                val = val * 8n + BigInt(parseInt(octStr[i], 8));
+            }
+            hexStr = val.toString(16);
+        } else {
+            // 十进制转十六进制
+            let val = 0n;
+            for (let i = 0; i < numStr.length; i++) {
+                val = val * 10n + BigInt(parseInt(numStr[i], 10));
+            }
+            hexStr = val.toString(16);
+        }
+
+        // 补齐到 16 位十六进制（64 位）
+        hexStr = hexStr.padStart(16, "0");
+
+        // 将十六进制字符串转换为 8 字节小端序
+        for (let i = 7; i >= 0; i--) {
+            const byteHex = hexStr.slice(i * 2, i * 2 + 2);
+            const byteVal = parseInt(byteHex, 16);
+            this.data.push(byteVal);
+        }
+
+        return labelName;
+    }
     finalize() {
         // 为外部符号生成 stub
         // stub 通过 ADRP+LDR 从 GOT 加载地址，然后 BR 跳转
@@ -1261,9 +1447,6 @@ export class ARM64Assembler {
 
         // 设置数据段起始标签（偏移量为 0，因为它是数据段的开头）
         this.labels["_data_start"] = 0;
-
-        // 调试
-        console.log(`DEBUG ARM64: dataVAddr=0x${this.dataVAddr.toString(16)}`);
 
         for (let i = 0; i < this.pendingFixups.length; i = i + 1) {
             let fixup = this.pendingFixups[i];
@@ -1357,7 +1540,7 @@ export class ARM64Assembler {
             // 检查是否是数据段标签
             // 优先用 finalize 收集到的 dataLabel 集合，其次用历史白名单启发式
             // 注意: _str_toUpperCase 等是代码段函数，不是数据段字符串
-            const stringMethodPrefixes = ["_str_toUpperCase", "_str_toLowerCase", "_str_charAt", "_str_charCodeAt", "_str_trim", "_str_slice", "_str_indexOf", "_str_length"];
+            const stringMethodPrefixes = ["_str_toUpperCase", "_str_toLowerCase", "_str_charAt", "_str_charCodeAt", "_str_trim", "_str_slice", "_str_indexOf", "_str_lastIndexOf", "_str_length", "_str_includes", "_str_startsWith", "_str_endsWith", "_str_repeat", "_str_at", "_str_concat", "_str_split", "_str_replace", "_str_replaceAll"];
             const isStringMethod = stringMethodPrefixes.some((prefix) => labelName === prefix || labelName.startsWith(prefix + "_"));
             let isDataLabel =
                 !isStringMethod &&
@@ -1394,7 +1577,18 @@ export class ARM64Assembler {
                     labelName === "_print_buf" ||
                     labelName.indexOf("_global_") === 0 ||
                     labelName.indexOf("_main_captured_") === 0 ||
-                    labelName === "_random_seed");
+                    labelName === "_random_seed" ||
+                    labelName === "_process_argv_array" ||
+                    labelName === "_process_envp_ptr" ||
+                    labelName === "_pwd_env_name" ||
+                    labelName === "_empty_cstr" ||
+                    labelName === "_tmpdir_env_name" ||
+                    labelName === "_str_tmp" ||
+                    labelName === "_str_bin_sh" ||
+                    labelName === "_str_dash_c" ||
+                    labelName === "_str_size" ||
+                    labelName === "_process_platform_str" ||
+                    labelName === "_process_arch_str");
             let targetAddr = isDataLabel ? this.dataVAddr + labelOffset : this.codeVAddr + labelOffset;
             let currentAddr = this.codeVAddr + fixup.offset;
 
@@ -1437,6 +1631,32 @@ export class ARM64Assembler {
                 this.code[fixup.offset + 1] = (word >> 8) & 255;
                 this.code[fixup.offset + 2] = (word >> 16) & 255;
                 this.code[fixup.offset + 3] = (word >> 24) & 255;
+            } else if (fixup.type === "adrp_add") {
+                // ADRP + ADD 组合，用于加载远距离标签地址
+                let rd = fixup.rd;
+
+                // 计算页偏移
+                let currentPage = Math.floor(currentAddr / 4096) * 4096;
+                let targetPage = Math.floor(targetAddr / 4096) * 4096;
+                let pageOffset = (targetPage - currentPage) / 4096;
+
+                // ADRP 指令
+                let immlo = pageOffset & 3;
+                let immhi = (pageOffset >> 2) & 524287;
+                let adrpWord = 2415919104 | (immlo << 29) | (immhi << 5) | rd;
+                this.code[fixup.offset] = adrpWord & 255;
+                this.code[fixup.offset + 1] = (adrpWord >> 8) & 255;
+                this.code[fixup.offset + 2] = (adrpWord >> 16) & 255;
+                this.code[fixup.offset + 3] = (adrpWord >> 24) & 255;
+
+                // ADD 指令：页内偏移
+                let pageInOffset = targetAddr - targetPage;
+                let imm12 = pageInOffset & 4095;
+                let addWord = 2432696320 | (imm12 << 10) | (rd << 5) | rd; // 0x91000000 | imm12 | Rn | Rd
+                this.code[fixup.offset + 4] = addWord & 255;
+                this.code[fixup.offset + 5] = (addWord >> 8) & 255;
+                this.code[fixup.offset + 6] = (addWord >> 16) & 255;
+                this.code[fixup.offset + 7] = (addWord >> 24) & 255;
             } else if (fixup.type === "cbz" || fixup.type === "cbnz") {
                 // CBZ/CBNZ: imm19 偏移
                 let offset = (targetAddr - currentAddr) / 4;

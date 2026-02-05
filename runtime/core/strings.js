@@ -14,6 +14,11 @@ export const RUNTIME_STRINGS = {
     unknown: { label: "_str_unknown", value: "[unknown]" },
     empty: { label: "_str_empty", value: "" },
 
+    // 特殊数值
+    infinity: { label: "_str_infinity", value: "Infinity" },
+    negInfinity: { label: "_str_neg_infinity", value: "-Infinity" },
+    nan: { label: "_str_nan", value: "NaN" },
+
     // Promise 相关
     promisePending: { label: "_str_promise_pending", value: "Promise { <pending> }" },
     promiseFulfilledFull: { label: "_str_promise_fulfilled_full", value: "Promise { <fulfilled> }" },
@@ -88,6 +93,13 @@ export const RUNTIME_STRINGS = {
     debugGenS0: { label: "_str_debug_gen_s0", value: "[DEBUG] S0 (generator ptr)=" },
     debugRetval: { label: "_str_debug_retval", value: "[DEBUG] return value ptr=" },
     debugRetval2: { label: "_str_debug_retval2", value: ", type=" },
+
+    // Getter/Setter 前缀
+    getterPrefix: { label: "_str_getter_prefix", value: "__get__" },
+    setterPrefix: { label: "_str_setter_prefix", value: "__set__" },
+
+    // 属性名称
+    lengthProp: { label: "_str_length_prop", value: "length" },
 };
 
 // 字符串常量生成器

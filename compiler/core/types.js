@@ -17,6 +17,7 @@ export const Type = {
     SET: "Set",
     REGEXP: "RegExp",
     TYPED_ARRAY: "TypedArray", // TypedArray (Int8Array, Float64Array 等)
+    BUFFER: "Buffer", // Buffer (内部使用 Uint8Array)
     VOID: "void", // 函数无返回值
     GENERATOR: "Generator", // Generator 对象
 
@@ -251,6 +252,8 @@ export function inferType(node, ctx) {
                     case "BigUint64Array":
                     case "Float32Array":
                     case "Float64Array":
+                    // Buffer 也是 TypedArray (内部使用 Uint8Array)
+                    case "Buffer":
                         return Type.TYPED_ARRAY;
                     // Number 子类型（语法: new Int8() 实际类型: Number.Int8）
                     case "Int8":
@@ -280,6 +283,11 @@ export function inferType(node, ctx) {
             return Type.OBJECT;
 
         case "MemberExpression":
+            // process.argv 返回数组
+            if (node.object && node.object.type === "Identifier" && node.object.name === "process" && node.property && (node.property.name === "argv" || node.property.value === "argv")) {
+                return Type.ARRAY;
+            }
+
             // Math 常量
             if (node.object && node.object.type === "Identifier" && node.object.name === "Math") {
                 const propName = node.property && (node.property.name || node.property.value);
@@ -338,6 +346,17 @@ export function inferType(node, ctx) {
                     }
                 }
 
+                // Buffer 静态方法返回 Buffer
+                if (obj && obj.type === "Identifier" && obj.name === "Buffer" && prop) {
+                    const methodName = prop.name || prop.value;
+                    if (methodName === "alloc" || methodName === "allocUnsafe" || methodName === "from" || methodName === "concat") {
+                        return Type.BUFFER;
+                    }
+                    if (methodName === "isBuffer") {
+                        return Type.BOOLEAN;
+                    }
+                }
+
                 // String 方法返回类型
                 const stringMethodsReturningString = ["toUpperCase", "toLowerCase", "trim", "trimStart", "trimEnd", "slice", "substring", "substr", "replace", "replaceAll", "padStart", "padEnd", "repeat", "charAt", "normalize", "toString", "valueOf"];
                 if (prop && stringMethodsReturningString.includes(prop.name)) {
@@ -361,6 +380,25 @@ export function inferType(node, ctx) {
                     const methodName = prop.name || prop.value;
                     if (methodName === "keys" || methodName === "values" || methodName === "entries") {
                         return Type.ARRAY;
+                    }
+                }
+
+                // Array.from() 返回数组, Array.isArray() 返回布尔
+                if (obj && obj.type === "Identifier" && obj.name === "Array" && prop) {
+                    const methodName = prop.name || prop.value;
+                    if (methodName === "from") {
+                        return Type.ARRAY;
+                    }
+                    if (methodName === "isArray") {
+                        return Type.BOOLEAN;
+                    }
+                }
+
+                // String.fromCharCode() 返回字符串
+                if (obj && obj.type === "Identifier" && obj.name === "String" && prop) {
+                    const methodName = prop.name || prop.value;
+                    if (methodName === "fromCharCode") {
+                        return Type.STRING;
                     }
                 }
 

@@ -4,6 +4,8 @@
 
 import { VReg } from "../../vm/index.js";
 import { JS_NULL, JS_UNDEFINED, JS_FALSE, JS_TAG_BOOL_BASE, JS_TAG_INT32_BASE, JS_TAG_STRING_BASE } from "./jsvalue.js";
+import { TYPE_NUMBER } from "./types.js";
+import { TYPE_FLOAT64 } from "./allocator.js";
 
 export class CoercionGenerator {
     constructor(vm) {
@@ -12,6 +14,8 @@ export class CoercionGenerator {
 
     generate() {
         this.generateToBoolean();
+        this.generateToNumber();
+        this.generateToString();
     }
 
     /**
@@ -46,29 +50,69 @@ export class CoercionGenerator {
         vm.jeq(falsyLabel);
 
         // 检查 -0.0 (0x8000000000000000)
-        vm.movImm64(VReg.V0, 0x8000000000000000n);
+        vm.movImm64(VReg.V0, "0x8000000000000000");
         vm.cmp(VReg.S0, VReg.V0);
         vm.jeq(falsyLabel);
 
         // 检查 false (0x7FF9000000000000)
-        vm.movImm64(VReg.V0, JS_FALSE);
+        vm.movImm64(VReg.V0, "0x7ff9000000000000"); // JS_FALSE
         vm.cmp(VReg.S0, VReg.V0);
         vm.jeq(falsyLabel);
 
         // 检查 null (0x7FFA000000000000)
-        vm.movImm64(VReg.V0, JS_NULL);
+        vm.movImm64(VReg.V0, "0x7ffa000000000000"); // JS_NULL
         vm.cmp(VReg.S0, VReg.V0);
         vm.jeq(falsyLabel);
 
         // 检查 undefined (0x7FFB000000000000)
-        vm.movImm64(VReg.V0, JS_UNDEFINED);
+        vm.movImm64(VReg.V0, "0x7ffb000000000000"); // JS_UNDEFINED
         vm.cmp(VReg.S0, VReg.V0);
         vm.jeq(falsyLabel);
 
         // 检查 INT32 类型的 0 (0x7FF8000000000000)
-        vm.movImm64(VReg.V0, JS_TAG_INT32_BASE);
+        vm.movImm64(VReg.V0, "0x7ff8000000000000"); // JS_TAG_INT32_BASE
         vm.cmp(VReg.S0, VReg.V0);
         vm.jeq(falsyLabel);
+
+        // 检查堆上的 Number/Float64 对象是否为 0 / -0
+        // 堆范围: [_heap_base, _heap_ptr)
+        vm.lea(VReg.V2, "_heap_base");
+        vm.load(VReg.V2, VReg.V2, 0);
+        vm.cmp(VReg.S0, VReg.V2);
+        const notHeapLabel = "_to_bool_not_heap";
+        vm.jlt(notHeapLabel);
+
+        vm.lea(VReg.V3, "_heap_ptr");
+        vm.load(VReg.V3, VReg.V3, 0);
+        vm.cmp(VReg.S0, VReg.V3);
+        vm.jge(notHeapLabel);
+
+        // 读取对象 type
+        vm.load(VReg.V4, VReg.S0, 0);
+        vm.andImm(VReg.V4, VReg.V4, 0xff);
+        vm.movImm(VReg.V5, TYPE_NUMBER);
+        vm.cmp(VReg.V4, VReg.V5);
+        const notNumberLabel = "_to_bool_not_number";
+        vm.jeq("_to_bool_check_number_value");
+        vm.movImm(VReg.V5, TYPE_FLOAT64);
+        vm.cmp(VReg.V4, VReg.V5);
+        vm.jne(notNumberLabel);
+
+        vm.label("_to_bool_check_number_value");
+        vm.load(VReg.V5, VReg.S0, 8); // value
+        vm.cmpImm(VReg.V5, 0);
+        vm.jeq(falsyLabel);
+        vm.movImm64(VReg.V6, "0x8000000000000000");
+        vm.cmp(VReg.V5, VReg.V6);
+        vm.jeq(falsyLabel);
+        // 非零数字为 truthy
+        vm.jmp("_to_bool_truthy");
+
+        vm.label(notNumberLabel);
+        // 其他堆对象 => truthy
+        vm.jmp("_to_bool_truthy");
+
+        vm.label(notHeapLabel);
 
         // 检查空字符串：高 16 位是 0x7FFC
         vm.shrImm(VReg.V0, VReg.S0, 48);
@@ -78,7 +122,7 @@ export class CoercionGenerator {
 
         // 是字符串，检查是否为空
         // 提取低 48 位作为字符串指针并符号扩展
-        vm.movImm64(VReg.V0, 0x0000ffffffffffffn);
+        vm.movImm64(VReg.V0, "0x0000ffffffffffff");
         vm.and(VReg.V0, VReg.S0, VReg.V0);
         vm.shlImm(VReg.V0, VReg.V0, 16);
         vm.sarImm(VReg.V0, VReg.V0, 16);
@@ -95,5 +139,142 @@ export class CoercionGenerator {
         vm.label(falsyLabel);
         vm.movImm(VReg.RET, 0);
         vm.epilogue([VReg.S0], 0);
+    }
+
+    /**
+     * _to_number: 将任意 JavaScript 值转换为数字
+     * 输入: A0 = JSValue
+     * 输出: RET = Number (NaN-boxed float64 或 Int32)
+     *
+     * 转换规则:
+     * - Number -> 返回原值
+     * - String -> 解析为数字 (简化: 返回 NaN)
+     * - Boolean -> true=1, false=0
+     * - null -> 0
+     * - undefined -> NaN
+     * - Object -> NaN (简化)
+     */
+    generateToNumber() {
+        const vm = this.vm;
+
+        vm.label("_to_number");
+        vm.prologue(0, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0);
+
+        // 检查是否已经是数字 (纯 float64 或 Int32 tagged)
+        // 纯 float64: 高位不是 0x7FF8-0x7FFF
+        vm.shrImm(VReg.V0, VReg.S0, 48);
+        vm.movImm(VReg.V1, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jlt("_to_number_is_float"); // 小于 0x7FF8 说明是正常 float64
+
+        // 检查 Int32 (0x7FF8)
+        vm.movImm(VReg.V1, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_to_number_is_int32");
+
+        // 检查 boolean true (0x7FF9 | 1)
+        vm.movImm(VReg.V1, 0x7ff9);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_to_number_from_bool");
+
+        // 检查 null (0x7FFA) -> 0
+        vm.movImm(VReg.V1, 0x7ffa);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_to_number_zero");
+
+        // 检查 undefined (0x7FFB) -> NaN
+        vm.movImm(VReg.V1, 0x7ffb);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_to_number_nan");
+
+        // 检查 string (0x7FFC) -> 暂时返回 NaN
+        vm.movImm(VReg.V1, 0x7ffc);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_to_number_nan");
+
+        // 其他情况 (对象等) -> NaN
+        vm.jmp("_to_number_nan");
+
+        // 已经是 float64
+        vm.label("_to_number_is_float");
+        vm.mov(VReg.RET, VReg.S0);
+        vm.epilogue([VReg.S0], 0);
+
+        // Int32 -> 转换为 float64
+        vm.label("_to_number_is_int32");
+        // 提取低 32 位并符号扩展
+        vm.shlImm(VReg.V0, VReg.S0, 32);
+        vm.sarImm(VReg.V0, VReg.V0, 32);
+        // 转换为 float64
+        vm.scvtf(VReg.RET, VReg.V0);
+        vm.epilogue([VReg.S0], 0);
+
+        // boolean -> 0 或 1
+        vm.label("_to_number_from_bool");
+        vm.andImm(VReg.V0, VReg.S0, 1); // 提取最低位
+        vm.scvtf(VReg.RET, VReg.V0);
+        vm.epilogue([VReg.S0], 0);
+
+        // 返回 0
+        vm.label("_to_number_zero");
+        vm.movImm(VReg.RET, 0); // float64 的 +0.0
+        vm.epilogue([VReg.S0], 0);
+
+        // 返回 NaN
+        vm.label("_to_number_nan");
+        vm.movImm64(VReg.RET, "0x7ff8000000000000"); // canonical NaN
+        vm.epilogue([VReg.S0], 0);
+    }
+
+    /**
+     * _to_string: 将任意 JavaScript 值转换为字符串
+     * 输入: A0 = JSValue
+     * 输出: RET = String pointer (NaN-boxed)
+     *
+     * 简化实现: 如果是字符串返回原值，否则返回 "[value]"
+     */
+    generateToString() {
+        const vm = this.vm;
+
+        vm.label("_to_string");
+        vm.prologue(0, [VReg.S0]);
+
+        vm.mov(VReg.S0, VReg.A0);
+
+        // 检查是否已经是字符串 (高 16 位是 0x7FFC)
+        vm.shrImm(VReg.V0, VReg.S0, 48);
+        vm.movImm(VReg.V1, 0x7ffc);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_to_string_is_string");
+
+        // 不是字符串，返回 "[value]" 占位符
+        vm.lea(VReg.A0, "_to_string_placeholder");
+        vm.call("_createStrFromCStr");
+        vm.mov(VReg.A0, VReg.RET);
+        vm.call("_js_box_string");
+        vm.epilogue([VReg.S0], 0);
+
+        vm.label("_to_string_is_string");
+        // 已经是字符串，直接返回
+        vm.mov(VReg.RET, VReg.S0);
+        vm.epilogue([VReg.S0], 0);
+    }
+
+    /**
+     * 生成数据段
+     */
+    generateDataSection(asm) {
+        // "[value]" placeholder string
+        asm.addDataLabel("_to_string_placeholder");
+        asm.addDataByte(91); // '['
+        asm.addDataByte(118); // 'v'
+        asm.addDataByte(97); // 'a'
+        asm.addDataByte(108); // 'l'
+        asm.addDataByte(117); // 'u'
+        asm.addDataByte(101); // 'e'
+        asm.addDataByte(93); // ']'
+        asm.addDataByte(0); // null
     }
 }

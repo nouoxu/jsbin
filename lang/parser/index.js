@@ -31,8 +31,12 @@ export class Parser {
     registerParseFns() {
         // 前缀解析函数
         this.prefixParseFns[TokenType.IDENT] = () => this.parseIdentifier();
+        // get/set 也可以作为标识符使用 (如 set.add(), get.foo())
+        this.prefixParseFns[TokenType.GET] = () => this.parseIdentifier();
+        this.prefixParseFns[TokenType.SET] = () => this.parseIdentifier();
         this.prefixParseFns[TokenType.INT] = () => this.parseNumberLiteral();
         this.prefixParseFns[TokenType.FLOAT] = () => this.parseNumberLiteral();
+        this.prefixParseFns[TokenType.BIGINT] = () => this.parseBigIntLiteral();
         this.prefixParseFns[TokenType.STRING] = () => this.parseStringLiteral();
         this.prefixParseFns[TokenType.TEMPLATE_STRING] = () => this.parseTemplateLiteral();
         this.prefixParseFns[TokenType.TEMPLATE_HEAD] = () => this.parseTemplateLiteralWithExpressions();

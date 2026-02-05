@@ -43,10 +43,13 @@ export const Reg = {
 
 export class ARM64Backend extends Backend {
     constructor(asm, platform) {
+        console.log("[ARM64Backend] Constructor: platform =", platform);
         super(asm);
         this.platform = platform || "linux"; // "linux" | "macos"
+        console.log("[ARM64Backend] this.platform =", this.platform);
 
         // 虚拟寄存器 -> ARM64 物理寄存器映射
+        console.log("[ARM64Backend] Setting up regMap");
         this.regMap = {
             // 通用/临时寄存器
             [VReg.V0]: Reg.X0,
@@ -190,7 +193,8 @@ export class ARM64Backend extends Backend {
     }
 
     lea(dest, label) {
-        this.asm.adr(this.mapReg(dest), label);
+        // 使用 ADRP + ADD 组合来支持大偏移（>1MB）
+        this.asm.leaRipRel(this.mapReg(dest), label);
     }
 
     // ========== 算术运算 ==========
@@ -381,6 +385,10 @@ export class ARM64Backend extends Backend {
     // ========== 函数调用 ==========
 
     prologue(stackSize, savedRegs) {
+        // ARM64 ABI 要求 SP 必须始终 16 字节对齐
+        // 将 stackSize 向上取整到 16 的倍数
+        const alignedStackSize = stackSize > 0 ? (stackSize + 15) & ~15 : 0;
+
         // 保存 FP 和 LR
         this.asm.stpPre(Reg.FP, Reg.LR, Reg.SP, -16);
         this.asm.movReg(Reg.FP, Reg.SP);
@@ -392,16 +400,23 @@ export class ARM64Backend extends Backend {
             this.asm.stpPre(r1, r2, Reg.SP, -16);
         }
 
-        // 分配栈空间
-        if (stackSize > 0) {
-            this.asm.subImm(Reg.SP, Reg.SP, stackSize);
+        // 分配栈空间（使用对齐后的大小）
+        if (alignedStackSize > 0) {
+            this.asm.subImm(Reg.SP, Reg.SP, alignedStackSize);
         }
+
+        // 注意：不再保存 _lastAlignedStackSize，因为在嵌套函数编译时会被覆盖
+        // epilogue 应该始终使用传入的 stackSize 参数
     }
 
     epilogue(savedRegs, stackSize) {
+        // 始终使用传入的 stackSize 参数并手动对齐
+        // 不能使用 _lastAlignedStackSize，因为在嵌套函数（如类方法）编译时会被覆盖
+        const alignedStackSize = stackSize > 0 ? (stackSize + 15) & ~15 : 0;
+
         // 恢复栈空间
-        if (stackSize > 0) {
-            this.asm.addImm(Reg.SP, Reg.SP, stackSize);
+        if (alignedStackSize > 0) {
+            this.asm.addImm(Reg.SP, Reg.SP, alignedStackSize);
         }
 
         // 恢复 callee-saved 寄存器（反序）

@@ -32,13 +32,14 @@ export function detectPlatform() {
         } else {
             return "linux-x64";
         }
-    } else if (platform === "darwin") {
+    } else if (platform === "darwin" || platform === "macos") {
+        // Note: Node.js uses "darwin", but native JSBin binaries use "macos"
         if (arch === "arm64") {
             return "macos-arm64";
         } else {
             return "macos-x64";
         }
-    } else if (platform === "win32") {
+    } else if (platform === "win32" || platform === "windows") {
         if (arch === "arm64") {
             return "windows-arm64";
         } else {

@@ -76,12 +76,12 @@ export const AssignmentCompiler = {
                     const notNullLabel = this.ctx.newLabel("assign_not_null");
 
                     // 检查是否为 null (0x7FFA000000000000)
-                    this.vm.movImm64(VReg.V1, 0x7ffa000000000000n);
+                    this.vm.movImm64(VReg.V1, "0x7ffa000000000000");
                     this.vm.cmp(VReg.RET, VReg.V1);
                     this.vm.jeq(doAssignLabel); // 是 null，执行赋值
 
                     // 检查是否为 undefined (0x7FFB000000000000)
-                    this.vm.movImm64(VReg.V1, 0x7ffb000000000000n);
+                    this.vm.movImm64(VReg.V1, "0x7ffb000000000000");
                     this.vm.cmp(VReg.RET, VReg.V1);
                     this.vm.jne(endLabel); // 既不是 null 也不是 undefined，跳过赋值
 
@@ -155,6 +155,10 @@ export const AssignmentCompiler = {
                 case ">>=":
                     this.vm.shr(VReg.RET, VReg.V1, VReg.RET);
                     break;
+                case ">>>=":
+                    // 无符号右移赋值（暂时使用有符号右移，因为 JS 的 >>> 在 NaN-boxing 环境下需要特殊处理）
+                    this.vm.shr(VReg.RET, VReg.V1, VReg.RET);
+                    break;
                 default:
                     console.warn("Unhandled assignment operator:", op);
                     return;
@@ -182,8 +186,8 @@ export const AssignmentCompiler = {
         const op = expr.operator;
 
         if (op !== "=") {
-            // 复合赋值暂不支持，可以后续添加
-            console.warn("Compound assignment to member not yet supported:", op);
+            // 复合赋值：obj.prop += value
+            this.compileMemberCompoundAssignment(expr);
             return;
         }
 
@@ -212,13 +216,34 @@ export const AssignmentCompiler = {
                 this.vm.movImm(VReg.A1, idx); // index
                 this.vm.load(VReg.A2, VReg.FP, valOffset); // value
                 this.vm.call("_subscript_set");
+            } else if (member.property.type === "Literal" && typeof member.property.value === "string") {
+                // 静态字符串键：obj["key"] = value
+                const propLabel = this.asm.addString(member.property.value);
+
+                // 先编译对象
+                this.compileExpression(member.object);
+                const objTempName = `__obj_assign_${this.nextLabelId()}`;
+                const objOffset = this.ctx.allocLocal(objTempName);
+                this.vm.store(VReg.FP, objOffset, VReg.RET);
+
+                // 编译要赋的值
+                this.compileExpression(expr.right);
+                const valTempName = `__val_assign_${this.nextLabelId()}`;
+                const valOffset = this.ctx.allocLocal(valTempName);
+                this.vm.store(VReg.FP, valOffset, VReg.RET);
+
+                // 调用 _object_set(obj, key, value)
+                this.vm.load(VReg.A0, VReg.FP, objOffset); // obj
+                this.vm.lea(VReg.A1, propLabel); // key (C string)
+                this.vm.load(VReg.A2, VReg.FP, valOffset); // value
+                this.vm.call("_object_set");
             } else {
-                // 动态索引：arr[i] = value
-                // 先编译索引
+                // 动态索引：arr[i] = value 或 obj[key] = value
+                // 使用 _dynamic_subscript_set，它能在运行时检查 key 类型
+                // 先编译索引 (保持为 JSValue，不做类型转换)
                 this.compileExpression(member.property);
                 const idxTempName = `__idx_assign_${this.nextLabelId()}`;
                 const idxOffset = this.ctx.allocLocal(idxTempName);
-                this.numberToIntInPlace(VReg.RET); // 转换为整数
                 this.vm.store(VReg.FP, idxOffset, VReg.RET);
 
                 // 编译数组对象
@@ -234,11 +259,11 @@ export const AssignmentCompiler = {
                 const valOffset = this.ctx.allocLocal(valTempName);
                 this.vm.store(VReg.FP, valOffset, VReg.RET);
 
-                // 调用 _subscript_set(arr, idx, value)
+                // 调用 _dynamic_subscript_set(arr, key, value)
                 this.vm.load(VReg.A0, VReg.FP, arrOffset); // arr
-                this.vm.load(VReg.A1, VReg.FP, idxOffset); // index
+                this.vm.load(VReg.A1, VReg.FP, idxOffset); // key (JSValue)
                 this.vm.load(VReg.A2, VReg.FP, valOffset); // value
-                this.vm.call("_subscript_set");
+                this.vm.call("_dynamic_subscript_set");
             }
         } else {
             // 对象属性赋值：obj.prop = value
@@ -254,12 +279,170 @@ export const AssignmentCompiler = {
             // 编译要赋的值
             this.compileExpression(expr.right);
 
-            // 调用 _object_set(obj, key, value)
+            // 调用 _object_set_prop(obj, key, value, thisArg)
+            // 这个函数会检查 setter，如果存在就调用 setter
             // 注意：RET 和 A0 都是 X0，所以要先 mov A2 再 load A0
             this.vm.mov(VReg.A2, VReg.RET); // value (先移动，因为 load A0 会覆盖 X0)
             this.vm.load(VReg.A0, VReg.FP, objOffset); // obj
             this.vm.lea(VReg.A1, propLabel); // key
-            this.vm.call("_object_set");
+            this.vm.load(VReg.A3, VReg.FP, objOffset); // thisArg = obj 本身
+            this.vm.call("_object_set_prop");
+        }
+    },
+
+    // 编译成员复合赋值表达式 obj.prop += value
+    compileMemberCompoundAssignment(expr) {
+        const member = expr.left;
+        const op = expr.operator;
+
+        if (member.computed) {
+            // 数组元素复合赋值：arr[idx] += value
+            // 先获取当前值，进行运算，再设置
+            if (member.property.type === "Literal" && typeof member.property.value === "number") {
+                // 静态索引：arr[0] += value
+                const idx = Math.trunc(member.property.value);
+
+                // 编译数组对象
+                this.compileExpression(member.object);
+                const arrTempName = `__arr_cmp_${this.nextLabelId()}`;
+                const arrOffset = this.ctx.allocLocal(arrTempName);
+                this.vm.store(VReg.FP, arrOffset, VReg.RET);
+
+                // 获取当前值：_subscript_get(arr, idx)
+                this.vm.mov(VReg.A0, VReg.RET); // arr
+                this.vm.movImm(VReg.A1, idx); // index
+                this.vm.call("_subscript_get");
+                // 保存当前值
+                this.vm.push(VReg.RET);
+
+                // 编译右值
+                this.compileExpression(expr.right);
+                this.vm.pop(VReg.V1); // V1 = 当前值，RET = 右值
+
+                // 进行复合运算
+                this.compileCompoundOp(op, VReg.V1, VReg.RET);
+
+                // 设置新值：_subscript_set(arr, idx, value)
+                const valTempName = `__val_cmp_${this.nextLabelId()}`;
+                const valOffset = this.ctx.allocLocal(valTempName);
+                this.vm.store(VReg.FP, valOffset, VReg.RET);
+
+                this.vm.load(VReg.A0, VReg.FP, arrOffset); // arr
+                this.vm.movImm(VReg.A1, idx); // index
+                this.vm.load(VReg.A2, VReg.FP, valOffset); // value
+                this.vm.call("_subscript_set");
+            } else {
+                // 动态索引：arr[i] += value
+                // 编译索引
+                this.compileExpression(member.property);
+                const idxTempName = `__idx_cmp_${this.nextLabelId()}`;
+                const idxOffset = this.ctx.allocLocal(idxTempName);
+                this.numberToIntInPlace(VReg.RET);
+                this.vm.store(VReg.FP, idxOffset, VReg.RET);
+
+                // 编译数组对象
+                this.compileExpression(member.object);
+                const arrTempName = `__arr_cmp_${this.nextLabelId()}`;
+                const arrOffset = this.ctx.allocLocal(arrTempName);
+                this.vm.store(VReg.FP, arrOffset, VReg.RET);
+
+                // 获取当前值：_subscript_get(arr, idx)
+                this.vm.mov(VReg.A0, VReg.RET); // arr
+                this.vm.load(VReg.A1, VReg.FP, idxOffset); // index
+                this.vm.call("_subscript_get");
+                // 保存当前值
+                this.vm.push(VReg.RET);
+
+                // 编译右值
+                this.compileExpression(expr.right);
+                this.vm.pop(VReg.V1); // V1 = 当前值，RET = 右值
+
+                // 进行复合运算
+                this.compileCompoundOp(op, VReg.V1, VReg.RET);
+
+                // 设置新值
+                const valTempName = `__val_cmp_${this.nextLabelId()}`;
+                const valOffset = this.ctx.allocLocal(valTempName);
+                this.vm.store(VReg.FP, valOffset, VReg.RET);
+
+                this.vm.load(VReg.A0, VReg.FP, arrOffset); // arr
+                this.vm.load(VReg.A1, VReg.FP, idxOffset); // index
+                this.vm.load(VReg.A2, VReg.FP, valOffset); // value
+                this.vm.call("_subscript_set");
+            }
+        } else {
+            // 对象属性复合赋值：obj.prop += value
+            const propName = member.property.name || member.property.value;
+            const propLabel = this.asm.addString(propName);
+
+            // 编译对象
+            this.compileExpression(member.object);
+            const objTempName = `__obj_cmp_${this.nextLabelId()}`;
+            const objOffset = this.ctx.allocLocal(objTempName);
+            this.vm.store(VReg.FP, objOffset, VReg.RET);
+
+            // 获取当前值：_object_get_prop(obj, key)
+            this.vm.mov(VReg.A0, VReg.RET); // obj
+            this.vm.lea(VReg.A1, propLabel); // key
+            this.vm.call("_object_get_prop");
+            // 保存当前值
+            this.vm.push(VReg.RET);
+
+            // 编译右值
+            this.compileExpression(expr.right);
+            this.vm.pop(VReg.V1); // V1 = 当前值，RET = 右值
+
+            // 进行复合运算
+            this.compileCompoundOp(op, VReg.V1, VReg.RET);
+
+            // 设置新值：_object_set_prop(obj, key, value, thisArg)
+            this.vm.mov(VReg.A2, VReg.RET); // value
+            this.vm.load(VReg.A0, VReg.FP, objOffset); // obj
+            this.vm.lea(VReg.A1, propLabel); // key
+            this.vm.load(VReg.A3, VReg.FP, objOffset); // thisArg = obj
+            this.vm.call("_object_set_prop");
+        }
+    },
+
+    // 编译复合赋值操作：result = left op right
+    compileCompoundOp(op, leftReg, rightReg) {
+        switch (op) {
+            case "+=":
+                this.vm.add(VReg.RET, leftReg, rightReg);
+                break;
+            case "-=":
+                this.vm.sub(VReg.RET, leftReg, rightReg);
+                break;
+            case "*=":
+                this.vm.mul(VReg.RET, leftReg, rightReg);
+                break;
+            case "/=":
+                this.vm.div(VReg.RET, leftReg, rightReg);
+                break;
+            case "%=":
+                this.vm.mod(VReg.RET, leftReg, rightReg);
+                break;
+            case "&=":
+                this.vm.and(VReg.RET, leftReg, rightReg);
+                break;
+            case "|=":
+                this.vm.or(VReg.RET, leftReg, rightReg);
+                break;
+            case "^=":
+                this.vm.xor(VReg.RET, leftReg, rightReg);
+                break;
+            case "<<=":
+                this.vm.shl(VReg.RET, leftReg, rightReg);
+                break;
+            case ">>=":
+                this.vm.shr(VReg.RET, leftReg, rightReg);
+                break;
+            case ">>>=":
+                this.vm.shr(VReg.RET, leftReg, rightReg);
+                break;
+            default:
+                console.warn("Unhandled compound assignment operator:", op);
+                this.vm.mov(VReg.RET, leftReg);
         }
     },
 

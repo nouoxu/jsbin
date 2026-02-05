@@ -55,6 +55,27 @@ export const ExpressionParser = {
         }
     },
 
+    parseBigIntLiteral() {
+        const raw = this.curToken.literal;
+        // BigInt 字面量: 123n -> 将数字部分解析为 BigInt
+        // raw 中不包含 'n' 后缀（词法分析器已处理）
+        let value;
+        if (raw.startsWith("0x") || raw.startsWith("0X")) {
+            value = BigInt(raw);
+        } else if (raw.startsWith("0b") || raw.startsWith("0B")) {
+            value = BigInt(raw);
+        } else if (raw.startsWith("0o") || raw.startsWith("0O")) {
+            value = BigInt(raw);
+        } else {
+            value = BigInt(raw);
+        }
+        const literal = new AST.Literal(value, raw + "n");
+        // 添加 bigint 属性作为字符串，供编译器使用
+        // 这样即使自编译后的二进制不完全支持 BigInt 类型，也能正确编译
+        literal.bigint = raw;
+        return literal;
+    },
+
     parseStringLiteral() {
         return new AST.Literal(this.curToken.literal, '"' + this.curToken.literal + '"');
     },
@@ -199,9 +220,9 @@ export const ExpressionParser = {
         }
         if (isArrow) return this.parseArrowFunctionBody(params);
         let expr = this.parseExpression(Precedence.LOWEST);
-        if (!this.curTokenIs(TokenType.RPAREN)) {
-            if (!this.expectPeek(TokenType.RPAREN)) return null;
-        }
+        // Always consume the closing ) of the grouped expression
+        // curToken might be at an inner RPAREN (e.g., from a call expression)
+        if (!this.expectPeek(TokenType.RPAREN)) return null;
         if (this.peekTokenIs(TokenType.ARROW) && expr.type === "Identifier") {
             this.nextToken();
             return this.parseArrowFunctionBody([expr]);
@@ -274,23 +295,22 @@ export const ExpressionParser = {
         }
         this.nextToken();
         while (!this.curTokenIs(TokenType.RBRACKET) && !this.curTokenIs(TokenType.EOF)) {
-            if (this.curTokenIs(TokenType.IDENT)) {
-                pattern.elements.push(new AST.Identifier(this.curToken.literal));
-            } else if (this.curTokenIs(TokenType.COMMA)) {
+            if (this.curTokenIs(TokenType.COMMA)) {
+                // 空洞 - 在逗号位置添加 null
                 pattern.elements.push(null);
-            }
-            if (this.peekTokenIs(TokenType.COMMA)) {
-                this.nextToken();
-                if (this.peekTokenIs(TokenType.RBRACKET)) {
-                    this.nextToken();
-                    break;
+                this.nextToken(); // 移动到下一个元素或结束括号
+            } else if (this.curTokenIs(TokenType.IDENT)) {
+                pattern.elements.push(new AST.Identifier(this.curToken.literal));
+                this.nextToken(); // 移动到逗号或结束括号
+                if (this.curTokenIs(TokenType.COMMA)) {
+                    this.nextToken(); // 跳过逗号，移动到下一个元素
                 }
-                this.nextToken();
             } else {
-                break;
+                // 未知 token，跳过
+                this.nextToken();
             }
         }
-        if (!this.expectPeek(TokenType.RBRACKET)) return null;
+        // 已经在 RBRACKET 上了
         return pattern;
     },
 
@@ -446,7 +466,9 @@ export const ExpressionParser = {
 
     parseNewExpression() {
         this.nextToken();
-        let callee = this.parseExpression(Precedence.MEMBER);
+        // Use CALL precedence (19) to allow member access (20) to be parsed as part of callee
+        // This correctly parses `new AST.Identifier()` as `new (AST.Identifier)()`
+        let callee = this.parseExpression(Precedence.CALL);
         let args = [];
         if (this.peekTokenIs(TokenType.LPAREN)) {
             this.nextToken();

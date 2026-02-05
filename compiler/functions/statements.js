@@ -267,10 +267,10 @@ export const StatementCompiler = {
             // 加载对象指针
             this.vm.load(VReg.A0, VReg.FP, tempOffset);
             // 将属性名存入数据段
-            const keyLabel = this.ctx.addString(keyName);
+            const keyLabel = this.asm.addString(keyName);
             this.vm.lea(VReg.A1, keyLabel);
-            // 调用 _obj_get
-            this.vm.call("_obj_get");
+            // 调用 _object_get
+            this.vm.call("_object_get");
             this.vm.store(VReg.FP, offset, VReg.RET);
         }
     },
@@ -322,7 +322,8 @@ export const StatementCompiler = {
         if (stmt.argument) {
             this.compileExpression(stmt.argument);
         } else {
-            this.vm.movImm(VReg.RET, 0);
+            // NaN-boxing: undefined = 0x7FFB000000000000
+            this.vm.movImm64(VReg.RET, "0x7ffb000000000000");
         }
         this.vm.jmp(this.ctx.returnLabel);
     },
@@ -598,18 +599,18 @@ export const StatementCompiler = {
         this.vm.call("_iterator_next");
         this.vm.mov(VReg.S1, VReg.RET); // S1 = IteratorResult { value, done }
 
-        // 检查 done: IteratorResult + 40 (偏移到 done 字段)
+        // 检查 done: IteratorResult + 48 (偏移到 done 字段)
         // 注意：IteratorResult 是普通对象，done 在固定位置
-        // 对象布局: [type:8 | count:8 | "value":8 | value:8 | "done":8 | done:8]
-        this.vm.load(VReg.V0, VReg.S1, 40); // done 值 (NaN-boxed boolean)
+        // 对象布局: [type:8 | count:8 | __proto__:8 | "value":8 | value:8 | "done":8 | done:8]
+        this.vm.load(VReg.V0, VReg.S1, 48); // done 值 (NaN-boxed boolean)
 
         // 检查 done 是否为 true (NaN-boxed: 0x7ff8000100000001)
         this.vm.andImm(VReg.V0, VReg.V0, 1); // 取最低位
         this.vm.cmpImm(VReg.V0, 1);
         this.vm.jeq(endLabel);
 
-        // 获取 value: IteratorResult + 24
-        this.vm.load(VReg.RET, VReg.S1, 24);
+        // 获取 value: IteratorResult + 32
+        this.vm.load(VReg.RET, VReg.S1, 32);
 
         // 存储到迭代变量
         if (varOffset !== null) {
@@ -877,7 +878,26 @@ export const StatementCompiler = {
     compileClassDeclaration(stmt) {
         const className = stmt.id.name;
         const superClass = stmt.superClass;
-        const labelId = this.nextLabelId();
+
+        // 检查是否已有预注册的类信息（来自模块收集阶段）
+        let labelId;
+        let constructorLabel, constructorEndLabel, protoLabel, classInfoLabel;
+        const preRegistered = this.ctx.classes[className];
+        if (preRegistered && preRegistered.constructorLabel) {
+            // 使用预注册的标签
+            labelId = preRegistered.labelId;
+            constructorLabel = preRegistered.constructorLabel;
+            constructorEndLabel = constructorLabel + "_end";
+            protoLabel = constructorLabel.replace("_class_", "_class_proto_");
+            classInfoLabel = preRegistered.classInfoLabel || `_class_info_${className}`;
+        } else {
+            // 生成新标签
+            labelId = this.nextLabelId();
+            constructorLabel = `_class_${className}_${labelId}`;
+            constructorEndLabel = `_class_${className}_end_${labelId}`;
+            protoLabel = `_class_${className}_proto_${labelId}`;
+            classInfoLabel = `_class_info_${className}`;
+        }
 
         // 为类分配局部变量槽位（存储类信息对象地址）
         const classOffset = this.ctx.allocLocal(className);
@@ -886,6 +906,10 @@ export const StatementCompiler = {
         let constructor = null;
         const instanceMethods = [];
         const staticMethods = [];
+        const instanceGetters = [];
+        const instanceSetters = [];
+        const staticGetters = [];
+        const staticSetters = [];
         const instanceFields = [];
         const staticFields = [];
         const privateFields = [];
@@ -895,6 +919,18 @@ export const StatementCompiler = {
             if (member.type === "MethodDefinition") {
                 if (member.kind === "constructor") {
                     constructor = member;
+                } else if (member.kind === "get") {
+                    if (member.static) {
+                        staticGetters.push(member);
+                    } else {
+                        instanceGetters.push(member);
+                    }
+                } else if (member.kind === "set") {
+                    if (member.static) {
+                        staticSetters.push(member);
+                    } else {
+                        instanceSetters.push(member);
+                    }
                 } else if (member.static) {
                     staticMethods.push(member);
                 } else {
@@ -912,25 +948,28 @@ export const StatementCompiler = {
             }
         }
 
-        // 生成标签
-        const constructorLabel = `_class_${className}_${labelId}`;
-        const constructorEndLabel = `_class_${className}_end_${labelId}`;
-        const protoLabel = `_class_${className}_proto_${labelId}`;
-
         // 注册类信息到上下文（供方法内部的 new 表达式使用）
-        this.ctx.classes[className] = {
-            constructorLabel: constructorLabel,
-            prototypeLabel: protoLabel,
-            labelId: labelId,
-            localOffset: classOffset,
-        };
+        // 如果已经预注册了，更新 localOffset；否则新建
+        if (!this.ctx.classes[className]) {
+            this.ctx.classes[className] = {};
+        }
+        this.ctx.classes[className].constructorLabel = constructorLabel;
+        this.ctx.classes[className].prototypeLabel = protoLabel;
+        this.ctx.classes[className].labelId = labelId;
+        this.ctx.classes[className].localOffset = classOffset;
 
         // 跳过类代码区域
         this.vm.jmp(constructorEndLabel);
 
         // ========== 生成构造函数 ==========
         this.vm.label(constructorLabel);
-        this.vm.prologue(128, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+        // 估算构造函数所需的栈空间
+        let constructorStackSize = 128; // 默认值
+        if (constructor && constructor.value) {
+            const estimatedLocals = this.estimateStackSize(constructor.value);
+            constructorStackSize = Math.max(256, Math.ceil((estimatedLocals * 16 + 256) / 16) * 16);
+        }
+        this.vm.prologue(constructorStackSize, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
         const savedCtx = this.ctx;
         this.ctx = this.ctx.clone(className);
@@ -938,6 +977,7 @@ export const StatementCompiler = {
         this.ctx.stackOffset = 0;
         // 保留 callee-saved 寄存器占用的栈空间
         this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
+        this.ctx.allocatedStackSize = constructorStackSize; // 保存分配的栈大小
         this.ctx.inClass = true;
         this.ctx.className = className;
         this.ctx.superClass = superClass ? superClass.name : null;
@@ -986,13 +1026,30 @@ export const StatementCompiler = {
         // 编译构造函数参数
         if (constructor && constructor.value) {
             const params = constructor.value.params || [];
-            for (let i = 0; i < params.length; i++) {
+
+            // 处理寄存器传递的参数（前 5 个，A1-A5）
+            for (let i = 0; i < params.length && i < 5; i++) {
                 const param = params[i];
                 const paramName = param.name || (param.left && param.left.name);
                 if (paramName) {
                     const paramOffset = this.ctx.allocLocal(paramName);
-                    const argReg = this.vm.getArgReg(i + 1); // A1, A2, ...
+                    const argReg = this.vm.getArgReg(i + 1); // A1, A2, ... A5
                     this.vm.store(VReg.FP, paramOffset, argReg);
+                }
+            }
+
+            // 处理栈传递的参数（第 6 个及之后）
+            const savedRegsSize = 4 * 8; // S0, S1, S2, S3
+            const stackArgsBaseOffset = 16 + savedRegsSize;
+
+            for (let i = 5; i < params.length; i++) {
+                const param = params[i];
+                const paramName = param.name || (param.left && param.left.name);
+                if (paramName) {
+                    const paramOffset = this.ctx.allocLocal(paramName);
+                    const stackArgOffset = stackArgsBaseOffset + (i - 5) * 8;
+                    this.vm.load(VReg.V0, VReg.FP, stackArgOffset);
+                    this.vm.store(VReg.FP, paramOffset, VReg.V0);
                 }
             }
 
@@ -1007,16 +1064,36 @@ export const StatementCompiler = {
         // 返回 this
         this.vm.label(this.ctx.returnLabel);
         this.vm.load(VReg.RET, VReg.FP, thisOffset);
-        this.vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 128);
+        this.vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], this.ctx.allocatedStackSize || 128);
 
         // ========== 生成实例方法 ==========
         for (const method of instanceMethods) {
             this.compileClassMethod(className, method, labelId, false);
         }
 
+        // ========== 生成实例 getter ==========
+        for (const getter of instanceGetters) {
+            this.compileClassGetter(className, getter, labelId, false);
+        }
+
+        // ========== 生成实例 setter ==========
+        for (const setter of instanceSetters) {
+            this.compileClassSetter(className, setter, labelId, false);
+        }
+
         // ========== 生成静态方法 ==========
         for (const method of staticMethods) {
             this.compileClassMethod(className, method, labelId, true);
+        }
+
+        // ========== 生成静态 getter ==========
+        for (const getter of staticGetters) {
+            this.compileClassGetter(className, getter, labelId, true);
+        }
+
+        // ========== 生成静态 setter ==========
+        for (const setter of staticSetters) {
+            this.compileClassSetter(className, setter, labelId, true);
         }
 
         // 恢复上下文
@@ -1040,16 +1117,28 @@ export const StatementCompiler = {
         this.vm.store(VReg.S0, 8, VReg.V0);
 
         // 创建 prototype 对象
-        this.vm.movImm(VReg.A0, 256);
-        this.vm.call("_alloc");
+        // 使用 _object_new 初始化对象头，避免 property_count 未初始化导致崩溃
+        this.vm.call("_object_new");
         this.vm.mov(VReg.S1, VReg.RET); // S1 = prototype 对象
-        this.vm.movImm(VReg.V0, 2); // TYPE_OBJECT = 2
-        this.vm.store(VReg.S1, 0, VReg.V0);
 
         // 如果有父类，设置子类 prototype.__proto__ 指向父类 prototype
         if (superClass) {
             const superClassName = superClass.name;
-            const superClassGlobalLabel = `_class_info_${superClassName}`;
+            // 获取父类的 classInfoLabel（可能是导入的或本地定义的）
+            let superClassGlobalLabel;
+            const superClassInfo = this.ctx.classes[superClassName];
+            if (superClassInfo && superClassInfo.classInfoLabel) {
+                superClassGlobalLabel = superClassInfo.classInfoLabel;
+            } else if (this.isImportedSymbol && this.isImportedSymbol(superClassName)) {
+                const importInfo = this.getImportedSymbol(superClassName);
+                if (importInfo && importInfo.type === "class" && importInfo.classInfoLabel) {
+                    superClassGlobalLabel = importInfo.classInfoLabel;
+                } else {
+                    superClassGlobalLabel = `_class_info_${superClassName}`;
+                }
+            } else {
+                superClassGlobalLabel = `_class_info_${superClassName}`;
+            }
             // 加载父类的类信息对象
             this.vm.lea(VReg.V0, superClassGlobalLabel);
             this.vm.load(VReg.V0, VReg.V0, 0); // 父类信息对象
@@ -1072,6 +1161,28 @@ export const StatementCompiler = {
             this.vm.call("_object_set");
         }
 
+        // 添加实例 getter 到 prototype
+        for (const getter of instanceGetters) {
+            const getterName = getter.key.name || getter.key.value;
+            const getterLabel = `_class_${className}_get_${getterName}_${labelId}`;
+
+            this.vm.mov(VReg.A0, VReg.S1); // prototype 对象
+            this.vm.lea(VReg.A1, this.addStringConstant(getterName));
+            this.vm.lea(VReg.A2, getterLabel);
+            this.vm.call("_object_define_getter");
+        }
+
+        // 添加实例 setter 到 prototype
+        for (const setter of instanceSetters) {
+            const setterName = setter.key.name || setter.key.value;
+            const setterLabel = `_class_${className}_set_${setterName}_${labelId}`;
+
+            this.vm.mov(VReg.A0, VReg.S1); // prototype 对象
+            this.vm.lea(VReg.A1, this.addStringConstant(setterName));
+            this.vm.lea(VReg.A2, setterLabel);
+            this.vm.call("_object_define_setter");
+        }
+
         // 添加静态方法到类对象
         for (const method of staticMethods) {
             const methodName = method.key.name || method.key.value;
@@ -1081,6 +1192,28 @@ export const StatementCompiler = {
             this.vm.lea(VReg.A1, this.addStringConstant(methodName));
             this.vm.lea(VReg.A2, methodLabel);
             this.vm.call("_object_set");
+        }
+
+        // 添加静态 getter 到类对象
+        for (const getter of staticGetters) {
+            const getterName = getter.key.name || getter.key.value;
+            const getterLabel = `_class_${className}_static_get_${getterName}_${labelId}`;
+
+            this.vm.mov(VReg.A0, VReg.S0);
+            this.vm.lea(VReg.A1, this.addStringConstant(getterName));
+            this.vm.lea(VReg.A2, getterLabel);
+            this.vm.call("_object_define_getter");
+        }
+
+        // 添加静态 setter 到类对象
+        for (const setter of staticSetters) {
+            const setterName = setter.key.name || setter.key.value;
+            const setterLabel = `_class_${className}_static_set_${setterName}_${labelId}`;
+
+            this.vm.mov(VReg.A0, VReg.S0);
+            this.vm.lea(VReg.A1, this.addStringConstant(setterName));
+            this.vm.lea(VReg.A2, setterLabel);
+            this.vm.call("_object_define_setter");
         }
 
         // 初始化静态字段
@@ -1102,10 +1235,10 @@ export const StatementCompiler = {
         this.vm.store(VReg.FP, classOffset, VReg.S0);
 
         // 将类信息对象地址存储到全局数据段（供方法内的 new 使用）
-        const classGlobalLabel = `_class_info_${className}`;
-        this.asm.addDataLabel(classGlobalLabel);
+        // 使用预注册的 classInfoLabel（包含模块前缀）或默认标签
+        this.asm.addDataLabel(classInfoLabel);
         this.asm.addDataQword(0); // 占位，运行时会被填充
-        this.vm.lea(VReg.V0, classGlobalLabel);
+        this.vm.lea(VReg.V0, classInfoLabel);
         this.vm.store(VReg.V0, 0, VReg.S0);
     },
 
@@ -1116,8 +1249,13 @@ export const StatementCompiler = {
         const methodLabel = `_class_${className}_${prefix}${methodName}_${labelId}`;
         const returnLabel = `${methodLabel}_return`;
 
+        // 类方法可能有复杂的方法体，需要足够的栈空间
+        // 使用 estimateStackSize 动态计算，确保有足够的临时变量空间
+        const estimatedLocals = this.estimateStackSize(method.value);
+        const stackSize = Math.max(256, Math.ceil((estimatedLocals * 16 + 256) / 16) * 16);
+
         this.vm.label(methodLabel);
-        this.vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+        this.vm.prologue(stackSize, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
         const savedCtx = this.ctx;
         this.ctx = this.ctx.clone(`${className}.${methodName}`);
@@ -1128,20 +1266,37 @@ export const StatementCompiler = {
         this.ctx.inClass = true;
         this.ctx.className = className;
         this.ctx.returnLabel = returnLabel;
+        this.ctx.allocatedStackSize = stackSize; // 保存栈大小供 epilogue 使用
 
-        // 保存 this (A0)
+        // 保存 this (通过 V5 传入)
         const thisOffset = this.ctx.allocLocal("__this");
-        this.vm.store(VReg.FP, thisOffset, VReg.A0);
+        this.vm.store(VReg.FP, thisOffset, VReg.V5);
 
-        // 处理参数
+        // 处理寄存器传递的参数（前 5 个，A0-A4）
         const params = method.value.params || [];
-        for (let i = 0; i < params.length; i++) {
+        for (let i = 0; i < params.length && i < 5; i++) {
             const param = params[i];
             const paramName = param.name || (param.left && param.left.name);
             if (paramName) {
                 const paramOffset = this.ctx.allocLocal(paramName);
-                const argReg = this.vm.getArgReg(i + 1); // A1, A2, ...
+                const argReg = this.vm.getArgReg(i); // A0, A1, ... A4
                 this.vm.store(VReg.FP, paramOffset, argReg);
+            }
+        }
+
+        // 处理栈传递的参数（第 6 个及之后）
+        // 栈布局: [返回地址][saved FP][saved regs...][caller's stack args...]
+        const savedRegsSize = 4 * 8; // S0, S1, S2, S3
+        const stackArgsBaseOffset = 16 + savedRegsSize;
+
+        for (let i = 5; i < params.length; i++) {
+            const param = params[i];
+            const paramName = param.name || (param.left && param.left.name);
+            if (paramName) {
+                const paramOffset = this.ctx.allocLocal(paramName);
+                const stackArgOffset = stackArgsBaseOffset + (i - 5) * 8;
+                this.vm.load(VReg.V0, VReg.FP, stackArgOffset);
+                this.vm.store(VReg.FP, paramOffset, VReg.V0);
             }
         }
 
@@ -1155,7 +1310,98 @@ export const StatementCompiler = {
         // 默认返回 undefined
         this.vm.movImm(VReg.RET, 0);
         this.vm.label(returnLabel);
-        this.vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 64);
+        this.vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], stackSize);
+
+        this.ctx = savedCtx;
+    },
+
+    // 编译类 getter
+    compileClassGetter(className, getter, labelId, isStatic) {
+        const getterName = getter.key.name || getter.key.value;
+        const prefix = isStatic ? "static_get_" : "get_";
+        const getterLabel = `_class_${className}_${prefix}${getterName}_${labelId}`;
+        const returnLabel = `${getterLabel}_return`;
+        const stackSize = 256;
+
+        this.vm.label(getterLabel);
+        this.vm.prologue(stackSize, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+
+        const savedCtx = this.ctx;
+        this.ctx = this.ctx.clone(`${className}.get ${getterName}`);
+        this.ctx.locals = {};
+        this.ctx.stackOffset = 0;
+        this.ctx.reserveCalleeSavedSpace(4);
+        this.ctx.inClass = true;
+        this.ctx.className = className;
+        this.ctx.returnLabel = returnLabel;
+        this.ctx.allocatedStackSize = stackSize;
+
+        // 保存 this (通过 V5 传入) - getter 没有其他参数
+        const thisOffset = this.ctx.allocLocal("__this");
+        this.vm.store(VReg.FP, thisOffset, VReg.V5);
+
+        // 编译 getter 体
+        if (getter.value.body && getter.value.body.body) {
+            for (const bodyStmt of getter.value.body.body) {
+                this.compileStatement(bodyStmt);
+            }
+        }
+
+        // 默认返回 undefined
+        this.vm.movImm(VReg.RET, 0);
+        this.vm.label(returnLabel);
+        this.vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], stackSize);
+
+        this.ctx = savedCtx;
+    },
+
+    // 编译类 setter
+    compileClassSetter(className, setter, labelId, isStatic) {
+        const setterName = setter.key.name || setter.key.value;
+        const prefix = isStatic ? "static_set_" : "set_";
+        const setterLabel = `_class_${className}_${prefix}${setterName}_${labelId}`;
+        const returnLabel = `${setterLabel}_return`;
+        const stackSize = 256;
+
+        this.vm.label(setterLabel);
+        this.vm.prologue(stackSize, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+
+        const savedCtx = this.ctx;
+        this.ctx = this.ctx.clone(`${className}.set ${setterName}`);
+        this.ctx.locals = {};
+        this.ctx.stackOffset = 0;
+        this.ctx.reserveCalleeSavedSpace(4);
+        this.ctx.inClass = true;
+        this.ctx.className = className;
+        this.ctx.returnLabel = returnLabel;
+        this.ctx.allocatedStackSize = stackSize;
+
+        // 保存 this (通过 V5 传入)
+        const thisOffset = this.ctx.allocLocal("__this");
+        this.vm.store(VReg.FP, thisOffset, VReg.V5);
+
+        // setter 有一个参数 (A0)
+        const params = setter.value.params || [];
+        if (params.length > 0) {
+            const param = params[0];
+            const paramName = param.name || (param.left && param.left.name);
+            if (paramName) {
+                const paramOffset = this.ctx.allocLocal(paramName);
+                this.vm.store(VReg.FP, paramOffset, VReg.A0);
+            }
+        }
+
+        // 编译 setter 体
+        if (setter.value.body && setter.value.body.body) {
+            for (const bodyStmt of setter.value.body.body) {
+                this.compileStatement(bodyStmt);
+            }
+        }
+
+        // setter 返回 undefined
+        this.vm.movImm(VReg.RET, 0);
+        this.vm.label(returnLabel);
+        this.vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], stackSize);
 
         this.ctx = savedCtx;
     },

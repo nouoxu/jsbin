@@ -92,6 +92,17 @@ export const OperatorCompiler = {
             this.compileIntLiteral(expr.value);
             return;
         }
+        // 对于一元表达式 -num，直接编译为负整数
+        if (expr.type === "UnaryExpression" && expr.operator === "-") {
+            if ((expr.argument.type === "Literal" || expr.argument.type === "NumericLiteral") && typeof expr.argument.value === "number") {
+                this.compileIntLiteral(-expr.argument.value);
+                return;
+            }
+            // 其他一元负号表达式：编译参数作为整数，然后取反
+            this.compileExpressionAsInt(expr.argument);
+            this.vm.neg(VReg.RET, VReg.RET);
+            return;
+        }
         // 对于二元表达式，递归处理
         if (expr.type === "BinaryExpression") {
             const op = expr.operator;
@@ -132,6 +143,25 @@ export const OperatorCompiler = {
     // 编译二元表达式
     compileBinaryExpression(expr) {
         const op = expr.operator;
+
+        // 保护性检查：确保左右操作数存在
+        if (!expr.left || !expr.right) {
+            console.error("BinaryExpression missing operand:", "left:", expr.left, "right:", expr.right, "op:", op);
+            if (expr.loc) {
+                console.error("Location:", expr.loc);
+            }
+            // 尝试继续而非抛出错误
+            if (!expr.left && !expr.right) {
+                this.vm.movImm64(VReg.RET, "0x7ffb000000000000"); // undefined
+                return;
+            } else if (!expr.left) {
+                this.compileExpression(expr.right);
+                return;
+            } else {
+                this.compileExpression(expr.left);
+                return;
+            }
+        }
 
         // 常量折叠：两个字面量运算在编译时计算
         const leftLit = expr.left.type === "Literal" || expr.left.type === "NumericLiteral";
@@ -261,6 +291,39 @@ export const OperatorCompiler = {
         // 对于 +, -, *, / 运算，根据类型选择浮点或整数运算
         const isArithOp = ["+", "-", "*", "/"].includes(op);
 
+        // 位运算：直接使用原始整数值，不需要 unbox
+        const isBitOp = ["&", "|", "^", "<<", ">>", ">>>"].includes(op);
+        if (isBitOp) {
+            // 编译右操作数
+            this.compileExpression(expr.right);
+            this.vm.push(VReg.RET);
+            // 编译左操作数
+            this.compileExpression(expr.left);
+            this.vm.pop(VReg.V1);
+
+            switch (op) {
+                case "&":
+                    this.vm.and(VReg.RET, VReg.RET, VReg.V1);
+                    break;
+                case "|":
+                    this.vm.or(VReg.RET, VReg.RET, VReg.V1);
+                    break;
+                case "^":
+                    this.vm.xor(VReg.RET, VReg.RET, VReg.V1);
+                    break;
+                case "<<":
+                    this.vm.shl(VReg.RET, VReg.RET, VReg.V1);
+                    break;
+                case ">>":
+                    this.vm.shr(VReg.RET, VReg.RET, VReg.V1);
+                    break;
+                case ">>>":
+                    this.vm.shr(VReg.RET, VReg.RET, VReg.V1);
+                    break;
+            }
+            return;
+        }
+
         if (isIntOp) {
             // int 类型：使用整数运算
             this.compileExpressionAsInt(expr.right);
@@ -316,6 +379,11 @@ export const OperatorCompiler = {
 
             // 对于字面量，可以安全地使用静态类型
             if (operand.type === "Literal" || operand.type === "NumericLiteral") {
+                // BigInt 字面量：直接编译，不需要 unbox
+                if (typeof operand.value === "bigint" || operand.bigint) {
+                    this.compileExpression(operand);
+                    return;
+                }
                 if (isIntType(opType)) {
                     // 整数字面量：直接转换为 float64 位模式
                     this.compileExpressionAsInt(operand);
@@ -364,7 +432,7 @@ export const OperatorCompiler = {
             return;
         }
 
-        // 位运算等使用整数运算
+        // 其他运算使用整数运算
         switch (expr.operator) {
             case "+":
                 this.vm.add(VReg.RET, VReg.RET, VReg.V1);
@@ -395,24 +463,7 @@ export const OperatorCompiler = {
                 this.vm.mod(VReg.RET, VReg.RET, VReg.V1);
                 this.boxNumber(VReg.RET);
                 break;
-            case "&":
-                this.vm.and(VReg.RET, VReg.RET, VReg.V1);
-                break;
-            case "|":
-                this.vm.or(VReg.RET, VReg.RET, VReg.V1);
-                break;
-            case "^":
-                this.vm.xor(VReg.RET, VReg.RET, VReg.V1);
-                break;
-            case "<<":
-                this.vm.shl(VReg.RET, VReg.RET, VReg.V1);
-                break;
-            case ">>":
-                this.vm.shr(VReg.RET, VReg.RET, VReg.V1);
-                break;
-            case ">>>":
-                this.vm.shr(VReg.RET, VReg.RET, VReg.V1);
-                break;
+            // 注意：位运算 &, |, ^, <<, >>, >>> 已在上面的 isBitOp 分支处理
             case "**":
                 // 指数运算：调用 Math.pow(base, exp)
                 // 此时 RET = left (base) 的 float64 位模式, V1 = right (exp) 的 float64 位模式
@@ -446,11 +497,17 @@ export const OperatorCompiler = {
                 break;
             case "==":
             case "===":
-                this.compileComparison("jeq");
+                // 严格相等需要调用运行时函数来正确处理字符串比较
+                this.vm.mov(VReg.A0, VReg.RET); // 左操作数
+                this.vm.mov(VReg.A1, VReg.V1); // 右操作数
+                this.vm.call("_js_strict_eq");
                 break;
             case "!=":
             case "!==":
-                this.compileComparison("jne");
+                // 严格不等：调用 _js_strict_ne
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.mov(VReg.A1, VReg.V1);
+                this.vm.call("_js_strict_ne");
                 break;
             case "instanceof":
                 // 左操作数在 RET，右操作数在 V1
@@ -498,12 +555,22 @@ export const OperatorCompiler = {
         this.compileExpression(expr.left);
 
         if (expr.operator === "&&") {
+            // 需要正确处理所有 JavaScript 值的 truthy/falsy
+            this.vm.push(VReg.RET); // 保存左侧原始值
+            this.vm.mov(VReg.A0, VReg.RET);
+            this.vm.call("_to_boolean");
             this.vm.cmpImm(VReg.RET, 0);
-            this.vm.jeq(endLabel);
+            this.vm.pop(VReg.RET); // 恢复左侧原始值
+            this.vm.jeq(endLabel); // 如果 falsy，返回左侧值
             this.compileExpression(expr.right);
         } else if (expr.operator === "||") {
+            // 需要正确处理所有 JavaScript 值的 truthy/falsy
+            this.vm.push(VReg.RET); // 保存左侧原始值
+            this.vm.mov(VReg.A0, VReg.RET);
+            this.vm.call("_to_boolean");
             this.vm.cmpImm(VReg.RET, 0);
-            this.vm.jne(endLabel);
+            this.vm.pop(VReg.RET); // 恢复左侧原始值
+            this.vm.jne(endLabel); // 如果 truthy，返回左侧值
             this.compileExpression(expr.right);
         } else if (expr.operator === "??") {
             // 空值合并: 只有当左侧是 null 或 undefined 时才使用右侧
@@ -512,7 +579,7 @@ export const OperatorCompiler = {
             const notUndefLabel = this.ctx.newLabel("not_undef");
 
             // 检查是否为 null (0x7FFA000000000000)
-            this.vm.movImm64(VReg.V1, 0x7ffa000000000000n);
+            this.vm.movImm64(VReg.V1, "0x7ffa000000000000");
             this.vm.cmp(VReg.RET, VReg.V1);
             this.vm.jne(notNullLabel);
             // 是 null，使用右侧值
@@ -521,7 +588,7 @@ export const OperatorCompiler = {
 
             this.vm.label(notNullLabel);
             // 检查是否为 undefined (0x7FFB000000000000)
-            this.vm.movImm64(VReg.V1, 0x7ffb000000000000n);
+            this.vm.movImm64(VReg.V1, "0x7ffb000000000000");
             this.vm.cmp(VReg.RET, VReg.V1);
             this.vm.jne(notUndefLabel);
             // 是 undefined，使用右侧值
@@ -544,23 +611,37 @@ export const OperatorCompiler = {
             return;
         }
 
+        // 特殊处理：-Infinity
+        if (expr.operator === "-" && expr.argument.type === "Identifier" && expr.argument.name === "Infinity") {
+            // IEEE 754 负无穷: 0xFFF0000000000000
+            this.vm.movImm64(VReg.RET, "0xfff0000000000000");
+            return;
+        }
+
         this.compileExpression(expr.argument);
 
         switch (expr.operator) {
             case "-":
-                this.vm.mov(VReg.V1, VReg.RET);
-                this.vm.movImm(VReg.RET, 0);
-                this.vm.sub(VReg.RET, VReg.RET, VReg.V1);
+                // 对于浮点数 (IEEE 754 double)，翻转符号位 (bit 63)
+                // 这同时适用于正常数值、Infinity、NaN 等
+                this.vm.movImm64(VReg.V0, "0x8000000000000000"); // 符号位掩码
+                this.vm.xor(VReg.RET, VReg.RET, VReg.V0);
                 break;
             case "!":
+                // 需要正确处理所有 JavaScript 值的 truthy/falsy
+                // 调用 _to_boolean 转换为 0 或 1，然后取反
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_to_boolean");
                 const trueLabel = this.ctx.newLabel("not_true");
                 const endLabel = this.ctx.newLabel("not_end");
                 this.vm.cmpImm(VReg.RET, 0);
                 this.vm.jeq(trueLabel);
-                this.vm.movImm(VReg.RET, 0);
+                // NaN-boxing: false = 0x7FF9000000000000
+                this.vm.movImm64(VReg.RET, "0x7ff9000000000000"); // truthy -> false
                 this.vm.jmp(endLabel);
                 this.vm.label(trueLabel);
-                this.vm.movImm(VReg.RET, 1);
+                // NaN-boxing: true = 0x7FF9000000000001
+                this.vm.movImm64(VReg.RET, "0x7ff9000000000001"); // falsy -> true
                 this.vm.label(endLabel);
                 break;
             case "~":
@@ -583,6 +664,9 @@ export const OperatorCompiler = {
         const endLabel = this.ctx.newLabel("cond_end");
 
         this.compileExpression(expr.test);
+        // 需要正确处理所有 JavaScript 值的 truthy/falsy
+        this.vm.mov(VReg.A0, VReg.RET);
+        this.vm.call("_to_boolean");
         this.vm.cmpImm(VReg.RET, 0);
         this.vm.jeq(elseLabel);
 
@@ -612,6 +696,12 @@ export const OperatorCompiler = {
 
     // 编译表达式并转换为字符串
     compileExpressionToString(expr) {
+        // 处理 null/undefined 表达式
+        if (!expr) {
+            this.compileStringValue("undefined");
+            return;
+        }
+
         let type = inferType(expr, this.ctx);
 
         // 对于 MemberExpression，尝试从对象字面量推断属性类型

@@ -29,6 +29,9 @@ export class ErrorGenerator {
     }
 
     generate() {
+        // 类信息初始化（必须在程序启动时调用）
+        this.generateInitErrorClassInfo();
+
         // 类构造函数入口（供 new Error(...) 调用）
         this.generateClassError();
         this.generateClassTypeError();
@@ -62,6 +65,51 @@ export class ErrorGenerator {
         this.generateExceptionPush();
         this.generateExceptionPop();
         this.generateExceptionThrow();
+    }
+
+    // _init_error_class_info() - 初始化 Error 类信息对象
+    // 必须在程序启动时调用，供继承 Error 的类使用
+    generateInitErrorClassInfo() {
+        const vm = this.vm;
+
+        vm.label("_init_error_class_info");
+        vm.prologue(16, [VReg.S0, VReg.S1]);
+
+        // 分配类信息对象 (24 bytes: type + constructor + prototype)
+        vm.movImm(VReg.A0, 24);
+        vm.call("_alloc");
+        vm.mov(VReg.S0, VReg.RET); // S0 = 类信息对象
+
+        // 设置 type = TYPE_CLOSURE (3)
+        vm.movImm(VReg.V0, 3);
+        vm.store(VReg.S0, 0, VReg.V0);
+
+        // 设置 constructor = _class_Error 函数地址
+        vm.lea(VReg.V0, "_class_Error");
+        vm.store(VReg.S0, 8, VReg.V0);
+
+        // 分配 prototype 对象 (24 bytes: type + length + __proto__)
+        vm.movImm(VReg.A0, 24);
+        vm.call("_alloc");
+        vm.mov(VReg.S1, VReg.RET); // S1 = prototype
+
+        // 设置 prototype type = TYPE_OBJECT (2)
+        vm.movImm(VReg.V0, 2);
+        vm.store(VReg.S1, 0, VReg.V0);
+        // length = 0
+        vm.movImm(VReg.V0, 0);
+        vm.store(VReg.S1, 8, VReg.V0);
+        // __proto__ = 0 (null/Object.prototype)
+        vm.store(VReg.S1, 16, VReg.V0);
+
+        // 设置 prototype 地址到类信息
+        vm.store(VReg.S0, 16, VReg.S1);
+
+        // 将类信息对象地址存储到全局槽
+        vm.lea(VReg.V0, "_class_info_Error");
+        vm.store(VReg.V0, 0, VReg.S0);
+
+        vm.epilogue([VReg.S0, VReg.S1], 16);
     }
 
     // _class_Error(this, message) -> Error 对象
@@ -734,5 +782,10 @@ export class ErrorGenerator {
 
         // "Uncaught " 字符串
         addStaticString("_str_uncaught", "Uncaught ");
+
+        // Error 类信息对象的全局槽位
+        // 在 _init_error_class_info 中初始化
+        asm.addDataLabel("_class_info_Error");
+        asm.addDataQword(0); // 占位，运行时会被填充
     }
 }

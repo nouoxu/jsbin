@@ -431,7 +431,7 @@ export class ELFObjectGenerator {
 
                 relaEntries.push({
                     offset: reloc.offset,
-                    info: (BigInt(symIdx) << 32n) | BigInt(type),
+                    info: (BigInt(symIdx) << BigInt(32)) | BigInt(type),
                     addend: addend,
                 });
             }

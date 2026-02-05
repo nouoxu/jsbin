@@ -207,6 +207,7 @@ export class JSValueGenerator {
         this.generateBoxFunction();
         this.generateUnbox();
         this.generateTypeof();
+        this.generateGetLength();
     }
 
     // _js_is_float64(v) -> 1 if double, 0 if tagged
@@ -255,7 +256,7 @@ export class JSValueGenerator {
         // A0 = JSValue
         // 提取低 48 位
         // 使用 V1 避免与 RET 冲突
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.RET, VReg.A0, VReg.V1);
         vm.ret();
     }
@@ -268,25 +269,122 @@ export class JSValueGenerator {
         // A0 = char* 指针
         // 返回 JS_TAG_STRING_BASE | (ptr & PAYLOAD_MASK)
         // 使用 V1, V2 避免与 RET(V0) 冲突
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn); // PAYLOAD_MASK
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff"); // PAYLOAD_MASK
         vm.and(VReg.RET, VReg.A0, VReg.V1);
-        vm.movImm64(VReg.V1, 0x7ffc000000000000n); // JS_TAG_STRING_BASE
+        vm.movImm64(VReg.V1, "0x7ffc000000000000"); // JS_TAG_STRING_BASE
         vm.or(VReg.RET, VReg.RET, VReg.V1);
         vm.ret();
     }
 
     // _js_box_array(array_ptr) -> JSValue
+    // 支持普通 Array 和 TypedArray
+    // 对于 TypedArray，从 type 字段提取正确的 subtype
     generateBoxArray() {
         const vm = this.vm;
 
         vm.label("_js_box_array");
         // A0 = array 指针
-        // 使用 V1 避免与 RET(V0) 冲突
-        // JSValue 布局: [0x7FFE:16][ptr:48]
-        // 普通数组 subtype 包含在 0x7FFE 中，保留低 48 位指针
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn); // 48 位掩码
-        vm.and(VReg.RET, VReg.A0, VReg.V1);
-        vm.movImm64(VReg.V1, 0x7ffe000000000000n); // JS_TAG_ARRAY_BASE
+        // 注意：A0 和 V0 都映射到 X0，所以需要先保存 A0
+        vm.mov(VReg.V2, VReg.A0); // V2 = 原始指针（保存到 X2）
+
+        // 先加载类型标签判断是普通 Array 还是 TypedArray
+        vm.load(VReg.V0, VReg.V2, 0);
+        vm.andImm(VReg.V0, VReg.V0, 0xff); // V0 = type 低 8 位
+
+        // 检查是否是 TypedArray (类型 >= 0x40)
+        vm.cmpImm(VReg.V0, 0x40);
+        vm.jlt("_js_box_array_plain");
+
+        // TypedArray 路径 - 根据类型设置 subtype
+        // TYPE_INT8_ARRAY (0x40) -> subtype 1
+        vm.cmpImm(VReg.V0, 0x40);
+        vm.jne("_box_ta_check_uint8");
+        vm.movImm(VReg.V1, 1);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_uint8");
+        // TYPE_UINT8_ARRAY (0x50) -> subtype 2
+        vm.cmpImm(VReg.V0, 0x50);
+        vm.jne("_box_ta_check_uint8c");
+        vm.movImm(VReg.V1, 2);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_uint8c");
+        // TYPE_UINT8_CLAMPED_ARRAY (0x54) -> subtype 3
+        vm.cmpImm(VReg.V0, 0x54);
+        vm.jne("_box_ta_check_int16");
+        vm.movImm(VReg.V1, 3);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_int16");
+        // TYPE_INT16_ARRAY (0x41) -> subtype 4
+        vm.cmpImm(VReg.V0, 0x41);
+        vm.jne("_box_ta_check_uint16");
+        vm.movImm(VReg.V1, 4);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_uint16");
+        // TYPE_UINT16_ARRAY (0x51) -> subtype 5
+        vm.cmpImm(VReg.V0, 0x51);
+        vm.jne("_box_ta_check_int32");
+        vm.movImm(VReg.V1, 5);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_int32");
+        // TYPE_INT32_ARRAY (0x42) -> subtype 6
+        vm.cmpImm(VReg.V0, 0x42);
+        vm.jne("_box_ta_check_uint32");
+        vm.movImm(VReg.V1, 6);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_uint32");
+        // TYPE_UINT32_ARRAY (0x52) -> subtype 7
+        vm.cmpImm(VReg.V0, 0x52);
+        vm.jne("_box_ta_check_float32");
+        vm.movImm(VReg.V1, 7);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_float32");
+        // TYPE_FLOAT32_ARRAY (0x60) -> subtype 8
+        vm.cmpImm(VReg.V0, 0x60);
+        vm.jne("_box_ta_check_float64");
+        vm.movImm(VReg.V1, 8);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_float64");
+        // TYPE_FLOAT64_ARRAY (0x61) -> subtype 9
+        vm.cmpImm(VReg.V0, 0x61);
+        vm.jne("_box_ta_check_int64");
+        vm.movImm(VReg.V1, 9);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_check_int64");
+        // TYPE_INT64_ARRAY (0x43) -> subtype 10
+        vm.cmpImm(VReg.V0, 0x43);
+        vm.jne("_box_ta_default");
+        vm.movImm(VReg.V1, 10);
+        vm.jmp("_box_ta_apply");
+
+        vm.label("_box_ta_default");
+        // TYPE_UINT64_ARRAY (0x53) or unknown -> subtype 11
+        vm.movImm(VReg.V1, 11);
+
+        vm.label("_box_ta_apply");
+        // 构造 NaN-boxed 值: 0x7FFE << 48 | subtype << 44 | ptr
+        vm.movImm64(VReg.V0, "0x7ffe000000000000"); // array tag
+        vm.shl(VReg.V1, VReg.V1, 44); // subtype << 44
+        vm.or(VReg.V0, VReg.V0, VReg.V1); // tag | subtype
+        // 提取低 44 位指针（使用 V2 保存的原始指针）
+        vm.movImm64(VReg.V1, "0x00000fffffffffff"); // 44 位掩码
+        vm.and(VReg.RET, VReg.V2, VReg.V1);
+        vm.or(VReg.RET, VReg.RET, VReg.V0); // tag | subtype | ptr
+        vm.ret();
+
+        // 普通 Array 路径 (subtype = 0)
+        vm.label("_js_box_array_plain");
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff"); // 48 位掩码
+        vm.and(VReg.RET, VReg.V2, VReg.V1);
+        vm.movImm64(VReg.V1, "0x7ffe000000000000"); // JS_TAG_ARRAY_BASE
         vm.or(VReg.RET, VReg.RET, VReg.V1);
         vm.ret();
     }
@@ -298,9 +396,9 @@ export class JSValueGenerator {
         vm.label("_js_box_object");
         // A0 = object 指针
         // 使用 V1 避免与 RET(V0) 冲突
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.RET, VReg.A0, VReg.V1);
-        vm.movImm64(VReg.V1, 0x7ffd000000000000n); // JS_TAG_OBJECT_BASE
+        vm.movImm64(VReg.V1, "0x7ffd000000000000"); // JS_TAG_OBJECT_BASE
         vm.or(VReg.RET, VReg.RET, VReg.V1);
         vm.ret();
     }
@@ -312,25 +410,36 @@ export class JSValueGenerator {
         vm.label("_js_box_function");
         // A0 = function/closure 指针
         // 使用 V1 避免与 RET(V0) 冲突
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.RET, VReg.A0, VReg.V1);
-        vm.movImm64(VReg.V1, 0x7fff000000000000n); // JS_TAG_FUNCTION_BASE
+        vm.movImm64(VReg.V1, "0x7fff000000000000"); // JS_TAG_FUNCTION_BASE
         vm.or(VReg.RET, VReg.RET, VReg.V1);
         vm.ret();
     }
 
     // _js_unbox(v) -> 指针
     // 注意：V0 和 RET 都映射到 X0，所以要避免使用 V0
-    // 不再进行符号扩展：用户空间 heap 地址的 bit 47 可能为 1
-    // （特别是在某些 QEMU/Docker 环境中），符号扩展会破坏地址
+    // 对于 TypedArray (subtype > 0)，使用 44 位掩码
+    // 对于普通值 (subtype = 0)，使用 48 位掩码
     generateUnbox() {
         const vm = this.vm;
 
         vm.label("_js_unbox");
         // A0 = JSValue
-        // 提取 payload (低 48 位)
-        // 使用 V1 作为临时寄存器
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        // 检查是否是 TypedArray (bits 44-47 != 0)
+        vm.shrImm(VReg.V1, VReg.A0, 44);
+        vm.andImm(VReg.V1, VReg.V1, 0xf);
+        vm.cmpImm(VReg.V1, 0);
+        vm.jne("_js_unbox_typed");
+
+        // 普通值：提取低 48 位
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
+        vm.and(VReg.RET, VReg.A0, VReg.V1);
+        vm.ret();
+
+        // TypedArray：提取低 44 位
+        vm.label("_js_unbox_typed");
+        vm.movImm64(VReg.V1, "0x00000fffffffffff");
         vm.and(VReg.RET, VReg.A0, VReg.V1);
         vm.ret();
     }
@@ -424,5 +533,95 @@ export class JSValueGenerator {
 
         vm.label(doneLabel);
         vm.epilogue([VReg.S0, VReg.S1], 16);
+    }
+
+    // _get_length(v) -> 返回 NaN-boxed number (length)
+    // 运行时类型检查：如果是数组调用 _array_length，如果是字符串调用 _str_length
+    generateGetLength() {
+        const vm = this.vm;
+
+        vm.label("_get_length");
+        vm.prologue(32, [VReg.S0, VReg.S1]);
+        vm.mov(VReg.S0, VReg.A0); // 保存原始值
+
+        // 获取高 16 位 tag
+        vm.shrImm(VReg.V0, VReg.S0, 48);
+
+        // 首先检查是否是 NaN-boxed 范围 (0x7FF8-0x7FFF)
+        vm.movImm(VReg.V1, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jlt("_get_length_raw_ptr"); // 不是 NaN-boxed，可能是原始字符串指针
+
+        // 检查是否是数组 (tag = 6 -> 0x7FFE)
+        vm.movImm(VReg.V1, 0x7ffe);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_get_length_array");
+
+        // 检查是否是字符串 (tag = 4 -> 0x7FFC)
+        vm.movImm(VReg.V1, 0x7ffc);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_get_length_string");
+
+        // 检查是否是对象 (tag = 5 -> 0x7FFD)
+        vm.movImm(VReg.V1, 0x7ffd);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_get_length_object");
+
+        // 其他 NaN-boxed 类型：返回 boxed 0
+        vm.movImm(VReg.S1, 0);
+        vm.jmp("_get_length_box");
+
+        vm.label("_get_length_raw_ptr");
+        // 非 NaN-boxed 值：假设是原始字符串指针
+        // 调用 _str_length（它能处理原始指针和 NaN-boxed）
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_str_length");
+        // _str_length 返回原始整数，转换为 float64 位模式
+        vm.scvtf(0, VReg.RET); // D0 = (double)length
+        vm.fmovToInt(VReg.S1, 0);
+        vm.jmp("_get_length_box");
+
+        vm.label("_get_length_array");
+        // 数组：unbox 后读取 offset 8 的长度
+        vm.movImm64(VReg.V1, "0x00000fffffffffff"); // 44 位掩码（TypedArray 兼容）
+        vm.and(VReg.V0, VReg.S0, VReg.V1);
+        vm.load(VReg.RET, VReg.V0, 8); // length at offset 8
+        // 转换为 float64 位模式，保存到 S1
+        vm.scvtf(0, VReg.RET); // D0 = (double)length
+        vm.fmovToInt(VReg.S1, 0);
+        vm.jmp("_get_length_box");
+
+        vm.label("_get_length_string");
+        // NaN-boxed 字符串：调用 _str_length
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_str_length");
+        // _str_length 返回原始整数，转换为 float64 位模式
+        vm.scvtf(0, VReg.RET); // D0 = (double)length
+        vm.fmovToInt(VReg.S1, 0);
+        vm.jmp("_get_length_box");
+
+        vm.label("_get_length_object");
+        // 对象：调用 _object_get 获取 "length" 属性
+        vm.mov(VReg.A0, VReg.S0);
+        vm.lea(VReg.A1, "_str_length_prop");
+        vm.call("_object_get");
+        // _object_get 返回 boxed value，直接返回
+        vm.jmp("_get_length_done");
+
+        // 装箱为 boxed Number 对象 [type:8][value:8]
+        vm.label("_get_length_box");
+        // 分配 16 字节
+        vm.movImm(VReg.A0, 16);
+        vm.call("_alloc");
+        // RET 现在是分配的地址
+        // 写入类型标记 (TYPE_FLOAT64 = 29)
+        vm.movImm(VReg.V1, 29);
+        vm.store(VReg.RET, 0, VReg.V1);
+        // 写入值
+        vm.store(VReg.RET, 8, VReg.S1);
+        // RET 已经是 boxed Number 对象指针
+
+        vm.label("_get_length_done");
+        vm.epilogue([VReg.S0, VReg.S1], 32);
     }
 }

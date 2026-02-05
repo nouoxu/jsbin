@@ -282,13 +282,16 @@ export const StringConvertGenerator = {
         vm.cmp(VReg.S0, VReg.V0);
         vm.jge("_valueToStr_check_heap");
 
-        // 地址 < heap_base，检查是否是合理的数据段地址
-        vm.movImm(VReg.V0, 0x100000);
-        vm.cmp(VReg.S0, VReg.V0);
-        vm.jlt("_valueToStr_as_raw_number");
+        // 地址 < heap_base，检查是否可能是数据段字符串指针
+        // 在 macOS ARM64 上，程序通常加载在 0x100000000 附近
+        // 检查高 32 位是否是 1（即地址在 0x100000000 到 0x1FFFFFFFF 范围内）
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 32);
+        vm.cmpImm(VReg.V0, 1);
+        vm.jeq("_valueToStr_as_string"); // 是 0x1xxxxxxxx，可能是数据段字符串
 
-        // 看起来是数据段字符串指针
-        vm.jmp("_valueToStr_as_string");
+        // 不是 macOS 数据段地址，当作数字
+        vm.jmp("_valueToStr_as_raw_number");
 
         vm.label("_valueToStr_check_heap");
         // 检查是否在堆范围内

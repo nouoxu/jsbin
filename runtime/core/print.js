@@ -305,8 +305,14 @@ export class PrintGenerator {
         vm.cmp(VReg.V0, VReg.V1);
         vm.jgt(notNanBoxedLabel); // > 0x7FFF，不是 NaN-boxed
 
-        // ============ 是 NaN-boxed 值，提取 tag ============
-        // tag 在低 3 位 of 高 16 位
+        // ============ 是 NaN-boxed 值 ============
+        // 先检查是否是 TypedArray (高 16 位 = 0x7FFE)
+        // V0 当前仍然是 >> 48 后的高 16 位
+        vm.movImm(VReg.V1, 0x7ffe);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_print_value_typedarray_ptr");
+
+        // 提取 tag: 低 3 位 of 高 16 位
         vm.andImm(VReg.V0, VReg.V0, 0x7); // 取低 3 位 = tag
         vm.mov(VReg.S1, VReg.V0); // S1 = tag
 
@@ -352,12 +358,27 @@ export class PrintGenerator {
 
         // int32: payload 是 32 位整数
         vm.label("_print_value_int32");
+        // 首先检查是否是 IEEE 754 NaN（exponent=0x7FF 且 mantissa≠0）
+        // 高 16 位是 0x7FF8 意味着这可能是 quiet NaN
+        // 如果低 48 位（mantissa）非零，这是 NaN 而不是 int32
+        vm.mov(VReg.V0, VReg.S0);
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff"); // 低 48 位掩码
+        vm.and(VReg.V0, VReg.V0, VReg.V1);
+        vm.cmpImm(VReg.V0, 0);
+        vm.jne("_print_value_ieee_nan");
+        // 低 48 位是 0，这是真正的 int32(0)
         // 提取低 32 位作为有符号整数
         vm.mov(VReg.A0, VReg.S0);
         // 对于 32 位整数，符号扩展低 32 位
         vm.shl(VReg.A0, VReg.A0, 32);
         vm.sarImm(VReg.A0, VReg.A0, 32); // 算术右移恢复符号
         vm.call("_print_int");
+        vm.jmp(doneLabel);
+
+        // IEEE 754 NaN
+        vm.label("_print_value_ieee_nan");
+        vm.lea(VReg.A0, "_str_nan");
+        vm.call("_print_str");
         vm.jmp(doneLabel);
 
         // boolean: payload 0=false, 1=true
@@ -389,13 +410,20 @@ export class PrintGenerator {
         vm.label("_print_value_string_ptr");
         // payload 是 48 位指针
         vm.mov(VReg.A0, VReg.S0);
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.A0, VReg.A0, VReg.V1); // 提取低 48 位
         // 检查是否是堆字符串（有 16 字节头部）还是数据段字符串
+        // 堆字符串: heap_base <= ptr < heap_ptr
+        // 数据段字符串: 其他所有地址
         vm.lea(VReg.V1, "_heap_base");
         vm.load(VReg.V1, VReg.V1, 0);
         vm.cmp(VReg.A0, VReg.V1);
         vm.jlt("_print_value_str_data"); // < heap_base，是数据段字符串
+        // ptr >= heap_base, 再检查是否 < heap_ptr
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.A0, VReg.V1);
+        vm.jge("_print_value_str_data"); // >= heap_ptr，不在堆范围内，是数据段字符串
         // 是堆字符串，跳过 16 字节头部
         vm.addImm(VReg.A0, VReg.A0, 16);
         vm.call("_print_str");
@@ -408,7 +436,7 @@ export class PrintGenerator {
         vm.label("_print_value_object_ptr");
         // 提取 48 位指针
         vm.mov(VReg.S0, VReg.S0); // S0 已经是原始值
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.S0, VReg.S0, VReg.V1); // S0 = 堆指针
         // 检查堆对象的具体类型
         vm.load(VReg.V2, VReg.S0, 0);
@@ -427,9 +455,14 @@ export class PrintGenerator {
         // array pointer
         vm.label("_print_value_array_ptr");
         vm.mov(VReg.A0, VReg.S0);
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
-        vm.and(VReg.A0, VReg.A0, VReg.V1); // 提取低 48 位
+        // 直接传递 boxed 值给 _print_array，它会调用 _js_unbox
         vm.call("_print_array");
+        vm.jmp(doneLabel);
+
+        // TypedArray pointer (0x7FFE tag)
+        vm.label("_print_value_typedarray_ptr");
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_print_typedarray");
         vm.jmp(doneLabel);
 
         // function pointer
@@ -445,6 +478,14 @@ export class PrintGenerator {
         // 2. 原始指针（向后兼容旧代码）
         // 3. 小整数
 
+        // ===== 首先检查 IEEE 754 特殊值 (Infinity/NaN) =====
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 52);
+        vm.andImm(VReg.V0, VReg.V0, 0x7ff);
+        vm.movImm(VReg.V1, 0x7ff);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_print_value_as_float"); // 是特殊浮点值
+
         // 检查是否为 0
         vm.cmpImm(VReg.S0, 0);
         vm.jne("_print_value_not_zero");
@@ -454,15 +495,32 @@ export class PrintGenerator {
 
         vm.label("_print_value_not_zero");
 
-        // 首先检查是否在数据段范围内（静态字符串向后兼容）
-        // 数据段在 [_data_start, _heap_base) 之间
-        vm.lea(VReg.V1, "_data_start");
-        vm.cmp(VReg.S0, VReg.V1);
-        vm.jlt("_print_value_check_heap");
+        // 首先检查是否在堆范围内（优先检查堆对象）
+        // 这样可以正确处理存储在全局变量中的堆对象指针
         vm.lea(VReg.V1, "_heap_base");
         vm.load(VReg.V1, VReg.V1, 0);
         vm.cmp(VReg.S0, VReg.V1);
-        vm.jge("_print_value_check_heap");
+        vm.jlt("_print_value_check_data_segment");
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jge("_print_value_check_data_segment");
+
+        // 在堆范围内，检查对象类型
+        vm.load(VReg.V2, VReg.S0, 0);
+        vm.andImm(VReg.V2, VReg.V2, 0xff);
+        vm.jmp("_print_value_dispatch_heap_type");
+
+        vm.label("_print_value_check_data_segment");
+        // 检查是否在数据段范围内（静态字符串向后兼容）
+        // 数据段在 [_data_start, _heap_base) 之间
+        vm.lea(VReg.V1, "_data_start");
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jlt("_print_value_not_heap");
+        vm.lea(VReg.V1, "_heap_base");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jge("_print_value_not_heap");
         // 是数据段字符串
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_print_str");
@@ -483,6 +541,7 @@ export class PrintGenerator {
         vm.load(VReg.V2, VReg.S0, 0);
         vm.andImm(VReg.V2, VReg.V2, 0xff);
 
+        vm.label("_print_value_dispatch_heap_type");
         vm.cmpImm(VReg.V2, TYPE_ARRAY);
         vm.jeq("_print_value_heap_array");
         vm.cmpImm(VReg.V2, TYPE_OBJECT);
@@ -1026,7 +1085,7 @@ export class PrintGenerator {
         // string pointer (tag 4)
         vm.label("_print_vnl_string_ptr");
         vm.mov(VReg.A0, VReg.S0);
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn);
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.A0, VReg.A0, VReg.V1);
         // 检查是否是堆字符串
         vm.lea(VReg.V1, "_heap_base");
@@ -1059,6 +1118,15 @@ export class PrintGenerator {
 
         // ============ 不是 NaN-boxed ============
         vm.label(notNanBoxedLabel);
+
+        // ===== 首先检查 IEEE 754 特殊值 (Infinity/NaN) =====
+        // 检查高 12 位是否是 0x7FF 或 0xFFF (正/负无穷或 NaN)
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 52);
+        vm.andImm(VReg.V0, VReg.V0, 0x7ff); // 屏蔽符号位
+        vm.movImm(VReg.V1, 0x7ff);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_print_vnl_maybe_float"); // 是特殊浮点值，直接跳到浮点打印
 
         // 检查是否是 0
         vm.cmpImm(VReg.S0, 0);
@@ -1134,8 +1202,22 @@ export class PrintGenerator {
         vm.call("_print_str_no_nl");
         vm.jmp(doneLabel);
 
-        // 可能是浮点数
+        // 可能是浮点数或数据段字符串指针
         vm.label("_print_vnl_maybe_float");
+        // 检查是否可能是数据段字符串指针
+        // 在 macOS ARM64 上，程序通常加载在 0x100000000 附近
+        // 如果高 32 位是 0x1（即地址在 0x100000000 到 0x1FFFFFFFF 范围内），可能是代码/数据段地址
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 32);
+        vm.cmpImm(VReg.V0, 1);
+        vm.jne("_print_vnl_really_float"); // 不是 0x1xxxxxxxx，当作浮点数
+
+        // 可能是数据段字符串，使用智能字符串打印
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_print_string_smart_no_nl");
+        vm.jmp(doneLabel);
+
+        vm.label("_print_vnl_really_float");
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_print_float_no_nl");
 
@@ -1150,7 +1232,9 @@ export class PrintGenerator {
         vm.label("_print_typedarray");
         vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
-        vm.mov(VReg.S0, VReg.A0); // arr
+        // A0 可能是 boxed TypedArray，先 unbox
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // arr (unboxed pointer)
 
         // 加载 type 和 length
         vm.load(VReg.S1, VReg.S0, 0); // type
@@ -1407,7 +1491,9 @@ export class PrintGenerator {
         vm.label("_print_typedarray_no_nl");
         vm.prologue(16, [VReg.S0]);
 
-        vm.mov(VReg.S0, VReg.A0);
+        // A0 可能是 boxed TypedArray，先 unbox
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET);
 
         // 打印类型名和基本信息
         vm.mov(VReg.A0, VReg.S0);

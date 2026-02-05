@@ -14,6 +14,14 @@ export const BaseStringGenerator = {
         vm.label("_strlen");
         vm.prologue(0, [VReg.S0, VReg.S1]);
 
+        // 对非指针值（如 NaN-boxed undefined/null 等）直接返回 0，避免非法访存
+        vm.mov(VReg.V0, VReg.A0);
+        vm.shrImm(VReg.V0, VReg.V0, 48);
+        vm.movImm(VReg.V1, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V1);
+        const strlenNonPtr = "_strlen_non_ptr";
+        vm.jge(strlenNonPtr);
+
         // S0 = str pointer
         // S1 = counter
         vm.mov(VReg.S0, VReg.A0);
@@ -37,6 +45,11 @@ export const BaseStringGenerator = {
         vm.label(doneLabel);
         vm.mov(VReg.RET, VReg.S1);
         vm.epilogue([VReg.S0, VReg.S1], 0);
+
+        // 非指针值，返回 0
+        vm.label(strlenNonPtr);
+        vm.movImm(VReg.RET, 0);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
     },
 
     // 生成原始字符串长度函数（遍历计算，用于裸字符串指针）
@@ -46,6 +59,14 @@ export const BaseStringGenerator = {
 
         vm.label("_raw_strlen");
         vm.prologue(0, [VReg.S0, VReg.S1]);
+
+        // 对非指针值（NaN-boxed 非字符串）返回 0
+        vm.mov(VReg.V0, VReg.A0);
+        vm.shrImm(VReg.V0, VReg.V0, 48);
+        vm.movImm(VReg.V1, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V1);
+        const rawStrlenNonPtr = "_raw_strlen_non_ptr";
+        vm.jge(rawStrlenNonPtr);
 
         vm.mov(VReg.S0, VReg.A0);
         vm.movImm(VReg.S1, 0);
@@ -63,6 +84,10 @@ export const BaseStringGenerator = {
 
         vm.label(doneLabel);
         vm.mov(VReg.RET, VReg.S1);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+
+        vm.label(rawStrlenNonPtr);
+        vm.movImm(VReg.RET, 0);
         vm.epilogue([VReg.S0, VReg.S1], 0);
     },
 
@@ -85,14 +110,65 @@ export const BaseStringGenerator = {
 
         vm.label("_strcmp");
         vm.prologue(0, [VReg.S0, VReg.S1]);
-
-        // 直接使用指针，无需跳过头部
-        vm.mov(VReg.S0, VReg.A0);
-        vm.mov(VReg.S1, VReg.A1);
-
         const loopLabel = "_strcmp_loop";
         const notEqualLabel = "_strcmp_ne";
         const doneLabel = "_strcmp_done";
+        // 支持 NaN-boxed 字符串：高16位 0x7FFC 解箱；非字符串的 NaN-boxed 值直接返回不相等，避免非法访存
+
+        // 处理第一个参数
+        vm.mov(VReg.S0, VReg.A0);
+        vm.shrImm(VReg.V0, VReg.S0, 48); // high16
+        vm.movImm(VReg.V2, 0x7ffc);
+        vm.cmp(VReg.V0, VReg.V2);
+        const arg0NotString = "_strcmp_arg0_not_string";
+        const arg0Done = "_strcmp_arg0_done";
+        vm.jne(arg0NotString);
+        // NaN-boxed 字符串，清除高16位
+        vm.movImm(VReg.V2, 0x0000ffffffffffff);
+        vm.and(VReg.S0, VReg.S0, VReg.V2);
+        vm.jmp(arg0Done);
+        vm.label(arg0NotString);
+        vm.movImm(VReg.V2, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V2);
+        vm.jlt(arg0Done); // 非 NaN-boxed，视为原始指针
+        // NaN-boxed 非字符串，返回不相等
+        vm.movImm(VReg.RET, 1);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+        vm.label(arg0Done);
+        // 空指针保护
+        vm.cmpImm(VReg.S0, 0);
+        vm.jne(arg0Done + "_nonnull");
+        vm.movImm(VReg.RET, 1);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+        vm.label(arg0Done + "_nonnull");
+
+        // 注意：不做堆范围检查，因为字符串可能在数据段（字面量）或堆中
+
+        // 处理第二个参数
+        vm.mov(VReg.S1, VReg.A1);
+        vm.shrImm(VReg.V0, VReg.S1, 48);
+        vm.movImm(VReg.V2, 0x7ffc);
+        vm.cmp(VReg.V0, VReg.V2);
+        const arg1NotString = "_strcmp_arg1_not_string";
+        const arg1Done = "_strcmp_arg1_done";
+        vm.jne(arg1NotString);
+        vm.movImm(VReg.V2, 0x0000ffffffffffff);
+        vm.and(VReg.S1, VReg.S1, VReg.V2);
+        vm.jmp(arg1Done);
+        vm.label(arg1NotString);
+        vm.movImm(VReg.V2, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V2);
+        vm.jlt(arg1Done);
+        vm.movImm(VReg.RET, 1);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+        vm.label(arg1Done);
+        vm.cmpImm(VReg.S1, 0);
+        vm.jne(arg1Done + "_nonnull");
+        vm.movImm(VReg.RET, 1);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+        vm.label(arg1Done + "_nonnull");
+
+        // 注意：不做堆范围检查，因为字符串可能在数据段（字面量）或堆中
 
         vm.label(loopLabel);
         // 加载两个字符（使用 loadByte 加载单字节）

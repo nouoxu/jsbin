@@ -141,7 +141,7 @@ export class IteratorGenerator {
         // done 值 (boxed boolean: 使用 NaN-boxing)
         // Tag 1 = boolean, JS_TAG_BOOL_BASE = 0x7FF9000000000000
         // true = 0x7FF9000000000001, false = 0x7FF9000000000000
-        vm.movImm64(VReg.V1, 0x7ff9000000000000n);
+        vm.movImm64(VReg.V1, "0x7ff9000000000000");
         vm.or(VReg.V1, VReg.V1, VReg.S1);
         vm.store(VReg.S2, 48, VReg.V1);
 
@@ -749,6 +749,7 @@ export class MapSetIteratorMethodsGenerator {
         vm.label("_map_keys");
         vm.prologue(16, []);
         vm.movImm(VReg.A1, 1); // ITER_KIND_KEYS
+        vm.movImm(VReg.A2, 2); // SOURCE_TYPE_MAP
         vm.call("_iterator_create");
         vm.epilogue([], 16);
     }
@@ -758,6 +759,7 @@ export class MapSetIteratorMethodsGenerator {
         vm.label("_map_values");
         vm.prologue(16, []);
         vm.movImm(VReg.A1, 0); // ITER_KIND_VALUES
+        vm.movImm(VReg.A2, 2); // SOURCE_TYPE_MAP
         vm.call("_iterator_create");
         vm.epilogue([], 16);
     }
@@ -767,6 +769,7 @@ export class MapSetIteratorMethodsGenerator {
         vm.label("_map_entries");
         vm.prologue(16, []);
         vm.movImm(VReg.A1, 2); // ITER_KIND_ENTRIES
+        vm.movImm(VReg.A2, 2); // SOURCE_TYPE_MAP
         vm.call("_iterator_create");
         vm.epilogue([], 16);
     }
@@ -777,6 +780,7 @@ export class MapSetIteratorMethodsGenerator {
         vm.label("_set_@@iterator"); // Set 默认迭代器
         vm.prologue(16, []);
         vm.movImm(VReg.A1, 0); // ITER_KIND_VALUES
+        vm.movImm(VReg.A2, 3); // SOURCE_TYPE_SET
         vm.call("_iterator_create");
         vm.epilogue([], 16);
     }
@@ -786,6 +790,7 @@ export class MapSetIteratorMethodsGenerator {
         vm.label("_set_keys");
         vm.prologue(16, []);
         vm.movImm(VReg.A1, 0); // Set.keys() 返回 values (same as values)
+        vm.movImm(VReg.A2, 3); // SOURCE_TYPE_SET
         vm.call("_iterator_create");
         vm.epilogue([], 16);
     }
@@ -795,6 +800,7 @@ export class MapSetIteratorMethodsGenerator {
         vm.label("_set_entries");
         vm.prologue(16, []);
         vm.movImm(VReg.A1, 2); // ITER_KIND_ENTRIES
+        vm.movImm(VReg.A2, 3); // SOURCE_TYPE_SET
         vm.call("_iterator_create");
         vm.epilogue([], 16);
     }

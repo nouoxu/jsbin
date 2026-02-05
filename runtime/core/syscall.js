@@ -1,0 +1,104 @@
+// JSBin 系统调用定义
+
+export const Syscall = {
+    // Linux x64
+    LINUX_READ: 0,
+    LINUX_WRITE: 1,
+    LINUX_OPEN: 2,
+    LINUX_CLOSE: 3,
+    LINUX_STAT: 4,
+    LINUX_FSTAT: 5,
+    LINUX_LSEEK: 8,
+    LINUX_MMAP: 9,
+    LINUX_MPROTECT: 10,
+    LINUX_MUNMAP: 11,
+    LINUX_BRK: 12,
+    LINUX_IOCTL: 16,
+    LINUX_ACCESS: 21,
+    LINUX_EXIT: 60,
+    LINUX_FCNTL: 72,
+    LINUX_MKDIR: 83,
+    LINUX_UNLINK: 87,
+    LINUX_GETCWD: 79,
+
+    // Linux ARM64
+    // 注意：ARM64 Linux 通常使用 openat (56) 代替 open
+    LINUX_OPEN_ARM64: 56, // openat
+    LINUX_CLOSE_ARM64: 57,
+    LINUX_READ_ARM64: 63,
+    LINUX_WRITE_ARM64: 64,
+    LINUX_FSTAT_ARM64: 80,
+    LINUX_NEWFSTATAT_ARM64: 79, // fstatat for ARM64 (用于 stat)
+    LINUX_UNLINKAT_ARM64: 35, // unlinkat for ARM64
+    LINUX_EXIT_ARM64: 93,
+    LINUX_MMAP_ARM64: 222,
+    LINUX_MUNMAP_ARM64: 215,
+    LINUX_GETCWD_ARM64: 17,
+
+    // macOS (BSD syscalls)
+    // x64 需要添加 0x2000000 class mask
+    MACOS_EXIT_X64: 0x2000001,
+    MACOS_EXIT_ARM64: 1,
+
+    MACOS_READ_X64: 0x2000003,
+    MACOS_READ_ARM64: 3,
+
+    MACOS_WRITE_X64: 0x2000004,
+    MACOS_WRITE_ARM64: 4,
+
+    MACOS_OPEN_X64: 0x2000005,
+    MACOS_OPEN_ARM64: 5,
+
+    MACOS_CLOSE_X64: 0x2000006,
+    MACOS_CLOSE_ARM64: 6,
+
+    MACOS_STAT_X64: 0x2000152, // 338 stat64
+    MACOS_STAT_ARM64: 338, // stat64
+
+    MACOS_ACCESS_X64: 0x2000021, // 33
+    MACOS_ACCESS_ARM64: 33,
+
+    MACOS_UNLINK_X64: 0x200000a, // 10
+    MACOS_UNLINK_ARM64: 10,
+
+    MACOS_MMAP_X64: 0x20000c5,
+    MACOS_MMAP_ARM64: 197,
+
+    MACOS_MUNMAP_X64: 0x2000049,
+    MACOS_MUNMAP_ARM64: 73,
+
+    MACOS_FSTAT_X64: 0x20000bd, // 189
+    MACOS_FSTAT_ARM64: 189, // fstat64
+
+    // getcwd
+    MACOS_GETCWD_X64: 0x2000147, // 327 (__getcwd)
+    MACOS_GETCWD_ARM64: 327,
+
+    // fork/exec/wait
+    MACOS_FORK_X64: 0x2000002, // 2
+    MACOS_FORK_ARM64: 2,
+
+    MACOS_EXECVE_X64: 0x200003b, // 59
+    MACOS_EXECVE_ARM64: 59,
+
+    MACOS_WAITPID_X64: 0x2000007, // 7 (wait4 on macOS, but 7 is also wait for pid)
+    MACOS_WAITPID_ARM64: 7, // wait4 is syscall 7
+
+    MACOS_PIPE_X64: 0x200002a, // 42
+    MACOS_PIPE_ARM64: 42,
+
+    MACOS_DUP2_X64: 0x200005a, // 90
+    MACOS_DUP2_ARM64: 90,
+
+    // Linux fork/exec/wait
+    LINUX_FORK: 57,
+    LINUX_FORK_ARM64: 57, // clone for arm64
+    LINUX_EXECVE: 59,
+    LINUX_EXECVE_ARM64: 221,
+    LINUX_WAIT4: 61,
+    LINUX_WAIT4_ARM64: 260,
+    LINUX_PIPE: 22,
+    LINUX_PIPE_ARM64: 59,
+    LINUX_DUP2: 33,
+    LINUX_DUP2_ARM64: 63, // dup3
+};

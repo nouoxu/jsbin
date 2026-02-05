@@ -21,6 +21,7 @@ export const TYPE_COROUTINE = 10; // Coroutine
 export const TYPE_PROMISE = 11; // Promise
 export const TYPE_ARRAY_BUFFER = 12; // ArrayBuffer
 export const TYPE_NUMBER = 13; // Number (boxed, 默认 float64)
+export const TYPE_DATAVIEW = 16; // DataView
 export const TYPE_ITERATOR = 14; // Iterator (迭代器对象)
 export const TYPE_ASYNC_GENERATOR = 15; // AsyncGenerator (异步生成器)
 

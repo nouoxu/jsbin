@@ -83,6 +83,7 @@ export const ClosureCompiler = {
             label: funcLabel,
             expr: expr,
             captured: captured,
+            savedImportedSymbols: this.importedSymbols, // 保存当前的 importedSymbols 引用
         });
     },
 
@@ -135,6 +136,7 @@ export const ClosureCompiler = {
             captured: captured,
             isGenerator: true,
             bodyLabel: genBodyLabel,
+            savedImportedSymbols: this.importedSymbols, // 保存当前的 importedSymbols 引用
         });
     },
 
@@ -145,12 +147,21 @@ export const ClosureCompiler = {
         }
 
         for (const func of this.pendingFunctions) {
+            // 保存当前 importedSymbols，恢复函数创建时的 context
+            const savedImportedSymbols = this.importedSymbols;
+            if (func.savedImportedSymbols) {
+                this.importedSymbols = func.savedImportedSymbols;
+            }
+
             this.vm.label(func.label);
             if (func.isGenerator) {
                 this.compileGeneratorFunctionBody(func.expr, func.captured, func.bodyLabel);
             } else {
                 this.compileFunctionBody(func.expr, func.captured);
             }
+
+            // 恢复 importedSymbols
+            this.importedSymbols = savedImportedSymbols;
         }
 
         this.pendingFunctions = [];
@@ -219,8 +230,13 @@ export const ClosureCompiler = {
     compileGeneratorBodyFunction(expr, captured, bodyLabel, paramCount) {
         const vm = this.vm;
 
+        // 估算 generator body 需要的栈空间（包含局部变量、临时变量与余量）
+        // 注意：这里会在后续通过 ctx.allocLocal 动态分配局部变量，所以必须给足栈。
+        const estimatedLocals = this.estimateStackSize(expr);
+        const stackSize = Math.max(512, Math.ceil((estimatedLocals * 16 + 256) / 16) * 16);
+
         vm.label(bodyLabel);
-        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+        vm.prologue(stackSize, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
         // A0 = Generator 对象
         vm.mov(VReg.S0, VReg.A0);
@@ -237,6 +253,7 @@ export const ClosureCompiler = {
         this.ctx.stackOffset = 0;
         // 保留 callee-saved 寄存器占用的栈空间
         this.ctx.reserveCalleeSavedSpace(5); // S0, S1, S2, S3, S4 = 5 个寄存器
+        this.ctx.allocatedStackSize = stackSize;
         this.ctx.boxedVars = new Set();
         this.ctx.inGenerator = true;
         this.ctx.generatorReg = VReg.S0; // Generator 对象在 S0
@@ -272,7 +289,7 @@ export const ClosureCompiler = {
         vm.label(returnLabel);
         vm.lea(VReg.RET, "_js_undefined");
         vm.load(VReg.RET, VReg.RET, 0);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], stackSize);
 
         // 恢复上下文
         this.ctx.locals = prevLocals;
@@ -290,8 +307,12 @@ export const ClosureCompiler = {
 
         const isAsync = isAsyncFunction(expr);
 
+        // 估算所需栈空间（闭包/箭头函数体同样可能非常复杂，不能固定 64 字节）
+        const estimatedLocals = this.estimateStackSize(expr);
+        const stackSize = Math.max(256, Math.ceil((estimatedLocals * 16 + 256) / 16) * 16);
+
         // 函数入口 - 简化版本
-        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+        vm.prologue(stackSize, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
         const prevLocals = this.ctx.locals;
         const prevStackOffset = this.ctx.stackOffset;
@@ -303,6 +324,7 @@ export const ClosureCompiler = {
         this.ctx.stackOffset = 0;
         // 保留 callee-saved 寄存器占用的栈空间
         this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
+        this.ctx.allocatedStackSize = stackSize;
         this.ctx.inAsyncFunction = isAsync;
 
         // 分析函数体中哪些变量会被内部闭包捕获
@@ -314,6 +336,7 @@ export const ClosureCompiler = {
 
         // 处理参数 - 先保存所有参数到栈（因为后续操作可能破坏参数寄存器）
         // 注意：先保存参数，再处理闭包捕获变量，避免寄存器冲突
+        // 调用约定: A0-A5=参数 (最多6个寄存器参数)
         const paramOffsets = [];
         for (let i = 0; i < params.length && i < 6; i++) {
             if (params[i].type === "Identifier") {
@@ -324,9 +347,10 @@ export const ClosureCompiler = {
             }
         }
 
-        // 保存 this 指针（通过 A5 传入的隐藏参数）到 __this 局部变量
+        // 保存 this 指针（通过 V5 传入的隐藏参数）到 __this 局部变量
+        // 方法调用时 compileMethodCall 会设置 V5 = this
         const thisOffset = this.ctx.allocLocal("__this");
-        vm.store(VReg.FP, thisOffset, VReg.A5);
+        vm.store(VReg.FP, thisOffset, VReg.V5);
 
         // 处理闭包捕获变量 - 从闭包对象中加载 box 指针
         // S0 寄存器包含闭包对象指针（由 compileClosureCall 传入）
@@ -386,7 +410,7 @@ export const ClosureCompiler = {
         if (isAsync) {
             this.emitAsyncResolveAndReturnFromRet();
         } else {
-            vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 64);
+            vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], stackSize);
         }
 
         this.ctx.locals = prevLocals;

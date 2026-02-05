@@ -18,7 +18,7 @@
 // +16: 原始数据缓冲区
 
 import { VReg } from "../../../vm/registers.js";
-import { TYPE_ARRAY_BUFFER, TYPE_INT8_ARRAY, TYPE_INT16_ARRAY, TYPE_INT32_ARRAY, TYPE_INT64_ARRAY, TYPE_UINT8_ARRAY, TYPE_UINT16_ARRAY, TYPE_UINT32_ARRAY, TYPE_UINT64_ARRAY, TYPE_UINT8_CLAMPED_ARRAY, TYPE_FLOAT32_ARRAY, TYPE_FLOAT64_ARRAY } from "../../core/types.js";
+import { TYPE_ARRAY_BUFFER, TYPE_INT8_ARRAY, TYPE_INT16_ARRAY, TYPE_INT32_ARRAY, TYPE_INT64_ARRAY, TYPE_UINT8_ARRAY, TYPE_UINT16_ARRAY, TYPE_UINT32_ARRAY, TYPE_UINT64_ARRAY, TYPE_UINT8_CLAMPED_ARRAY, TYPE_FLOAT32_ARRAY, TYPE_FLOAT64_ARRAY, TYPE_DATAVIEW } from "../../core/types.js";
 
 // 重新导出类型常量
 export { TYPE_INT8_ARRAY, TYPE_INT16_ARRAY, TYPE_INT32_ARRAY, TYPE_INT64_ARRAY, TYPE_UINT8_ARRAY, TYPE_UINT16_ARRAY, TYPE_UINT32_ARRAY, TYPE_UINT64_ARRAY, TYPE_UINT8_CLAMPED_ARRAY, TYPE_FLOAT32_ARRAY, TYPE_FLOAT64_ARRAY };
@@ -228,7 +228,81 @@ export class TypedArrayGenerator {
         vm.store(VReg.V1, 0, VReg.S0); // type (直接存储 TYPE_*_ARRAY)
         vm.store(VReg.V1, 8, VReg.S1); // length
 
-        vm.mov(VReg.RET, VReg.V1);
+        // 将原始指针转换为 NaN-boxed 值
+        // 格式: [0x7FFE (16b) | subtype (4b) | ptr (44b)]
+        // 需要根据 TYPE_*_ARRAY 计算 subtype
+
+        // 计算 subtype: TYPE_*_ARRAY -> subtype (1-11)
+        vm.cmpImm(VReg.S0, TYPE_INT8_ARRAY); // 0x40
+        vm.jne("_ta_new_box_check_uint8");
+        vm.movImm(VReg.S2, 1);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_uint8");
+        vm.cmpImm(VReg.S0, TYPE_UINT8_ARRAY); // 0x50
+        vm.jne("_ta_new_box_check_uint8c");
+        vm.movImm(VReg.S2, 2);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_uint8c");
+        vm.cmpImm(VReg.S0, TYPE_UINT8_CLAMPED_ARRAY); // 0x54
+        vm.jne("_ta_new_box_check_int16");
+        vm.movImm(VReg.S2, 3);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_int16");
+        vm.cmpImm(VReg.S0, TYPE_INT16_ARRAY); // 0x41
+        vm.jne("_ta_new_box_check_uint16");
+        vm.movImm(VReg.S2, 4);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_uint16");
+        vm.cmpImm(VReg.S0, TYPE_UINT16_ARRAY); // 0x51
+        vm.jne("_ta_new_box_check_int32");
+        vm.movImm(VReg.S2, 5);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_int32");
+        vm.cmpImm(VReg.S0, TYPE_INT32_ARRAY); // 0x42
+        vm.jne("_ta_new_box_check_uint32");
+        vm.movImm(VReg.S2, 6);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_uint32");
+        vm.cmpImm(VReg.S0, TYPE_UINT32_ARRAY); // 0x52
+        vm.jne("_ta_new_box_check_float32");
+        vm.movImm(VReg.S2, 7);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_float32");
+        vm.cmpImm(VReg.S0, TYPE_FLOAT32_ARRAY); // 0x60
+        vm.jne("_ta_new_box_check_float64");
+        vm.movImm(VReg.S2, 8);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_float64");
+        vm.cmpImm(VReg.S0, TYPE_FLOAT64_ARRAY); // 0x61
+        vm.jne("_ta_new_box_check_int64");
+        vm.movImm(VReg.S2, 9);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_check_int64");
+        vm.cmpImm(VReg.S0, TYPE_INT64_ARRAY); // 0x43
+        vm.jne("_ta_new_box_default");
+        vm.movImm(VReg.S2, 10);
+        vm.jmp("_ta_new_box_done");
+
+        vm.label("_ta_new_box_default");
+        // TYPE_UINT64_ARRAY (0x53) or unknown
+        vm.movImm(VReg.S2, 11);
+
+        vm.label("_ta_new_box_done");
+        // 构造 NaN-boxed 值: 0x7FFE << 48 | subtype << 44 | ptr
+        vm.movImm64(VReg.V0, "0x7ffe000000000000"); // array tag
+        vm.shl(VReg.S2, VReg.S2, 44); // subtype << 44
+        vm.or(VReg.V0, VReg.V0, VReg.S2); // tag | subtype
+        vm.or(VReg.RET, VReg.V0, VReg.V1); // tag | subtype | ptr
+
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
     }
 
@@ -382,11 +456,18 @@ export class TypedArrayGenerator {
 
     // 获取 TypedArray 长度
     // _typed_array_length(arr) -> length
+    // arr 可能是 boxed 值（高16位 = 0x7FFE + subtype）
     generateLength() {
         const vm = this.vm;
 
         vm.label("_typed_array_length");
-        vm.load(VReg.RET, VReg.A0, 8);
+
+        // 解包（如果是 boxed 值）- 提取低 44 位
+        vm.movImm64(VReg.V1, "0x00000fffffffffff");
+        vm.and(VReg.V1, VReg.A0, VReg.V1);
+
+        // 读取长度
+        vm.load(VReg.RET, VReg.V1, 8);
         vm.ret();
     }
 
@@ -396,5 +477,57 @@ export class TypedArrayGenerator {
         this.generateGet();
         this.generateSet();
         this.generateLength();
+    }
+}
+
+// ==================== DataView ====================
+// DataView 布局:
+// +0: type (8 bytes) - TYPE_DATAVIEW
+// +8: buffer (8 bytes) - 指向 ArrayBuffer 的指针
+// +16: byteOffset (8 bytes) - 在 buffer 中的偏移
+// +24: byteLength (8 bytes) - 视图长度
+
+export const DATAVIEW_HEADER = 32;
+
+export class DataViewGenerator {
+    constructor(vm, ctx) {
+        this.vm = vm;
+        this.ctx = ctx;
+    }
+
+    // 创建 DataView
+    // _dataview_new(buffer, byteOffset, byteLength) -> DataView 指针
+    // buffer: ArrayBuffer 指针
+    // byteOffset: 偏移量 (默认 0)
+    // byteLength: 长度 (默认 buffer.byteLength - byteOffset)
+    generateNew() {
+        const vm = this.vm;
+
+        vm.label("_dataview_new");
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
+
+        vm.mov(VReg.S0, VReg.A0); // buffer (ArrayBuffer)
+        vm.mov(VReg.S1, VReg.A1); // byteOffset
+        vm.mov(VReg.S2, VReg.A2); // byteLength
+
+        // 分配 DataView 结构: 32 bytes
+        vm.movImm(VReg.A0, DATAVIEW_HEADER);
+        vm.call("_alloc");
+        vm.mov(VReg.V1, VReg.RET);
+
+        // 写入头部
+        vm.movImm(VReg.V0, TYPE_DATAVIEW);
+        vm.store(VReg.V1, 0, VReg.V0); // type
+        vm.store(VReg.V1, 8, VReg.S0); // buffer
+        vm.store(VReg.V1, 16, VReg.S1); // byteOffset
+        vm.store(VReg.V1, 24, VReg.S2); // byteLength
+
+        vm.mov(VReg.RET, VReg.V1);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
+    }
+
+    // 生成所有 DataView 函数
+    generate() {
+        this.generateNew();
     }
 }

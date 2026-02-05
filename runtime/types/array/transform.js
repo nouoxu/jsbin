@@ -151,7 +151,7 @@ export const ArrayTransformMixin = {
         vm.mov(VReg.S1, VReg.A1);
 
         // 提取 src 的 raw 指针（去掉 NaN-boxing tag）
-        vm.movImm64(VReg.V0, 0x0000ffffffffffffn);
+        vm.movImm64(VReg.V0, "0x0000ffffffffffff");
         vm.and(VReg.S2, VReg.S1, VReg.V0); // S2 = src raw pointer
 
         // 获取 src 数组长度

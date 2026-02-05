@@ -74,7 +74,7 @@ export const DecoratorCompiler = {
             }
 
             // 如果返回值不是 undefined，替换类
-            this.vm.movImm64(VReg.V0, 0x7ffb000000000000n); // JS_UNDEFINED
+            this.vm.movImm64(VReg.V0, "0x7ffb000000000000"); // JS_UNDEFINED
             this.vm.cmp(VReg.RET, VReg.V0);
             const skipLabel = this.ctx.newLabel("_dec_skip");
             this.vm.jeq(skipLabel);
@@ -195,8 +195,13 @@ export const DecoratorCompiler = {
                 asm.addDataLabel(label);
                 // 字符串格式: [type:4][length:4][content...]
                 const len = str.length;
-                const header = (BigInt(len) << 32n) | 16n; // TYPE_STRING = 16
-                asm.addDataQword(header);
+                // header = (len << 32) | 16, 其中 TYPE_STRING = 16
+                // 使用字符串格式传递，让 addDataQword 处理
+                const headerLow = 16; // type
+                const headerHigh = len; // length
+                // 用两个 32-bit dword 代替一个 64-bit qword
+                asm.addDataDword(headerLow);
+                asm.addDataDword(headerHigh);
                 for (let i = 0; i < str.length; i++) {
                     asm.addDataByte(str.charCodeAt(i));
                 }

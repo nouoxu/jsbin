@@ -115,7 +115,7 @@ export const ArrayBaseMixin = {
         vm.epilogue([VReg.S0, VReg.S1], 16);
 
         vm.label("_array_pop_empty");
-        vm.movImm64(VReg.RET, JS_UNDEFINED);
+        vm.movImm64(VReg.RET, "0x7ffb000000000000");
         vm.epilogue([VReg.S0, VReg.S1], 16);
     },
 
@@ -167,7 +167,7 @@ export const ArrayBaseMixin = {
         vm.prologue(0, []);
 
         vm.call("_js_unbox");
-        vm.load(VReg.RET, VReg.RET, 0);
+        vm.load(VReg.RET, VReg.RET, 8); // offset 8 = length (offset 0 is type)
 
         vm.epilogue([], 0);
     },
@@ -230,12 +230,15 @@ export const ArrayBaseMixin = {
 
         vm.mov(VReg.S1, VReg.RET);
 
-        vm.store(VReg.S1, 0, VReg.S0);
-        vm.store(VReg.S1, 8, VReg.S3);
+        // 初始化数组头 [type:8][length:8][capacity:8]
+        vm.movImm(VReg.V0, 1); // TYPE_ARRAY = 1
+        vm.store(VReg.S1, 0, VReg.V0);
+        vm.store(VReg.S1, 8, VReg.S0); // length
+        vm.store(VReg.S1, 16, VReg.S3); // capacity
 
         // 初始化所有元素为 JS_UNDEFINED
         vm.movImm(VReg.S2, 0);
-        vm.movImm64(VReg.V2, JS_UNDEFINED);
+        vm.movImm64(VReg.V2, "0x7ffb000000000000"); // JS_UNDEFINED
 
         vm.label("_array_new_init_loop");
         vm.cmp(VReg.S2, VReg.S3);

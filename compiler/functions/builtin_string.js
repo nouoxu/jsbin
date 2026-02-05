@@ -127,13 +127,24 @@ export const StringMethodCompiler = {
 
             case "lastIndexOf":
                 // str.lastIndexOf(search) - 返回最后出现的索引或 -1
+                // 栈上有原字符串 [str]
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容 [strContent]
+
+                // 2. 编译并获取 search 内容指针
                 if (args.length > 0) {
                     this.compileExpression(args[0]);
-                    this.vm.mov(VReg.A1, VReg.RET);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
+                    this.vm.mov(VReg.A1, VReg.RET); // A1 = search 内容
                 } else {
                     this.vm.lea(VReg.A1, "_str_empty");
                 }
-                this.vm.pop(VReg.A0);
+
+                // 3. 调用 _str_lastIndexOf(str, search)
+                this.vm.pop(VReg.A0); // A0 = str 内容
                 this.vm.call("_str_lastIndexOf");
                 // 装箱返回值为 Number 对象
                 this.boxIntAsNumber(VReg.RET);
@@ -141,21 +152,40 @@ export const StringMethodCompiler = {
 
             case "includes":
                 // str.includes(search) - 返回布尔值
-                // 注意：_str_includes 内部处理字符串格式，不需要调用 _getStrContent
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容
+
+                // 2. 编译并获取 search 内容指针
                 if (args.length > 0) {
                     this.compileExpression(args[0]);
-                    this.vm.mov(VReg.A1, VReg.RET);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
+                    this.vm.mov(VReg.A1, VReg.RET); // A1 = search 内容
                 } else {
                     this.vm.lea(VReg.A1, "_str_empty");
                 }
-                this.vm.pop(VReg.A0);
+
+                // 3. 调用 _str_includes(str, search)
+                this.vm.pop(VReg.A0); // A0 = str 内容
                 this.vm.call("_str_includes");
+                // 返回值已经是 NaN-boxed 布尔值
                 return true;
 
             case "startsWith":
                 // str.startsWith(search) - 返回布尔值
+                // 栈上有原字符串 [str]
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容
+
+                // 2. 编译并获取 search 内容指针
                 if (args.length > 0) {
                     this.compileExpression(args[0]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
                     this.vm.mov(VReg.A1, VReg.RET);
                 } else {
                     this.vm.lea(VReg.A1, "_str_empty");
@@ -166,8 +196,17 @@ export const StringMethodCompiler = {
 
             case "endsWith":
                 // str.endsWith(search) - 返回布尔值
+                // 栈上有原字符串 [str]
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容
+
+                // 2. 编译并获取 search 内容指针
                 if (args.length > 0) {
                     this.compileExpression(args[0]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
                     this.vm.mov(VReg.A1, VReg.RET);
                 } else {
                     this.vm.lea(VReg.A1, "_str_empty");
@@ -258,12 +297,22 @@ export const StringMethodCompiler = {
 
             case "split":
                 // str.split(separator) - 返回数组
+                // 先处理原字符串
+                this.vm.pop(VReg.A0); // 弹出原始字符串
+                this.vm.call("_getStrContent"); // 获取内容指针
+                this.vm.push(VReg.RET); // 保存内容指针
+
+                // 处理分隔符
                 if (args.length > 0) {
                     this.compileExpression(args[0]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent"); // 分隔符也需要获取内容指针
                     this.vm.mov(VReg.A1, VReg.RET);
                 } else {
                     this.vm.lea(VReg.A1, "_str_empty");
                 }
+
+                // 恢复字符串内容指针
                 this.vm.pop(VReg.A0);
                 this.vm.call("_str_split");
                 return true;
@@ -278,6 +327,45 @@ export const StringMethodCompiler = {
                 }
                 this.vm.pop(VReg.A0);
                 this.vm.call("_strconcat");
+                return true;
+
+            case "match":
+                // str.match(regexp) - 正则匹配
+                // A0 = 字符串, A1 = RegExp
+                this.vm.pop(VReg.A0); // 字符串
+                if (args.length > 0) {
+                    this.compileExpression(args[0]); // RegExp
+                    this.vm.mov(VReg.A1, VReg.RET);
+                } else {
+                    this.vm.movImm(VReg.A1, 0);
+                }
+                this.vm.call("_string_regexp_match");
+                return true;
+
+            case "matchAll":
+                // str.matchAll(regexp) - 返回迭代器
+                this.vm.pop(VReg.A0); // 字符串
+                if (args.length > 0) {
+                    this.compileExpression(args[0]); // RegExp
+                    this.vm.mov(VReg.A1, VReg.RET);
+                } else {
+                    this.vm.movImm(VReg.A1, 0);
+                }
+                this.vm.call("_string_regexp_matchAll");
+                return true;
+
+            case "search":
+                // str.search(regexp) - 返回匹配位置索引
+                this.vm.pop(VReg.A0); // 字符串
+                if (args.length > 0) {
+                    this.compileExpression(args[0]); // RegExp
+                    this.vm.mov(VReg.A1, VReg.RET);
+                } else {
+                    this.vm.movImm(VReg.A1, 0);
+                }
+                this.vm.call("_string_regexp_search");
+                // 返回整数，需要装箱为 Number
+                this.boxIntAsNumber(VReg.RET);
                 return true;
         }
 

@@ -187,7 +187,7 @@ export class WeakMapGenerator {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
 
         vm.label("_weakmap_get_not_found");
-        vm.movImm64(VReg.RET, JS_UNDEFINED);
+        vm.movImm64(VReg.RET, "0x7ffb000000000000");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
     }
 

@@ -25,6 +25,7 @@
 
 import { VReg } from "../../vm/registers.js";
 import { JS_TRUE, JS_FALSE, JS_NULL, JS_UNDEFINED } from "./jsvalue.js";
+import { Syscall } from "./syscall.js";
 
 // ==================== 常量定义 ====================
 
@@ -75,7 +76,7 @@ export const NUM_FLOAT32 = 0x31;
 export const NUM_FLOAT64 = 0x32;
 
 // ==================== 堆配置（参考 Go runtime）====================
-export const INITIAL_HEAP_SIZE = 1048576; // 初始堆大小 1MB
+export const INITIAL_HEAP_SIZE = 4194304; // 初始堆大小 4MB
 export const HEAP_GROW_SIZE = 65536; // 每次扩展大小 64KB
 export const MAX_HEAP_SIZE = 0; // 最大堆大小，0 = 无限制
 export const GC_THRESHOLD_PERCENT = 75; // 使用率达到 75% 时触发 GC
@@ -157,25 +158,6 @@ export const LARGE_CLASS = 15; // 大对象标记
 // 系统调用号
 // macOS x64 系统调用需要加 0x2000000 偏移
 // macOS ARM64 不需要加偏移
-export const Syscall = {
-    LINUX_MMAP: 9,
-    LINUX_MMAP_ARM64: 222,
-    MACOS_MMAP_ARM64: 197,
-    MACOS_MMAP_X64: 0x20000c5, // 197 + 0x2000000
-    LINUX_MUNMAP: 11,
-    LINUX_MUNMAP_ARM64: 215,
-    MACOS_MUNMAP_ARM64: 73,
-    MACOS_MUNMAP_X64: 0x2000049, // 73 + 0x2000000
-    LINUX_EXIT: 60,
-    LINUX_EXIT_ARM64: 93,
-    MACOS_EXIT_ARM64: 1,
-    MACOS_EXIT_X64: 0x2000001, // 1 + 0x2000000
-    LINUX_WRITE: 1,
-    LINUX_WRITE_ARM64: 64,
-    MACOS_WRITE_ARM64: 4,
-    MACOS_WRITE_X64: 0x2000004, // 4 + 0x2000000
-};
-
 // ==================== 辅助函数 ====================
 
 // 根据请求大小计算 size class 索引
@@ -272,11 +254,25 @@ export class AllocatorGenerator {
 
     // 生成堆初始化代码
     generateHeapInit() {
+        console.log("[generateHeapInit] start");
+        console.log("[generateHeapInit] this = " + typeof this);
+        console.log("[generateHeapInit] this.vm = " + typeof this.vm);
         const vm = this.vm;
+        console.log("[generateHeapInit] got vm, type = " + typeof vm);
+        if (!vm) {
+            console.log("[generateHeapInit] ERROR: vm is null/undefined!");
+            return;
+        }
+        console.log("[generateHeapInit] vm.platform = " + vm.platform);
+        console.log("[generateHeapInit] vm.label = " + typeof vm.label);
         const platform = vm.platform;
+        console.log("[generateHeapInit] platform = " + platform);
 
+        console.log("[generateHeapInit] calling vm.label");
         vm.label("_heap_init");
+        console.log("[generateHeapInit] after label");
         vm.prologue(0, [VReg.S0, VReg.S1]);
+        console.log("[generateHeapInit] after prologue");
 
         if (platform === "windows") {
             // Windows: 使用 VirtualAlloc API
@@ -814,13 +810,97 @@ export class AllocatorGenerator {
 
     // 生成所有 allocator 相关代码
     generate() {
+        console.log("[AllocatorGen] generate() called");
+        console.log("[AllocatorGen] Before generateHeapInit");
         this.generateHeapInit();
+        console.log("[AllocatorGen] After generateHeapInit");
         this.generateGetSizeClass();
+        console.log("[AllocatorGen] After generateGetSizeClass");
         this.generateGetClassSize();
         this.generateBumpAlloc();
         this.generateHeapGrow();
         this.generateAlloc();
         this.generateFree();
+        this.generateMemcpy();
+        this.generateMemcmp();
+    }
+
+    generateMemcpy() {
+        const vm = this.vm;
+        vm.label("_memcpy");
+        // A0: dest, A1: src, A2: len
+
+        vm.prologue(0, [VReg.S0, VReg.S1, VReg.S2]);
+
+        vm.mov(VReg.S0, VReg.A0); // dest
+        vm.mov(VReg.S1, VReg.A1); // src
+        vm.mov(VReg.S2, VReg.A2); // len
+
+        vm.cmpImm(VReg.S2, 0);
+        vm.jeq("_memcpy_end");
+
+        vm.label("_memcpy_loop");
+
+        // Copy byte
+        vm.loadByte(VReg.V3, VReg.S1, 0);
+        vm.storeByte(VReg.S0, 0, VReg.V3);
+
+        // Increment
+        vm.addImm(VReg.S0, VReg.S0, 1);
+        vm.addImm(VReg.S1, VReg.S1, 1);
+        vm.subImm(VReg.S2, VReg.S2, 1);
+
+        vm.cmpImm(VReg.S2, 0);
+        vm.jne("_memcpy_loop");
+
+        vm.label("_memcpy_end");
+        vm.mov(VReg.RET, VReg.A0); // Return dest
+
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 0);
+        vm.ret();
+    }
+
+    generateMemcmp() {
+        const vm = this.vm;
+        vm.label("_memcmp");
+        // A0: s1, A1: s2, A2: len
+        // Returns: 0 if equal, non-zero otherwise
+
+        vm.prologue(0, [VReg.S0, VReg.S1, VReg.S2]);
+
+        vm.mov(VReg.S0, VReg.A0); // s1
+        vm.mov(VReg.S1, VReg.A1); // s2
+        vm.mov(VReg.S2, VReg.A2); // len
+
+        vm.cmpImm(VReg.S2, 0);
+        vm.jeq("_memcmp_equal");
+
+        vm.label("_memcmp_loop");
+
+        // 比较字节
+        vm.loadByte(VReg.V0, VReg.S0, 0);
+        vm.loadByte(VReg.V1, VReg.S1, 0);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jne("_memcmp_diff");
+
+        // 递增
+        vm.addImm(VReg.S0, VReg.S0, 1);
+        vm.addImm(VReg.S1, VReg.S1, 1);
+        vm.subImm(VReg.S2, VReg.S2, 1);
+
+        vm.cmpImm(VReg.S2, 0);
+        vm.jne("_memcmp_loop");
+
+        vm.label("_memcmp_equal");
+        vm.movImm(VReg.RET, 0);
+        vm.jmp("_memcmp_end");
+
+        vm.label("_memcmp_diff");
+        vm.sub(VReg.RET, VReg.V0, VReg.V1);
+
+        vm.label("_memcmp_end");
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 0);
+        vm.ret();
     }
 
     // 生成数据段定义

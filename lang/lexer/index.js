@@ -507,6 +507,11 @@ export class Lexer {
             if (num.includes(".") || num.includes("e") || num.includes("E")) {
                 type = TokenType.FLOAT;
             }
+            // 检查 BigInt 字面量后缀 'n'
+            if (this.ch === "n") {
+                this.readChar();
+                type = TokenType.BIGINT;
+            }
             return newToken(type, num, startLine, startColumn);
         } else {
             tok = newToken(TokenType.ILLEGAL, this.ch, startLine, startColumn);

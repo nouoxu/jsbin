@@ -48,7 +48,8 @@ export const ArrayFlatMixin = {
         const vm = this.vm;
 
         vm.label("_array_flat_internal");
-        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+        // Stack alignment: 5 regs (40 bytes) + 56 bytes locals = 96 bytes (16-byte aligned)
+        vm.prologue(56, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
         vm.mov(VReg.S0, VReg.A0); // src array (unboxed)
         vm.mov(VReg.S1, VReg.A1); // depth
@@ -107,7 +108,7 @@ export const ArrayFlatMixin = {
 
         vm.label("_array_flat_done");
         vm.mov(VReg.RET, VReg.S2);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 56);
     },
 
     // _array_push_raw(arr_unboxed, value) -> arr_unboxed (可能扩容)
@@ -116,7 +117,8 @@ export const ArrayFlatMixin = {
         const vm = this.vm;
 
         vm.label("_array_push_raw");
-        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+        // Stack alignment: 5 regs (40 bytes) + 40 bytes locals = 80 bytes (16-byte aligned)
+        vm.prologue(40, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
         vm.mov(VReg.S0, VReg.A0); // arr (unboxed)
         vm.mov(VReg.S1, VReg.A1); // value
@@ -173,7 +175,7 @@ export const ArrayFlatMixin = {
         vm.store(VReg.S0, 8, VReg.S2);
 
         vm.mov(VReg.RET, VReg.S0);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 40);
     },
 
     // _array_flat(arr_jsvalue, depth) -> new_arr_jsvalue
@@ -182,7 +184,8 @@ export const ArrayFlatMixin = {
         const vm = this.vm;
 
         vm.label("_array_flat");
-        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
+        // Stack alignment: 3 regs (24 bytes) + 40 bytes locals = 64 bytes (16-byte aligned)
+        vm.prologue(40, [VReg.S0, VReg.S1, VReg.S2]);
 
         vm.mov(VReg.S1, VReg.A1); // depth
 
@@ -208,7 +211,7 @@ export const ArrayFlatMixin = {
         // box 结果数组
         vm.mov(VReg.A0, VReg.S2);
         vm.call("_js_box_array");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 40);
     },
 
     // _array_flatmap(arr_jsvalue, callback) -> new_arr_jsvalue
@@ -349,6 +352,191 @@ export const ArrayFlatMixin = {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
     },
 
+    // _array_from(iterable) -> 新数组 (NaN-boxed)
+    // A0 = 可迭代对象 (NaN-boxed)
+    // 支持：数组、字符串、Map、Set
+    generateArrayFrom() {
+        const vm = this.vm;
+
+        vm.label("_array_from");
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+
+        vm.mov(VReg.S0, VReg.A0); // 保存原始值
+
+        // 检查是否是数组 - 如果是，复制
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_array_is_array");
+        vm.movImm(VReg.V1, 1);
+        vm.cmp(VReg.RET, VReg.V1);
+        vm.jeq("_array_from_copy_array");
+
+        // 检查是否是字符串 (tag = 0x7ffc)
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 48);
+        vm.movImm(VReg.V1, 0x7ffc);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_array_from_string");
+
+        // 其他类型：返回空数组
+        vm.movImm(VReg.A0, 0);
+        vm.call("_array_new_with_size");
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
+
+        // 从数组复制
+        vm.label("_array_from_copy_array");
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_js_unbox");
+        vm.mov(VReg.S1, VReg.RET); // 源数组指针
+
+        // 获取源长度
+        vm.load(VReg.S2, VReg.S1, 8); // length
+
+        // 创建新数组
+        // GC Safety: Protect S0 (source array boxed)
+        // Note: Prologue(64) + 5 Regs = 120 bytes (Misaligned).
+        // Single Push(8) brings SP to 128 bytes (Aligned). Accidentally correct.
+        vm.push(VReg.S0);
+        vm.mov(VReg.A0, VReg.S2);
+        vm.call("_array_new_with_size");
+        vm.pop(VReg.S0); // Restore S0 (possibly updated)
+
+        vm.mov(VReg.S3, VReg.RET); // 新数组 (NaN-boxed)
+
+        // 解包新数组
+        vm.mov(VReg.A0, VReg.S3);
+        vm.call("_js_unbox");
+        vm.mov(VReg.S4, VReg.RET); // 新数组指针
+
+        // GC 可能发生，S1 (raw pointer) 此时可能失效，需要重新从 S0 (boxed source) 解包
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_js_unbox");
+        vm.mov(VReg.S1, VReg.RET); // 刷新 S1
+
+        // 设置长度
+        vm.store(VReg.S4, 8, VReg.S2);
+
+        // 复制元素
+        vm.movImm(VReg.V0, 0); // i = 0
+        vm.label("_array_from_copy_loop");
+        vm.cmp(VReg.V0, VReg.S2);
+        vm.jge("_array_from_copy_done");
+
+        // 读取源元素
+        vm.shlImm(VReg.V1, VReg.V0, 3);
+        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
+        vm.add(VReg.V2, VReg.S1, VReg.V1);
+        vm.load(VReg.V3, VReg.V2, 0);
+
+        // 写入目标
+        vm.add(VReg.V2, VReg.S4, VReg.V1);
+        vm.store(VReg.V2, 0, VReg.V3);
+
+        vm.addImm(VReg.V0, VReg.V0, 1);
+        vm.jmp("_array_from_copy_loop");
+
+        vm.label("_array_from_copy_done");
+        vm.mov(VReg.RET, VReg.S3);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
+
+        // 从字符串创建数组 - 每个字符一个元素
+        vm.label("_array_from_string");
+        // 使用 _getStrContent 获取字符串内容指针（处理堆/数据段字符串）
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_getStrContent");
+        vm.mov(VReg.S1, VReg.RET); // S1 = 字符串内容指针
+
+        // 使用 _strlen 获取长度
+        vm.mov(VReg.A0, VReg.S1);
+        vm.call("_strlen");
+        vm.mov(VReg.S2, VReg.RET); // S2 = 长度
+
+        // 创建新数组
+        // GC Safety: 保护 S0 (原始 NaN-boxed 字符串)
+        vm.push(VReg.S0);
+        vm.mov(VReg.A0, VReg.S2);
+        vm.call("_array_new_with_size");
+        vm.pop(VReg.S0);
+        vm.mov(VReg.S3, VReg.RET);
+
+        // 解包新数组
+        vm.mov(VReg.A0, VReg.S3);
+        vm.call("_js_unbox");
+        vm.mov(VReg.S4, VReg.RET);
+
+        // GC 后重新获取字符串内容指针
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_getStrContent");
+        vm.mov(VReg.S1, VReg.RET); // 刷新 S1
+
+        // 设置长度
+        vm.store(VReg.S4, 8, VReg.S2);
+
+        // 复制字符
+        vm.movImm(VReg.V0, 0); // i = 0
+        vm.label("_array_from_str_loop");
+        vm.cmp(VReg.V0, VReg.S2);
+        vm.jge("_array_from_str_done");
+
+        // 每次循环重新获取字符串内容指针 (因为循环内有 _alloc 可能导致 GC)
+        vm.push(VReg.V0); // 保存循环索引
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_getStrContent");
+        vm.mov(VReg.S1, VReg.RET);
+        vm.pop(VReg.V0); // 恢复循环索引
+
+        // 每次循环重新计算 S4 (Dest Array) 因为 loop 内 _alloc 可能移动它
+        vm.mov(VReg.V6, VReg.S3);
+        vm.movImm(VReg.V7, 0x0000ffffffffffff);
+        vm.and(VReg.S4, VReg.V6, VReg.V7);
+
+        // 读取字符 (S1 已经是内容指针，直接使用索引)
+        vm.add(VReg.V2, VReg.S1, VReg.V0);
+        vm.loadByte(VReg.V3, VReg.V2, 0);
+
+        // 创建单字符字符串
+        vm.push(VReg.V0);
+        vm.push(VReg.V3);
+
+        // GC Safety: Protect S0 (source str) and S3 (dest array)
+        vm.push(VReg.S0);
+        vm.push(VReg.S3);
+        vm.push(VReg.S0); // Padding for alignment (Total 5 regs pushed over 120-byte stack = 160 bytes)
+
+        vm.movImm(VReg.A0, 17); // 16 字节头 + 1 字符
+        vm.call("_alloc");
+
+        vm.pop(VReg.S0); // Padding
+        vm.pop(VReg.S3); // Restore S3
+        vm.pop(VReg.S0); // Restore S0
+
+        vm.mov(VReg.V4, VReg.RET);
+        vm.movImm(VReg.V5, 6); // TYPE_STRING
+        vm.store(VReg.V4, 0, VReg.V5);
+        vm.movImm(VReg.V5, 1); // length = 1
+        vm.store(VReg.V4, 8, VReg.V5);
+        vm.pop(VReg.V3);
+        vm.storeByte(VReg.V4, 16, VReg.V3);
+        vm.pop(VReg.V0);
+
+        // NaN-box 字符串
+        vm.movImm(VReg.V5, 0x7ffc);
+        vm.shlImm(VReg.V5, VReg.V5, 48);
+        vm.or(VReg.V4, VReg.V4, VReg.V5);
+
+        // 写入数组
+        vm.shlImm(VReg.V1, VReg.V0, 3);
+        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
+        vm.add(VReg.V2, VReg.S4, VReg.V1);
+        vm.store(VReg.V2, 0, VReg.V4);
+
+        vm.addImm(VReg.V0, VReg.V0, 1);
+        vm.jmp("_array_from_str_loop");
+
+        vm.label("_array_from_str_done");
+        vm.mov(VReg.RET, VReg.S3);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
+    },
+
     // 生成所有 flat 相关方法
     generateFlatMethods() {
         this.generateArrayIsArray();
@@ -356,5 +544,6 @@ export const ArrayFlatMixin = {
         this.generateArrayFlatInternal();
         this.generateArrayFlat();
         this.generateArrayFlatMap();
+        this.generateArrayFrom();
     },
 };

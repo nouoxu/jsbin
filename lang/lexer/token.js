@@ -11,6 +11,7 @@ export const TokenType = {
     IDENT: "IDENT",
     INT: "INT",
     FLOAT: "FLOAT",
+    BIGINT: "BIGINT",
     STRING: "STRING",
     REGEX: "REGEX",
     TEMPLATE_STRING: "TEMPLATE_STRING",

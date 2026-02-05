@@ -324,13 +324,15 @@ export const StringMethodsGenerator = {
 
         // indexOf >= 0 表示找到
         vm.cmpImm(VReg.RET, 0);
-        vm.jlt("_includes_false");
+        vm.jlt("_str_includes_false");
 
-        vm.lea(VReg.RET, "_js_true");
+        vm.lea(VReg.V0, "_js_true");
+        vm.load(VReg.RET, VReg.V0, 0);
         vm.epilogue([VReg.S0, VReg.S1], 16);
 
-        vm.label("_includes_false");
-        vm.lea(VReg.RET, "_js_false");
+        vm.label("_str_includes_false");
+        vm.lea(VReg.V0, "_js_false");
+        vm.load(VReg.RET, VReg.V0, 0);
         vm.epilogue([VReg.S0, VReg.S1], 16);
     },
 
@@ -378,11 +380,13 @@ export const StringMethodsGenerator = {
         vm.jmp("_startsWith_loop");
 
         vm.label("_startsWith_true");
-        vm.lea(VReg.RET, "_js_true");
+        vm.lea(VReg.V0, "_js_true");
+        vm.load(VReg.RET, VReg.V0, 0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
 
         vm.label("_startsWith_false");
-        vm.lea(VReg.RET, "_js_false");
+        vm.lea(VReg.V0, "_js_false");
+        vm.load(VReg.RET, VReg.V0, 0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
     },
 
@@ -434,23 +438,27 @@ export const StringMethodsGenerator = {
         vm.jmp("_endsWith_loop");
 
         vm.label("_endsWith_true");
-        vm.lea(VReg.RET, "_js_true");
+        vm.lea(VReg.V0, "_js_true");
+        vm.load(VReg.RET, VReg.V0, 0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
 
         vm.label("_endsWith_false");
-        vm.lea(VReg.RET, "_js_false");
+        vm.lea(VReg.V0, "_js_false");
+        vm.load(VReg.RET, VReg.V0, 0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     },
 
     // _str_lastIndexOf(str, search) -> 最后出现的索引或 -1
+    // 临时简化版本用于调试
+    // _str_lastIndexOf(str, search) -> 返回 search 在 str 中最后出现的索引，未找到返回 -1
     generateLastIndexOf() {
         const vm = this.vm;
 
         vm.label("_str_lastIndexOf");
-        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
-        vm.mov(VReg.S0, VReg.A0); // str
-        vm.mov(VReg.S1, VReg.A1); // search
+        vm.mov(VReg.S0, VReg.A0); // S0 = str
+        vm.mov(VReg.S1, VReg.A1); // S1 = search
 
         // 获取 str 长度
         vm.mov(VReg.A0, VReg.S0);
@@ -462,37 +470,37 @@ export const StringMethodsGenerator = {
         vm.call("_strlen");
         vm.mov(VReg.S3, VReg.RET); // S3 = search 长度
 
-        // 如果 search 为空，返回 str 长度
+        // 如果 search 为空，返回 str 长度（JavaScript 规范）
         vm.cmpImm(VReg.S3, 0);
         vm.jne("_lastIndexOf_nonempty");
         vm.mov(VReg.RET, VReg.S2);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 48);
+        vm.jmp("_lastIndexOf_done");
 
         vm.label("_lastIndexOf_nonempty");
         // 如果 search 比 str 长，返回 -1
         vm.cmp(VReg.S3, VReg.S2);
         vm.jle("_lastIndexOf_search");
         vm.movImm(VReg.RET, -1);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 48);
+        vm.jmp("_lastIndexOf_done");
 
         vm.label("_lastIndexOf_search");
-        // 从后往前搜索
-        vm.sub(VReg.S4, VReg.S2, VReg.S3); // S4 = 最大起始位置
-        vm.movImm(VReg.S5, -1); // S5 = 结果（初始化为 -1）
+        // S5 = 当前位置，从 str 长度 - search 长度 开始向前搜索
+        vm.sub(VReg.S5, VReg.S2, VReg.S3); // S5 = str 长度 - search 长度
 
         // 纯 char* 格式，直接使用指针
-        vm.mov(VReg.V0, VReg.S0); // str 内容
-        vm.mov(VReg.V1, VReg.S1); // search 内容
+        vm.mov(VReg.V0, VReg.S0); // V0 = str 内容
+        vm.mov(VReg.V1, VReg.S1); // V1 = search 内容
 
-        vm.label("_lastIndexOf_loop");
-        vm.cmpImm(VReg.S4, 0);
-        vm.jlt("_lastIndexOf_done");
+        vm.label("_lastIndexOf_outer");
+        // 检查 S5 >= 0
+        vm.cmpImm(VReg.S5, 0);
+        vm.jlt("_lastIndexOf_not_found");
 
-        // 比较 str[S4:S4+S3] 与 search
-        vm.add(VReg.V2, VReg.V0, VReg.S4); // str + offset
-        vm.movImm(VReg.V3, 0); // match index
+        // 比较从 V0+S5 开始的 S3 个字符与 V1
+        vm.add(VReg.V2, VReg.V0, VReg.S5); // V2 = str 当前位置
+        vm.movImm(VReg.V3, 0); // V3 = 匹配索引
 
-        vm.label("_lastIndexOf_match");
+        vm.label("_lastIndexOf_inner");
         vm.cmp(VReg.V3, VReg.S3);
         vm.jge("_lastIndexOf_found");
 
@@ -505,19 +513,21 @@ export const StringMethodsGenerator = {
         vm.jne("_lastIndexOf_next");
 
         vm.addImm(VReg.V3, VReg.V3, 1);
-        vm.jmp("_lastIndexOf_match");
-
-        vm.label("_lastIndexOf_found");
-        vm.mov(VReg.S5, VReg.S4);
-        vm.jmp("_lastIndexOf_done");
+        vm.jmp("_lastIndexOf_inner");
 
         vm.label("_lastIndexOf_next");
-        vm.subImm(VReg.S4, VReg.S4, 1);
-        vm.jmp("_lastIndexOf_loop");
+        vm.subImm(VReg.S5, VReg.S5, 1); // 向前移动
+        vm.jmp("_lastIndexOf_outer");
+
+        vm.label("_lastIndexOf_found");
+        vm.mov(VReg.RET, VReg.S5);
+        vm.jmp("_lastIndexOf_done");
+
+        vm.label("_lastIndexOf_not_found");
+        vm.movImm(VReg.RET, -1);
 
         vm.label("_lastIndexOf_done");
-        vm.mov(VReg.RET, VReg.S5);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 48);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
     },
 
     // _str_repeat(str, count) -> 重复的新字符串
@@ -639,11 +649,33 @@ export const StringMethodsGenerator = {
         const TYPE_STRING = 6;
         const TYPE_ARRAY = 5;
 
+        // 栈布局 (FP 相对偏移):
+        // 注意: prologue 保存 6 个寄存器 (S0-S5)，占用 FP-48 到 FP-0
+        // 分配的 80 字节栈空间在 FP-128 到 FP-48
+        // 安全的临时存储区域: FP-56 到 FP-128
+        // -56:  子串长度 (在循环中保存)
+        // -64: 新字符串指针 (在循环中保存)
+        // -72: _strstr 返回值 (分隔符位置)
+        const TEMP_SUBSTR_LEN = -56;
+        const TEMP_NEW_STR_PTR = -64;
+        const TEMP_STRSTR_RET = -72;
+
         vm.label("_str_split");
         vm.prologue(80, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
-        vm.mov(VReg.S0, VReg.A0); // str
-        vm.mov(VReg.S1, VReg.A1); // separator
+        // 先保存原始参数（函数调用会破坏 A0/A1）
+        vm.mov(VReg.S0, VReg.A0); // 保存 str 到 S0
+        vm.mov(VReg.S1, VReg.A1); // 保存 separator 到 S1
+
+        // unbox 输入字符串，获取 C 字符串指针
+        vm.mov(VReg.A0, VReg.S0); // str (可能是 NaN-boxed)
+        vm.call("_getStrContent");
+        vm.mov(VReg.S0, VReg.RET); // S0 = str 内容指针
+
+        // unbox 分隔符
+        vm.mov(VReg.A0, VReg.S1); // separator (可能是 NaN-boxed)
+        vm.call("_getStrContent");
+        vm.mov(VReg.S1, VReg.RET); // S1 = sep 内容指针
 
         // 获取分隔符长度
         vm.mov(VReg.A0, VReg.S1);
@@ -668,8 +700,13 @@ export const StringMethodsGenerator = {
         vm.movImm(VReg.V1, 1);
         vm.store(VReg.S4, 8, VReg.V1); // length = 1
         vm.store(VReg.S4, 16, VReg.V1); // capacity = 1
-        vm.store(VReg.S4, 24, VReg.S0); // 存储原字符串
-        vm.mov(VReg.RET, VReg.S4);
+        // box 字符串后存入数组
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_js_box_string");
+        vm.store(VReg.S4, 24, VReg.RET); // 存储 boxed 字符串
+        // box 数组后返回
+        vm.mov(VReg.A0, VReg.S4);
+        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
 
         vm.label("_split_nonempty_sep");
@@ -687,89 +724,119 @@ export const StringMethodsGenerator = {
 
         // 遍历字符串查找分隔符
         vm.movImm(VReg.S5, 0); // 当前起始位置
-        vm.movImm(VReg.V4, 0); // 当前数组索引
 
         vm.label("_split_loop");
         // 从 S5 位置开始查找分隔符
         vm.add(VReg.A0, VReg.S0, VReg.S5);
         vm.mov(VReg.A1, VReg.S1);
         vm.call("_strstr");
+        // 保存 _strstr 返回值到栈
+        vm.store(VReg.FP, TEMP_STRSTR_RET, VReg.RET);
         vm.cmpImm(VReg.RET, 0);
         vm.jeq("_split_last");
 
         // 找到分隔符，计算子串长度
-        vm.sub(VReg.V5, VReg.RET, VReg.S0);
-        vm.sub(VReg.V5, VReg.V5, VReg.S5); // 子串长度
+        // V5 = _strstr结果 - S0 - S5
+        vm.sub(VReg.V0, VReg.RET, VReg.S0);
+        vm.sub(VReg.V0, VReg.V0, VReg.S5); // V0 = 子串长度
+        // 保存子串长度到栈
+        vm.store(VReg.FP, TEMP_SUBSTR_LEN, VReg.V0);
 
         // 创建子串
-        vm.addImm(VReg.A0, VReg.V5, 17); // 16 头部 + len + 1
+        vm.addImm(VReg.A0, VReg.V0, 17); // 16 头部 + len + 1
         vm.call("_alloc");
-        vm.mov(VReg.V6, VReg.RET); // 新字符串
+        // 保存新字符串指针到栈
+        vm.store(VReg.FP, TEMP_NEW_STR_PTR, VReg.RET);
+
+        // 从栈恢复子串长度
+        vm.load(VReg.V0, VReg.FP, TEMP_SUBSTR_LEN);
 
         // 写入头部
-        vm.movImm(VReg.V1, TYPE_STRING);
-        vm.store(VReg.V6, 0, VReg.V1);
-        vm.store(VReg.V6, 8, VReg.V5); // length
+        vm.load(VReg.V1, VReg.FP, TEMP_NEW_STR_PTR); // V1 = 新字符串
+        vm.movImm(VReg.V2, TYPE_STRING);
+        vm.store(VReg.V1, 0, VReg.V2);
+        vm.store(VReg.V1, 8, VReg.V0); // length
 
         // 复制内容
-        vm.addImm(VReg.A0, VReg.V6, 16);
-        vm.add(VReg.A1, VReg.S0, VReg.S5);
-        vm.mov(VReg.A2, VReg.V5);
+        vm.load(VReg.V1, VReg.FP, TEMP_NEW_STR_PTR);
+        vm.addImm(VReg.A0, VReg.V1, 16); // dest
+        vm.add(VReg.A1, VReg.S0, VReg.S5); // src
+        vm.load(VReg.A2, VReg.FP, TEMP_SUBSTR_LEN); // len
         vm.call("_memcpy");
 
-        // 写入 null 终止符
-        vm.add(VReg.V1, VReg.V6, VReg.V5);
-        vm.addImm(VReg.V1, VReg.V1, 16);
-        vm.movImm(VReg.V2, 0);
-        vm.storeByte(VReg.V1, 0, VReg.V2);
+        // 从栈恢复值
+        vm.load(VReg.V0, VReg.FP, TEMP_SUBSTR_LEN); // 子串长度
+        vm.load(VReg.V1, VReg.FP, TEMP_NEW_STR_PTR); // 新字符串
 
-        // 添加到数组
-        vm.load(VReg.V7, VReg.S4, 8); // 当前 length
-        vm.shlImm(VReg.V1, VReg.V7, 3);
-        vm.addImm(VReg.V1, VReg.V1, 24);
-        vm.add(VReg.V1, VReg.S4, VReg.V1);
-        vm.store(VReg.V1, 0, VReg.V6);
-        vm.addImm(VReg.V7, VReg.V7, 1);
-        vm.store(VReg.S4, 8, VReg.V7);
+        // 写入 null 终止符
+        vm.add(VReg.V2, VReg.V1, VReg.V0);
+        vm.addImm(VReg.V2, VReg.V2, 16);
+        vm.movImm(VReg.V3, 0);
+        vm.storeByte(VReg.V2, 0, VReg.V3);
+
+        // 添加到数组 - 先 box 字符串
+        vm.mov(VReg.A0, VReg.V1);
+        vm.call("_js_box_string");
+        vm.mov(VReg.V1, VReg.RET); // V1 = boxed 字符串
+        vm.load(VReg.V4, VReg.S4, 8); // 当前 length
+        vm.shlImm(VReg.V2, VReg.V4, 3);
+        vm.addImm(VReg.V2, VReg.V2, 24);
+        vm.add(VReg.V2, VReg.S4, VReg.V2);
+        vm.store(VReg.V2, 0, VReg.V1); // 存储 boxed 字符串
+        vm.addImm(VReg.V4, VReg.V4, 1);
+        vm.store(VReg.S4, 8, VReg.V4);
 
         // 更新起始位置（跳过分隔符）
-        vm.sub(VReg.S5, VReg.RET, VReg.S0);
+        vm.load(VReg.V0, VReg.FP, TEMP_STRSTR_RET); // 恢复 _strstr 返回值
+        vm.sub(VReg.S5, VReg.V0, VReg.S0);
         vm.add(VReg.S5, VReg.S5, VReg.S2);
         vm.jmp("_split_loop");
 
         vm.label("_split_last");
         // 处理最后一个分片
-        vm.sub(VReg.V5, VReg.S3, VReg.S5); // 剩余长度
+        vm.sub(VReg.V0, VReg.S3, VReg.S5); // V0 = 剩余长度
+        vm.store(VReg.FP, TEMP_SUBSTR_LEN, VReg.V0);
 
         // 创建最后一个子串
-        vm.addImm(VReg.A0, VReg.V5, 17);
+        vm.addImm(VReg.A0, VReg.V0, 17);
         vm.call("_alloc");
-        vm.mov(VReg.V6, VReg.RET);
+        vm.store(VReg.FP, TEMP_NEW_STR_PTR, VReg.RET);
 
-        vm.movImm(VReg.V1, TYPE_STRING);
-        vm.store(VReg.V6, 0, VReg.V1);
-        vm.store(VReg.V6, 8, VReg.V5);
+        vm.load(VReg.V0, VReg.FP, TEMP_SUBSTR_LEN);
+        vm.load(VReg.V1, VReg.FP, TEMP_NEW_STR_PTR);
 
-        vm.addImm(VReg.A0, VReg.V6, 16);
+        vm.movImm(VReg.V2, TYPE_STRING);
+        vm.store(VReg.V1, 0, VReg.V2);
+        vm.store(VReg.V1, 8, VReg.V0);
+
+        vm.addImm(VReg.A0, VReg.V1, 16);
         vm.add(VReg.A1, VReg.S0, VReg.S5);
-        vm.mov(VReg.A2, VReg.V5);
+        vm.load(VReg.A2, VReg.FP, TEMP_SUBSTR_LEN);
         vm.call("_memcpy");
 
-        vm.add(VReg.V1, VReg.V6, VReg.V5);
-        vm.addImm(VReg.V1, VReg.V1, 16);
-        vm.movImm(VReg.V2, 0);
-        vm.storeByte(VReg.V1, 0, VReg.V2);
+        vm.load(VReg.V0, VReg.FP, TEMP_SUBSTR_LEN);
+        vm.load(VReg.V1, VReg.FP, TEMP_NEW_STR_PTR);
 
-        // 添加到数组
-        vm.load(VReg.V7, VReg.S4, 8);
-        vm.shlImm(VReg.V1, VReg.V7, 3);
-        vm.addImm(VReg.V1, VReg.V1, 24);
-        vm.add(VReg.V1, VReg.S4, VReg.V1);
-        vm.store(VReg.V1, 0, VReg.V6);
-        vm.addImm(VReg.V7, VReg.V7, 1);
-        vm.store(VReg.S4, 8, VReg.V7);
+        vm.add(VReg.V2, VReg.V1, VReg.V0);
+        vm.addImm(VReg.V2, VReg.V2, 16);
+        vm.movImm(VReg.V3, 0);
+        vm.storeByte(VReg.V2, 0, VReg.V3);
 
-        vm.mov(VReg.RET, VReg.S4);
+        // 添加到数组 - 先 box 字符串
+        vm.mov(VReg.A0, VReg.V1);
+        vm.call("_js_box_string");
+        vm.mov(VReg.V1, VReg.RET); // V1 = boxed 字符串
+        vm.load(VReg.V4, VReg.S4, 8);
+        vm.shlImm(VReg.V2, VReg.V4, 3);
+        vm.addImm(VReg.V2, VReg.V2, 24);
+        vm.add(VReg.V2, VReg.S4, VReg.V2);
+        vm.store(VReg.V2, 0, VReg.V1); // 存储 boxed 字符串
+        vm.addImm(VReg.V4, VReg.V4, 1);
+        vm.store(VReg.S4, 8, VReg.V4);
+
+        // box 数组后返回
+        vm.mov(VReg.A0, VReg.S4);
+        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
     },
 

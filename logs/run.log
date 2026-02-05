@@ -1,0 +1,15 @@
+=== Array.isArray ===
+true
+false
+arr1.length ok
+=== Array.from(String) ===
+arr4 created
+0
+arr4 done
+=== Array.from(Array) ===
+arr3 created
+10
+20
+arr3 elements ok
+=== parseInt ===
+20

@@ -195,11 +195,13 @@ export class RegExpGenerator {
         vm.jmp("_regexp_test_found");
 
         vm.label("_regexp_test_found");
-        vm.movImm(VReg.RET, 1);
+        vm.lea(VReg.RET, "_js_true");
+        vm.load(VReg.RET, VReg.RET, 0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
 
         vm.label("_regexp_test_not_found");
-        vm.movImm(VReg.RET, 0);
+        vm.lea(VReg.RET, "_js_false");
+        vm.load(VReg.RET, VReg.RET, 0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     }
 
@@ -660,76 +662,11 @@ export class RegExpGenerator {
 
     /**
      * 辅助函数
+     * 注意: _strstr 和 _memcpy 已经在 string/index.js 和 allocator.js 中定义
+     * 这里只定义 regexp 特有的辅助函数
      */
     generateHelpers() {
         const vm = this.vm;
-
-        // _strstr - 子字符串搜索
-        vm.label("_strstr");
-        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
-
-        vm.mov(VReg.S0, VReg.A0); // 主字符串
-        vm.mov(VReg.S1, VReg.A1); // 模式字符串
-
-        vm.label("_strstr_outer");
-        vm.loadByte(VReg.V1, VReg.S0, 0);
-        vm.cmpImm(VReg.V1, 0);
-        vm.jeq("_strstr_not_found");
-
-        vm.mov(VReg.S2, VReg.S0);
-        vm.mov(VReg.S3, VReg.S1);
-
-        vm.label("_strstr_inner");
-        vm.loadByte(VReg.V1, VReg.S3, 0);
-        vm.cmpImm(VReg.V1, 0);
-        vm.jeq("_strstr_matched");
-
-        vm.loadByte(VReg.V2, VReg.S2, 0);
-        vm.cmpImm(VReg.V2, 0);
-        vm.jeq("_strstr_not_found");
-
-        vm.cmp(VReg.V1, VReg.V2);
-        vm.jne("_strstr_next");
-
-        vm.addImm(VReg.S2, VReg.S2, 1);
-        vm.addImm(VReg.S3, VReg.S3, 1);
-        vm.jmp("_strstr_inner");
-
-        vm.label("_strstr_matched");
-        vm.mov(VReg.RET, VReg.S0);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
-
-        vm.label("_strstr_next");
-        vm.addImm(VReg.S0, VReg.S0, 1);
-        vm.jmp("_strstr_outer");
-
-        vm.label("_strstr_not_found");
-        vm.movImm(VReg.RET, 0);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
-
-        // _memcpy
-        vm.label("_memcpy");
-        vm.prologue(16, [VReg.S0, VReg.S1]);
-
-        vm.mov(VReg.S0, VReg.A0);
-        vm.mov(VReg.S1, VReg.A1);
-        vm.mov(VReg.V2, VReg.A2);
-
-        vm.label("_memcpy_loop");
-        vm.cmpImm(VReg.V2, 0);
-        vm.jeq("_memcpy_done");
-
-        vm.loadByte(VReg.V1, VReg.S1, 0);
-        vm.storeByte(VReg.S0, 0, VReg.V1);
-
-        vm.addImm(VReg.S0, VReg.S0, 1);
-        vm.addImm(VReg.S1, VReg.S1, 1);
-        vm.subImm(VReg.V2, VReg.V2, 1);
-        vm.jmp("_memcpy_loop");
-
-        vm.label("_memcpy_done");
-        vm.mov(VReg.RET, VReg.A0);
-        vm.epilogue([VReg.S0, VReg.S1], 16);
 
         // _string_substring_internal - 简化版 substring
         // A0 = 源字符串

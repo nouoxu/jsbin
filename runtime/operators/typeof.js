@@ -79,12 +79,21 @@ export class TypeofGenerator {
         // ========== 检查堆指针类型 ==========
         vm.label(checkHeapLabel);
 
-        // 检查是否在堆范围内
+        // 检查是否在堆范围内 [heap_base, heap_ptr)
         vm.lea(VReg.V1, "_heap_base");
         vm.load(VReg.V1, VReg.V1, 0);
         vm.cmp(VReg.S0, VReg.V1);
-        vm.jge("_typeof_check_heap_type"); // >= heap_base，是堆对象
+        vm.jlt("_typeof_not_in_heap"); // < heap_base，不在堆中
 
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jlt("_typeof_check_heap_type"); // >= heap_base && < heap_ptr，是堆对象
+
+        // >= heap_ptr，不在堆中（可能是大数值的浮点数）
+        vm.jmp(isNumberLabel);
+
+        vm.label("_typeof_not_in_heap");
         // 小于堆基址，可能是数据段字符串或小整数
         // 检查是否是合理的地址范围（> 0x100000）
         vm.movImm(VReg.V0, 0x100000);
@@ -103,6 +112,22 @@ export class TypeofGenerator {
         vm.label("_typeof_check_heap_type");
         // 在堆范围内，检查对象类型
         vm.load(VReg.V2, VReg.S0, 0);
+
+        // 首先检查是否是闘包 (CLOSURE_MAGIC = 0xc105)
+        const CLOSURE_MAGIC = 0xc105;
+        const ASYNC_CLOSURE_MAGIC = 0xa51c;
+        const GENERATOR_MAGIC = 0x9e4e;
+        vm.movImm(VReg.V3, CLOSURE_MAGIC);
+        vm.cmp(VReg.V2, VReg.V3);
+        vm.jeq(isFunctionLabel);
+        vm.movImm(VReg.V3, ASYNC_CLOSURE_MAGIC);
+        vm.cmp(VReg.V2, VReg.V3);
+        vm.jeq(isFunctionLabel);
+        vm.movImm(VReg.V3, GENERATOR_MAGIC);
+        vm.cmp(VReg.V2, VReg.V3);
+        vm.jeq(isFunctionLabel);
+
+        // 提取低 8 位用于类型检测
         vm.andImm(VReg.V2, VReg.V2, 0xff);
 
         // TYPE_CLOSURE = 3 -> "function"
@@ -160,6 +185,10 @@ export class TypeofGenerator {
         vm.lea(VReg.RET, "_str_object_type");
 
         vm.label(doneLabel);
+        // NaN-box 返回值：添加 0x7FFC 字符串标签
+        // 注意：使用 V1 而不是 V0，因为 V0 和 RET 都映射到 X0
+        vm.movImm64(VReg.V1, "0x7ffc000000000000");
+        vm.or(VReg.RET, VReg.RET, VReg.V1);
         vm.epilogue([VReg.S0, VReg.S1], 16);
     }
 

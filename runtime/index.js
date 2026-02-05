@@ -18,7 +18,7 @@ export { JSONGenerator } from "./types/json/index.js";
 // 类型运行时 - 其他类型
 export { StringGenerator } from "./types/string/index.js";
 export { ArrayGenerator } from "./types/array/index.js";
-export { TypedArrayGenerator, ArrayBufferGenerator } from "./types/typedarray/index.js";
+export { TypedArrayGenerator, ArrayBufferGenerator, DataViewGenerator } from "./types/typedarray/index.js";
 export * from "./types/typedarray/index.js"; // 导出 TypedArray 类型常量
 export { ObjectGenerator } from "./types/object/index.js";
 export { MapGenerator } from "./types/map/index.js";
@@ -37,6 +37,22 @@ export { PrivateFieldGenerator, generatePrivateFieldStrings } from "./types/priv
 // 类型运行时 - Error
 export { ErrorGenerator } from "./types/error/index.js";
 
+// FS/Path
+export { FSGenerator } from "./types/fs/index.js";
+export { PathGenerator } from "./types/path/index.js";
+
+// Process
+export { ProcessGenerator } from "./types/process/index.js";
+
+// OS
+export { OSGenerator } from "./types/os/index.js";
+
+// Child Process
+export { ChildProcessGenerator } from "./types/child_process/index.js";
+
+// Buffer
+export { BufferGenerator } from "./types/buffer/index.js";
+
 // 运算符
 export { TypeofGenerator } from "./operators/typeof.js";
 export { EqualityGenerator } from "./operators/equality.js";
@@ -53,7 +69,7 @@ import { MathGenerator } from "./types/math/index.js";
 import { JSONGenerator } from "./types/json/index.js";
 import { StringGenerator } from "./types/string/index.js";
 import { ArrayGenerator } from "./types/array/index.js";
-import { TypedArrayGenerator, ArrayBufferGenerator } from "./types/typedarray/index.js";
+import { TypedArrayGenerator, ArrayBufferGenerator, DataViewGenerator } from "./types/typedarray/index.js";
 import { ObjectGenerator } from "./types/object/index.js";
 import { MapGenerator } from "./types/map/index.js";
 import { SetGenerator } from "./types/set/index.js";
@@ -72,6 +88,12 @@ import { EqualityGenerator } from "./operators/equality.js";
 import { AsyncGenerator } from "./async/index.js";
 import { JSValueGenerator } from "./core/jsvalue.js";
 import { CoercionGenerator } from "./core/coercion.js";
+import { FSGenerator } from "./types/fs/index.js";
+import { PathGenerator } from "./types/path/index.js";
+import { ProcessGenerator } from "./types/process/index.js";
+import { OSGenerator } from "./types/os/index.js";
+import { ChildProcessGenerator } from "./types/child_process/index.js";
+import { BufferGenerator } from "./types/buffer/index.js";
 
 export class RuntimeGenerator {
     constructor(vm, ctx) {
@@ -85,6 +107,7 @@ export class RuntimeGenerator {
         this.arrayGen = new ArrayGenerator(vm);
         this.typedArrayGen = new TypedArrayGenerator(vm, ctx);
         this.arrayBufferGen = new ArrayBufferGenerator(vm, ctx);
+        this.dataViewGen = new DataViewGenerator(vm, ctx);
         this.objectGen = new ObjectGenerator(vm);
         this.mapGen = new MapGenerator(vm);
         this.setGen = new SetGenerator(vm);
@@ -112,6 +135,22 @@ export class RuntimeGenerator {
         this.coercionGen = new CoercionGenerator(vm);
         // 异步运行时
         this.asyncGen = new AsyncGenerator(vm);
+
+        // FS & Path
+        this.fsGen = new FSGenerator(vm, ctx);
+        this.pathGen = new PathGenerator(vm, ctx);
+
+        // Process
+        this.processGen = new ProcessGenerator(vm, ctx);
+
+        // OS
+        this.osGen = new OSGenerator(vm, ctx);
+
+        // Child Process
+        this.childProcessGen = new ChildProcessGenerator(vm, ctx);
+
+        // Buffer
+        this.bufferGen = new BufferGenerator(vm, ctx);
     }
 
     // 生成所有运行时函数
@@ -124,6 +163,7 @@ export class RuntimeGenerator {
         this.arrayGen.generate();
         this.typedArrayGen.generate();
         this.arrayBufferGen.generate();
+        this.dataViewGen.generate();
         this.objectGen.generate();
         this.mapGen.generate();
         this.setGen.generate();
@@ -151,16 +191,40 @@ export class RuntimeGenerator {
         this.coercionGen.generate();
         // 异步
         this.asyncGen.generate();
+
+        // Path must be generated before FS (FS uses _get_string_content from path)
+        this.pathGen.generate();
+        this.fsGen.generate();
+
+        // Process
+        this.processGen.generate();
+
+        // OS
+        this.osGen.generate();
+
+        // Child Process
+        this.childProcessGen.generate();
+
+        // Buffer
+        this.bufferGen.generate();
     }
 
     // 生成异步运行时数据段
     generateAsyncDataSection(asm) {
         this.asyncGen.generateDataSection(asm);
+        // Coercion 数据段
+        if (this.coercionGen.generateDataSection) {
+            this.coercionGen.generateDataSection(asm);
+        }
+        // Child Process 数据段
+        if (this.childProcessGen.generateDataSection) {
+            this.childProcessGen.generateDataSection(asm);
+        }
     }
 }
 
 // 运行时配置
-let heapSize = 1048576; // 默认 1MB
+let heapSize = 4194304; // 默认 4MB
 let maxHeapSize = 0; // 0 = 无限制
 let numWorkers = 0; // 0 = 单线程
 

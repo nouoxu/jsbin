@@ -15,6 +15,7 @@
 import { VReg } from "../../../vm/registers.js";
 import { ArrayFlatMixin } from "./flat.js";
 import { ArrayMutateMixin } from "./mutate.js";
+import { JS_UNDEFINED } from "../../core/jsvalue.js";
 
 const ARRAY_HEADER_SIZE = 24;
 const ARRAY_MIN_CAPACITY = 8;
@@ -28,8 +29,151 @@ export class ArrayGenerator {
         Object.assign(this, ArrayMutateMixin);
     }
 
+    // 数组 splice
+    // _array_splice(arr, start, deleteCount) -> removedArray
+    // 目前只实现删除语义（不支持插入参数），满足测试：arr.splice(2, 1)
+    // deleteCount == -1 表示删除到末尾
+    generateArraySplice() {
+        const vm = this.vm;
+
+        vm.label("_array_splice");
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
+
+        // 保存参数
+        vm.mov(VReg.S1, VReg.A1); // start
+        vm.mov(VReg.S2, VReg.A2); // deleteCount
+
+        // unbox 数组
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
+
+        // length
+        vm.load(VReg.S3, VReg.S0, 8);
+
+        // 规范化 start: 支持负索引
+        vm.cmpImm(VReg.S1, 0);
+        vm.jge("_array_splice_start_nonneg");
+        vm.add(VReg.S1, VReg.S3, VReg.S1);
+        vm.label("_array_splice_start_nonneg");
+        // clamp start to [0, length]
+        vm.cmpImm(VReg.S1, 0);
+        vm.jge("_array_splice_start_ge0");
+        vm.movImm(VReg.S1, 0);
+        vm.label("_array_splice_start_ge0");
+        vm.cmp(VReg.S1, VReg.S3);
+        vm.jle("_array_splice_start_ok");
+        vm.mov(VReg.S1, VReg.S3);
+        vm.label("_array_splice_start_ok");
+
+        // 规范化 deleteCount
+        // deleteCount == -1 -> length - start
+        vm.cmpImm(VReg.S2, -1);
+        vm.jne("_array_splice_del_not_all");
+        vm.sub(VReg.S2, VReg.S3, VReg.S1);
+        vm.label("_array_splice_del_not_all");
+        // deleteCount < 0 -> 0
+        vm.cmpImm(VReg.S2, 0);
+        vm.jge("_array_splice_del_ge0");
+        vm.movImm(VReg.S2, 0);
+        vm.label("_array_splice_del_ge0");
+        // clamp: if start + deleteCount > length => deleteCount = length - start
+        vm.add(VReg.V0, VReg.S1, VReg.S2);
+        vm.cmp(VReg.V0, VReg.S3);
+        vm.jle("_array_splice_del_ok");
+        vm.sub(VReg.S2, VReg.S3, VReg.S1);
+        vm.label("_array_splice_del_ok");
+
+        // removed = new Array(deleteCount)
+        vm.mov(VReg.A0, VReg.S2);
+        vm.call("_array_new_with_size");
+        vm.mov(VReg.S4, VReg.RET); // removed (boxed)
+
+        // removed_unboxed
+        vm.mov(VReg.A0, VReg.S4);
+        vm.call("_js_unbox");
+        vm.mov(VReg.S5, VReg.RET);
+
+        // 拷贝被删除的元素到 removed
+        vm.movImm(VReg.V1, 0); // i
+        vm.label("_array_splice_copy_removed");
+        vm.cmp(VReg.V1, VReg.S2);
+        vm.jge("_array_splice_copy_removed_done");
+
+        // srcIndex = start + i
+        vm.add(VReg.V2, VReg.S1, VReg.V1);
+        vm.shl(VReg.V3, VReg.V2, 3);
+        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
+        vm.add(VReg.V3, VReg.S0, VReg.V3);
+        vm.load(VReg.V4, VReg.V3, 0);
+
+        // removed[i] = value
+        vm.shl(VReg.V3, VReg.V1, 3);
+        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
+        vm.add(VReg.V3, VReg.S5, VReg.V3);
+        vm.store(VReg.V3, 0, VReg.V4);
+
+        vm.addImm(VReg.V1, VReg.V1, 1);
+        vm.jmp("_array_splice_copy_removed");
+
+        vm.label("_array_splice_copy_removed_done");
+
+        // 如果 deleteCount == 0，直接返回空数组
+        vm.cmpImm(VReg.S2, 0);
+        vm.jeq("_array_splice_done");
+
+        // 将后续元素左移覆盖删除区间
+        // i = start; i < length - deleteCount; i++
+        vm.sub(VReg.V0, VReg.S3, VReg.S2); // newLen
+        vm.mov(VReg.V1, VReg.S1); // i
+        vm.label("_array_splice_shift_loop");
+        vm.cmp(VReg.V1, VReg.V0);
+        vm.jge("_array_splice_shift_done");
+
+        // srcIndex = i + deleteCount
+        vm.add(VReg.V2, VReg.V1, VReg.S2);
+        // load arr[srcIndex]
+        vm.shl(VReg.V3, VReg.V2, 3);
+        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
+        vm.add(VReg.V3, VReg.S0, VReg.V3);
+        vm.load(VReg.V4, VReg.V3, 0);
+
+        // store to arr[i]
+        vm.shl(VReg.V3, VReg.V1, 3);
+        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
+        vm.add(VReg.V3, VReg.S0, VReg.V3);
+        vm.store(VReg.V3, 0, VReg.V4);
+
+        vm.addImm(VReg.V1, VReg.V1, 1);
+        vm.jmp("_array_splice_shift_loop");
+
+        vm.label("_array_splice_shift_done");
+
+        // 清空尾部元素为 undefined (0)
+        vm.mov(VReg.V1, VReg.V0); // i = newLen
+        vm.label("_array_splice_clear_tail");
+        vm.cmp(VReg.V1, VReg.S3);
+        vm.jge("_array_splice_clear_tail_done");
+
+        vm.shl(VReg.V3, VReg.V1, 3);
+        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
+        vm.add(VReg.V3, VReg.S0, VReg.V3);
+        vm.movImm(VReg.V4, 0);
+        vm.store(VReg.V3, 0, VReg.V4);
+
+        vm.addImm(VReg.V1, VReg.V1, 1);
+        vm.jmp("_array_splice_clear_tail");
+
+        vm.label("_array_splice_clear_tail_done");
+        // 更新长度
+        vm.store(VReg.S0, 8, VReg.V0);
+
+        vm.label("_array_splice_done");
+        vm.mov(VReg.RET, VReg.S4); // return removed (boxed)
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
+    }
+
     // 数组 push（带容量检查和自动扩容）
-    // _array_push(arr, value) -> 数组指针（扩容后可能变化）
+    // _array_push(arr_jsvalue, value) -> 数组 JSValue（扩容后可能变化）
     generateArrayPush() {
         const vm = this.vm;
 
@@ -107,8 +251,9 @@ export class ArrayGenerator {
         vm.addImm(VReg.S2, VReg.S2, 1);
         vm.store(VReg.S0, 8, VReg.S2);
 
-        // 返回数组指针（如果扩容则是新数组，否则是原数组）
-        vm.mov(VReg.RET, VReg.S0);
+        // 返回 boxed 数组 JSValue（需要 box，因为扩容可能返回新指针）
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     }
 
@@ -268,6 +413,16 @@ export class ArrayGenerator {
         // unbox 数组
         vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
+
+        // 堆范围检查，非法数组直接返回未找到
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jlt("_array_indexOf_notfound");
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jge("_array_indexOf_notfound");
         vm.movImm(VReg.S2, 0); // i = 0
 
         // 获取长度
@@ -346,6 +501,16 @@ export class ArrayGenerator {
         // unbox 数组
         vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
+
+        // 堆范围检查，非法数组直接返回 false
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jlt("_array_includes_false");
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jge("_array_includes_false");
         vm.movImm(VReg.S2, 0); // i = 0
 
         // 获取长度
@@ -524,7 +689,9 @@ export class ArrayGenerator {
         vm.jmp("_array_slice_copy");
 
         vm.label("_array_slice_done");
-        vm.mov(VReg.RET, VReg.S4);
+        // 装箱返回数组
+        vm.mov(VReg.A0, VReg.S4);
+        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
 
         // 空数组
@@ -536,6 +703,9 @@ export class ArrayGenerator {
         vm.movImm(VReg.V1, 0);
         vm.store(VReg.RET, 8, VReg.V1); // length = 0
         vm.store(VReg.RET, 16, VReg.V1); // capacity = 0
+        // 装箱返回空数组
+        vm.mov(VReg.A0, VReg.RET);
+        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     }
 
@@ -578,8 +748,9 @@ export class ArrayGenerator {
         // 设置容量
         vm.store(VReg.S1, 16, VReg.S3);
 
-        // 初始化所有元素为 0 (undefined)，遍历到 capacity
+        // 初始化所有元素为 JS_UNDEFINED
         vm.movImm(VReg.S2, 0); // counter
+        vm.movImm64(VReg.V2, "0x7ffb000000000000"); // 使用 V2 存储 undefined 值
 
         vm.label("_array_new_init_loop");
         vm.cmp(VReg.S2, VReg.S3);
@@ -589,8 +760,7 @@ export class ArrayGenerator {
         vm.shl(VReg.V0, VReg.S2, 3);
         vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
         vm.add(VReg.V1, VReg.S1, VReg.V0);
-        vm.movImm(VReg.V0, 0);
-        vm.store(VReg.V1, 0, VReg.V0);
+        vm.store(VReg.V1, 0, VReg.V2); // 存储 JS_UNDEFINED
 
         vm.addImm(VReg.S2, VReg.S2, 1);
         vm.jmp("_array_new_init_loop");
@@ -613,6 +783,7 @@ export class ArrayGenerator {
         this.generateArrayIncludes();
         this.generateArrayConcatInto();
         this.generateArraySlice();
+        this.generateArraySplice();
         this.generateArrayNewWithSize();
         // flat 相关方法
         this.generateFlatMethods();

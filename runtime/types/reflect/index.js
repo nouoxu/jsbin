@@ -153,7 +153,7 @@ export class ReflectGenerator {
         vm.prologue(0, []);
 
         // 简化实现：返回 null（没有原型链支持）
-        vm.movImm64(VReg.RET, JS_UNDEFINED);
+        vm.movImm64(VReg.RET, "0x7ffb000000000000");
         vm.epilogue([], 0);
     }
 

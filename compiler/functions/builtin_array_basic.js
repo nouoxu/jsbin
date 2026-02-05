@@ -38,6 +38,41 @@ export const ArrayBasicCompiler = {
             return;
         }
 
+        // 回调方法需要自己编译 arrayExpr，不能在 switch 之前编译
+        // forEach, map, filter, reduce, find, findIndex, some, every
+        if (method === "forEach" && args.length > 0) {
+            this.compileArrayForEach(arrayExpr, args[0]);
+            return;
+        }
+        if (method === "map" && args.length > 0) {
+            this.compileArrayMap(arrayExpr, args[0]);
+            return;
+        }
+        if (method === "filter" && args.length > 0) {
+            this.compileArrayFilter(arrayExpr, args[0]);
+            return;
+        }
+        if (method === "reduce" && args.length > 0) {
+            this.compileArrayReduce(arrayExpr, args[0], args[1]);
+            return;
+        }
+        if (method === "find" && args.length > 0) {
+            this.compileArrayFind(arrayExpr, args[0]);
+            return;
+        }
+        if (method === "findIndex" && args.length > 0) {
+            this.compileArrayFindIndex(arrayExpr, args[0]);
+            return;
+        }
+        if (method === "some" && args.length > 0) {
+            this.compileArraySome(arrayExpr, args[0]);
+            return;
+        }
+        if (method === "every" && args.length > 0) {
+            this.compileArrayEvery(arrayExpr, args[0]);
+            return;
+        }
+
         this.compileExpression(arrayExpr);
 
         switch (method) {

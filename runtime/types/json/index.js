@@ -155,7 +155,7 @@ export class JSONGenerator {
         // 是 NaN-boxing 格式，提取 tag 和指针
         // Tag = (高16位 & 0x7) 表示类型: 4=string, 5=object, 6=array, 7=function
         vm.andImm(VReg.V0, VReg.V0, 0x7); // tag
-        vm.movImm64(VReg.V1, 0x0000ffffffffffffn); // 48 位掩码
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff"); // 48 位掩码
         vm.and(VReg.S0, VReg.S0, VReg.V1); // 提取指针到 S0
 
         // 根据 tag 跳转

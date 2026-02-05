@@ -17,7 +17,10 @@ export const LiteralCompiler = {
     // 编译字面量
     compileLiteral(expr) {
         let value = expr.value;
-        if (typeof value === "number") {
+        if (typeof value === "bigint" || expr.bigint) {
+            // BigInt 字面量 - 传递 expr 以便访问原始字符串
+            this.compileBigIntLiteral(expr);
+        } else if (typeof value === "number") {
             // JavaScript 所有数字都是 IEEE 754 double
             // 统一使用浮点表示，以确保 _print_float 等函数能正确工作
             this.compileNumericLiteral(value);
@@ -40,8 +43,22 @@ export const LiteralCompiler = {
             // 正则表达式字面量
             this.compileRegExpLiteral(expr);
         } else {
-            this.vm.movImm(VReg.RET, 0);
+            // 默认返回 undefined (NaN-boxed)
+            this.vm.movImm64(VReg.RET, "0x7ffb000000000000");
         }
+    },
+
+    // 编译 BigInt 字面量
+    compileBigIntLiteral(expr) {
+        // 使用原始字符串（如 "0x7ff8000000000000"）来避免 BigInt 运行时支持问题
+        // expr.bigint 包含不带 'n' 后缀的数字字符串
+        const numStr = expr.bigint || String(expr.value);
+
+        // 从字符串直接计算 64 位值
+        // 使用 asm 的 addInt64 方法将值存储到数据段并加载
+        const label = this.asm.addInt64FromString(numStr);
+        this.vm.lea(VReg.RET, label);
+        this.vm.load(VReg.RET, VReg.RET, 0);
     },
 
     // 编译正则表达式字面量
@@ -72,7 +89,7 @@ export const LiteralCompiler = {
         // 将原始指针转换为 NaN-boxed object
         // object tag = 0x7ffd000000000000
         // 注意：V0 映射到 X0，与 RET 冲突，所以用 V1 (X1)
-        this.vm.movImm64(VReg.V1, 0x7ffd000000000000n);
+        this.vm.movImm64(VReg.V1, "0x7ffd000000000000");
         this.vm.or(VReg.RET, VReg.RET, VReg.V1);
     },
 
@@ -106,8 +123,19 @@ export const LiteralCompiler = {
         this.compileStringValue(expr.value);
     },
 
-    // 编译字符串值
+    // 编译字符串值 - NaN-boxed 格式
+    // 字符串 JSValue = (0x7FFC << 48) | pointer
     compileStringValue(str) {
+        const label = this.asm.addString(str);
+        this.vm.lea(VReg.RET, label);
+        // Box 成 NaN-boxed 字符串：添加 0x7FFC 标签
+        // 注意：使用 V1 而不是 V0，因为 V0 和 RET 都映射到同一个物理寄存器
+        this.vm.movImm64(VReg.V1, "0x7ffc000000000000");
+        this.vm.or(VReg.RET, VReg.RET, VReg.V1);
+    },
+
+    // 编译原始字符串指针（不做 NaN-boxing，用于需要 C 字符串的场景）
+    compileRawStringPointer(str) {
         const label = this.asm.addString(str);
         this.vm.lea(VReg.RET, label);
     },

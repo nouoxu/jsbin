@@ -126,7 +126,7 @@ export const AsyncCompiler = {
         vm.label(noPromiseLabel);
         // 恢复返回值，然后正常 epilogue
         vm.pop(VReg.RET);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 64);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], this.ctx.allocatedStackSize);
     },
 
     // 生成调度器初始化调用

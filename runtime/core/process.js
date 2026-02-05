@@ -121,6 +121,9 @@ export class ProcessGenerator {
     // _process_create_argv: 创建 argv 数组
     // A0 = argc, A1 = argv (char**)
     // 返回 JS Array 对象
+    // 注意: 为了兼容 Node.js，我们会在 argv[0] 后插入一个 dummy 元素
+    // 这样 slice(2) 就能正确跳过 "node" 和 "script.js"
+    // Native: [prog, arg1, arg2] -> [prog, prog, arg1, arg2]
     generateArgvInit() {
         const vm = this.vm;
 
@@ -142,11 +145,33 @@ export class ProcessGenerator {
         vm.call("_array_new_with_size");
         vm.store(VReg.SP, 16, VReg.RET); // [SP+16] = 数组
 
-        // 初始化索引 i = 0
-        vm.movImm(VReg.V0, 0);
-        vm.store(VReg.SP, 24, VReg.V0); // [SP+24] = i = 0
+        // 先插入 argv[0] 作为第一个元素
+        vm.load(VReg.V1, VReg.SP, 8); // V1 = argv
+        vm.load(VReg.V0, VReg.V1, 0); // V0 = argv[0] (程序名)
+        vm.mov(VReg.A0, VReg.V0);
+        vm.call("_js_box_string");
+        vm.store(VReg.SP, 32, VReg.RET); // 保存 boxed 字符串
+        vm.load(VReg.A0, VReg.SP, 16); // A0 = 数组
+        vm.load(VReg.A1, VReg.SP, 32); // A1 = argv[0]
+        vm.call("_array_push");
+        vm.store(VReg.SP, 16, VReg.RET);
 
-        // 循环: for (i = 0; i < argc; i++)
+        // 再插入 argv[0] 第二次作为 dummy "script path" (为了兼容 Node.js slice(2))
+        vm.load(VReg.V1, VReg.SP, 8); // V1 = argv
+        vm.load(VReg.V0, VReg.V1, 0); // V0 = argv[0]
+        vm.mov(VReg.A0, VReg.V0);
+        vm.call("_js_box_string");
+        vm.store(VReg.SP, 32, VReg.RET);
+        vm.load(VReg.A0, VReg.SP, 16);
+        vm.load(VReg.A1, VReg.SP, 32);
+        vm.call("_array_push");
+        vm.store(VReg.SP, 16, VReg.RET);
+
+        // 初始化索引 i = 1 (跳过 argv[0]，因为已经插入了两次)
+        vm.movImm(VReg.V0, 1);
+        vm.store(VReg.SP, 24, VReg.V0); // [SP+24] = i = 1
+
+        // 循环: for (i = 1; i < argc; i++)
         vm.label("_argv_loop");
         vm.load(VReg.V0, VReg.SP, 24); // V0 = i
         vm.load(VReg.V1, VReg.SP, 0); // V1 = argc

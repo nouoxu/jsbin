@@ -73,7 +73,8 @@ export const ArrayCallbackCompiler = {
         this.vm.jmp(loopLabel);
         this.vm.label(endLabel);
 
-        this.vm.movImm(VReg.RET, 0); // forEach 返回 undefined
+        // forEach 返回 undefined (NaN-boxed)
+        this.vm.movImm64(VReg.RET, "0x7ffb000000000000");
     },
 
     // 闭包调用的核心逻辑（S0 = NaN-boxed 函数 JSValue，参数已在 A0-A5 中）
@@ -81,35 +82,64 @@ export const ArrayCallbackCompiler = {
     // 注意：此函数会保护 A0-A2 参数
     emitClosureCallAfterSetup() {
         const vm = this.vm;
+        const CLOSURE_MAGIC = 0xc105;
+        const ASYNC_CLOSURE_MAGIC = 0xa51c;
+        const JS_TAG_FUNCTION = 0x7fff;
 
+        const notNanBoxedLabel = this.ctx.newLabel("cb_not_nanboxed");
         const notClosureLabel = this.ctx.newLabel("cb_not_closure");
         const callLabel = this.ctx.newLabel("cb_do_call");
+        const asyncLabel = this.ctx.newLabel("cb_async");
         const doneLabel = this.ctx.newLabel("cb_done");
 
-        // 检查是否是 NaN-boxed 函数 (tag = 0x7FFF)
+        // 兼容两种表示：
+        // 1) NaN-boxed function JSValue (tag = 0x7FFF)
+        // 2) 传统闭包对象指针（magic = 0xC105 / 0xA51C）或直接函数指针
+        //
+        // 如果是 NaN-boxed function，则先 _js_unbox 得到 payload 指针到 S0。
+        // 注意：_js_unbox 会破坏 A0-A2，所以这里保护这三个参数（数组回调经常依赖它们）。
         vm.shrImm(VReg.S1, VReg.S0, 48);
-        vm.movImm(VReg.S2, 0x7fff);
+        vm.movImm(VReg.S2, JS_TAG_FUNCTION);
         vm.cmp(VReg.S1, VReg.S2);
-        vm.jne(notClosureLabel);
+        vm.jne(notNanBoxedLabel);
 
-        // 是 NaN-boxed 函数：unbox 获取闭包指针
-        // 保存参数 A0-A2 到栈（_js_unbox 会破坏它们）
         vm.push(VReg.A0);
         vm.push(VReg.A1);
         vm.push(VReg.A2);
-
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_js_unbox");
-        vm.mov(VReg.S0, VReg.RET); // S0 = 闭包指针
-
-        // 恢复参数
+        vm.mov(VReg.S0, VReg.RET);
         vm.pop(VReg.A2);
         vm.pop(VReg.A1);
         vm.pop(VReg.A0);
 
-        // 从闭包对象加载函数指针 (offset 0)
+        vm.label(notNanBoxedLabel);
+
+        // 检查是否为 null/0，防止从地址 0 读取
+        const nullFuncLabel = this.ctx.newLabel("cb_null_func");
+        vm.cmpImm(VReg.S0, 0);
+        vm.jeq(nullFuncLabel);
+
+        // 加载 magic
         vm.load(VReg.S1, VReg.S0, 0);
+
+        // 检查是否是 async 闭包
+        vm.movImm(VReg.S2, ASYNC_CLOSURE_MAGIC);
+        vm.cmp(VReg.S1, VReg.S2);
+        vm.jeq(asyncLabel);
+
+        // 检查是否是普通闭包
+        vm.movImm(VReg.S2, CLOSURE_MAGIC);
+        vm.cmp(VReg.S1, VReg.S2);
+        vm.jne(notClosureLabel);
+
+        // 是闭包：加载函数指针（offset 8，因为 offset 0 是 magic）
+        vm.load(VReg.S1, VReg.S0, 8);
         vm.jmp(callLabel);
+
+        vm.label(asyncLabel);
+        // async 闭包暂不支持在 forEach 回调中使用
+        vm.jmp(doneLabel);
 
         vm.label(notClosureLabel);
         // 直接是函数指针
@@ -118,6 +148,11 @@ export const ArrayCallbackCompiler = {
 
         vm.label(callLabel);
         vm.callIndirect(VReg.S1);
+        vm.jmp(doneLabel);
+
+        vm.label(nullFuncLabel);
+        // 函数指针为 null，返回 undefined (NaN-boxed)
+        vm.movImm64(VReg.RET, "0x7ffb000000000000");
 
         vm.label(doneLabel);
     },
@@ -419,10 +454,10 @@ export const ArrayCallbackCompiler = {
         const arrOffset = this.ctx.allocLocal(`__find_arr_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, arrOffset, VReg.RET);
 
-        // 获取数组长度：先 unbox 再从 offset 0 读取
+        // 获取数组长度：先 unbox 再从 offset 8 读取 length
         this.vm.mov(VReg.A0, VReg.RET);
         this.vm.call("_js_unbox");
-        this.vm.load(VReg.V1, VReg.RET, 0);
+        this.vm.load(VReg.V1, VReg.RET, 8);
         const lenOffset = this.ctx.allocLocal(`__find_len_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, lenOffset, VReg.V1);
 
@@ -468,6 +503,7 @@ export const ArrayCallbackCompiler = {
         this.emitClosureCallAfterSetup();
 
         // 如果回调返回 truthy，返回元素
+        this.vm.mov(VReg.A0, VReg.RET);
         this.vm.call("_to_boolean");
         this.vm.cmpImm(VReg.RET, 0);
         this.vm.jne(foundLabel);

@@ -22,7 +22,7 @@ import { ARM64Assembler } from "../asm/arm64.js";
 import { X64Assembler } from "../asm/x64.js";
 
 // 运行时
-import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator, ErrorGenerator } from "../runtime/index.js";
+import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator, ErrorGenerator, FSGenerator, PathGenerator, ProcessGenerator, OSGenerator, ChildProcessGenerator, CoercionGenerator } from "../runtime/index.js";
 
 // 编译上下文和平台
 import { CompileContext, CompileOptions, CompileResult } from "./core/context.js";
@@ -39,6 +39,12 @@ import { isAsyncFunction } from "./async/index.js";
 import { parseJslibFile, LibraryManager } from "./output/library.js";
 import { WrapperGenerator } from "./output/wrapper.js";
 import { BinaryOutputGenerator } from "./output/generator.js";
+import { SourceMapGenerator } from "./output/sourcemap.js";
+
+// 优化器
+import { InlineAnalyzer, InlineCodeGenerator, createInlineGenerator } from "./optimize/inline.js";
+import { InlineCacheManager, ICRuntimeGenerator, createInlineCacheManager } from "./optimize/ic.js";
+import { GenerationalGCManager, GenerationalGCRuntimeGenerator, createGenerationalGCManager } from "./optimize/generational_gc.js";
 
 // 静态链接器
 import { StaticLinker } from "../binary/static_linker.js";
@@ -48,40 +54,77 @@ export { detectPlatform, getTargetInfo, resolveTarget, listTargets, TARGETS } fr
 export { CompileContext, CompileOptions, CompileResult } from "./core/context.js";
 export { BinaryGenerator, OutputType, pageAlign, align16, align } from "../binary/binary_format.js";
 export { parseJslibFile, LibraryManager } from "./output/library.js";
+export { SourceMapGenerator } from "./output/sourcemap.js";
 export { ModuleManager, getModuleManager } from "./core/modules.js";
 
-// 目标平台配置
-const Targets = {
-    "linux-arm64": { arch: "arm64", os: "linux", ext: "" },
-    "linux-x64": { arch: "x64", os: "linux", ext: "" },
-    "macos-arm64": { arch: "arm64", os: "macos", ext: "" },
-    "macos-x64": { arch: "x64", os: "macos", ext: "" },
-    "windows-x64": { arch: "x64", os: "windows", ext: ".exe" },
-};
+// 目标平台配置 - 使用函数来避免模块初始化问题
+function getTargets() {
+    return {
+        "linux-arm64": { arch: "arm64", os: "linux", ext: "" },
+        "linux-x64": { arch: "x64", os: "linux", ext: "" },
+        "macos-arm64": { arch: "arm64", os: "macos", ext: "" },
+        "macos-x64": { arch: "x64", os: "macos", ext: "" },
+        "windows-x64": { arch: "x64", os: "windows", ext: ".exe" },
+    };
+}
 
 export class Compiler {
     constructor(target) {
+        console.log("[COMPILER] Constructor called, target:", target);
         this.target = target || "linux-arm64";
-        const targetInfo = Targets[this.target];
+        console.log("[COMPILER] this.target =", this.target);
+
+        // 使用直接字符串比较来避免计算属性访问问题 (selfhost bug workaround)
+        // 因为 selfhost 中 Targets[this.target] 返回 undefined，即使 this.target === "macos-arm64"
+        let targetInfo = null;
+        if (this.target === "linux-arm64") {
+            targetInfo = { arch: "arm64", os: "linux", ext: "" };
+        } else if (this.target === "linux-x64") {
+            targetInfo = { arch: "x64", os: "linux", ext: "" };
+        } else if (this.target === "macos-arm64") {
+            targetInfo = { arch: "arm64", os: "macos", ext: "" };
+        } else if (this.target === "macos-x64") {
+            targetInfo = { arch: "x64", os: "macos", ext: "" };
+        } else if (this.target === "windows-x64") {
+            targetInfo = { arch: "x64", os: "windows", ext: ".exe" };
+        }
+
+        console.log("[COMPILER] targetInfo =", targetInfo);
+
         if (!targetInfo) {
             throw new Error("Unknown target: " + target);
         }
 
+        console.log("[COMPILER] Getting arch/os");
         this.arch = targetInfo.arch;
         this.os = targetInfo.os;
+        console.log("[COMPILER] arch =", this.arch, ", os =", this.os);
 
         // 创建汇编器
+        console.log("[COMPILER] Calling _initAssembler");
         this._initAssembler();
+        console.log("[COMPILER] Assembler initialized");
 
         // 创建虚拟机 (VM 内部创建 backend)
+        // 在 selfhost 中直接传递 this.arch/this.os (避免 const var = this.prop 的 bug)
+        console.log("[COMPILER] Creating VirtualMachine");
+        console.log("[COMPILER] Passing to VM: arch =", this.arch, ", os =", this.os);
         this.vm = new VirtualMachine(this.arch, this.os, this.asm);
+        console.log("[COMPILER] VirtualMachine created");
+
+        console.log("[COMPILER] Creating CompileContext");
         this.ctx = new CompileContext("main");
+        console.log("[COMPILER] CompileContext created");
 
         // 库管理器
+        console.log("[COMPILER] Creating LibraryManager");
         this.libManager = new LibraryManager();
+        console.log("[COMPILER] LibraryManager created");
 
         // 模块管理器
+        console.log("[COMPILER] Resetting ModuleManager");
         this.moduleManager = resetModuleManager();
+        console.log("[COMPILER] ModuleManager reset");
 
         // 待处理的函数表达式
         this.pendingFunctions = [];
@@ -94,6 +137,23 @@ export class Compiler {
         this.libraryPaths = [];
         this.sourcePath = "";
         this.options = {}; // 编译选项
+
+        // Source Map 支持
+        this.sourceMapGenerator = null;
+        this.sourceContent = null;
+        this.sourceIndex = 0;
+
+        // 函数内联优化器
+        this.inlineGenerator = null;
+        this.inlineEnabled = false;
+
+        // 内联缓存 (IC) 优化器
+        this.icManager = null;
+        this.icEnabled = false;
+
+        // 分代 GC 优化器
+        this.gcManager = null;
+        this.gcEnabled = false;
 
         // 当前编译的模块路径
         this.currentModulePath = "";
@@ -144,6 +204,29 @@ export class Compiler {
 
     getOption(key) {
         return this.options[key];
+    }
+
+    /**
+     * 记录 AST 节点到机器码的映射 (用于 Source Map)
+     * @param {object} node - AST 节点 (需要有 loc 信息)
+     */
+    recordSourceMapping(node) {
+        if (this.sourceMapGenerator && node && node.loc) {
+            const codeOffset = this.asm.code.length;
+            this.sourceMapGenerator.addMapping(codeOffset, node.loc.start.line, node.loc.start.column, this.sourceIndex);
+        }
+    }
+
+    /**
+     * 记录指定位置到机器码的映射
+     * @param {number} line - 源代码行号 (1-based)
+     * @param {number} column - 源代码列号 (0-based)
+     */
+    recordSourceMappingAt(line, column) {
+        if (this.sourceMapGenerator) {
+            const codeOffset = this.asm.code.length;
+            this.sourceMapGenerator.addMapping(codeOffset, line, column, this.sourceIndex);
+        }
     }
 
     addExternalLib(libInfo) {
@@ -214,6 +297,11 @@ export class Compiler {
      * @returns {ModuleExports} 模块的导出信息
      */
     compileModule(modulePath) {
+        // 内置模块不需要编译
+        if (this.moduleManager.isBuiltinModule(modulePath)) {
+            return null;
+        }
+
         // 检查是否已编译
         if (this.moduleManager.isModuleCompiled(modulePath)) {
             return this.moduleManager.getModuleExports(modulePath);
@@ -255,12 +343,17 @@ export class Compiler {
         // 处理导入声明
         this.processModuleImports(ast, modulePath);
 
+        // 预注册导出变量到 importedSymbols，这样模块内的函数可以访问它们
+        this.registerExportVariables(ast, modulePrefix, moduleExports);
+
         // 收集并编译模块中的函数
         this.collectModuleFunctions(ast, modulePrefix);
         this.compileModuleFunctions(modulePrefix);
 
         // 处理导出声明和模块初始化
         this.compileModuleBody(ast, modulePrefix, moduleExports);
+
+        console.log("[COMPILE_MODULE] Ending compile for", modulePath, "initLabel:", moduleExports.initLabel);
 
         // 完成编译
         this.moduleManager.endCompileModule(modulePath, moduleExports);
@@ -288,10 +381,34 @@ export class Compiler {
                     continue;
                 }
 
+                // 处理内置模块
+                if (resolvedPath.startsWith("builtin:")) {
+                    const builtinName = resolvedPath.substring(8); // 移除 "builtin:" 前缀
+                    for (const spec of stmt.specifiers || []) {
+                        const localName = spec.local.name;
+                        // 标记为内置模块，编译时会被特殊处理
+                        this.importedSymbols.set(localName, {
+                            modulePath: resolvedPath,
+                            exportName: spec.default ? "default" : "*",
+                            builtinName: builtinName,
+                            type: "builtin",
+                        });
+                    }
+                    continue;
+                }
+
                 const moduleExports = this.moduleManager.getModuleExports(resolvedPath);
                 if (!moduleExports) {
                     console.warn(`Module not compiled: ${resolvedPath}`);
                     continue;
+                }
+                // Debug: 检查 types.js 的 exports
+                if (resolvedPath.includes("types.js") && resolvedPath.includes("compiler/core")) {
+                    console.log(`[DEBUG IMPORT] From ${modulePath} importing from ${resolvedPath}`);
+                    console.log(`[DEBUG IMPORT] moduleExports object:`, moduleExports);
+                    console.log(`[DEBUG IMPORT] moduleExports.functions:`, moduleExports.functions);
+                    console.log(`[DEBUG IMPORT] moduleExports.named:`, moduleExports.named);
+                    console.log(`[DEBUG IMPORT] Same as this.currentModuleExports?`, moduleExports === this.currentModuleExports);
                 }
 
                 // 处理导入说明符
@@ -322,13 +439,33 @@ export class Compiler {
                         const localName = spec.local.name;
                         const importedName = spec.imported ? spec.imported.name : localName;
                         const label = moduleExports.getExport(importedName);
+                        // Debug for types.js imports
+                        if (resolvedPath.includes("compiler/core/types.js")) {
+                            console.log(`[DEBUG IMPORT SPEC] ${modulePath}: Importing '${importedName}' as '${localName}', label:`, label);
+                        }
                         if (label) {
-                            this.importedSymbols.set(localName, {
-                                modulePath: resolvedPath,
-                                exportName: importedName,
-                                label: label,
-                                type: "named",
-                            });
+                            // 检查是函数还是变量
+                            const isFunc = moduleExports.functions.has(importedName);
+                            const isClass = moduleExports.classes.has(importedName);
+                            if (isClass) {
+                                // 导入的是类
+                                const classInfo = moduleExports.getClass(importedName);
+                                this.importedSymbols.set(localName, {
+                                    modulePath: resolvedPath,
+                                    exportName: importedName,
+                                    constructorLabel: classInfo.constructorLabel,
+                                    classInfoLabel: classInfo.classInfoLabel,
+                                    labelId: classInfo.labelId,
+                                    type: "class",
+                                });
+                            } else {
+                                this.importedSymbols.set(localName, {
+                                    modulePath: resolvedPath,
+                                    exportName: importedName,
+                                    label: label,
+                                    type: isFunc ? "function" : "variable",
+                                });
+                            }
                         }
                     }
                 }
@@ -353,6 +490,28 @@ export class Compiler {
                     label: funcLabel,
                     type: "function",
                 });
+            } else if (stmt.type === "ClassDeclaration" && stmt.id) {
+                // 收集类声明
+                const originalName = stmt.id.name;
+                const labelId = this.nextLabelId();
+                const constructorLabel = `_class_${modulePrefix}${originalName}_${labelId}`;
+                const classInfoLabel = `_class_info_${modulePrefix}${originalName}`;
+                // 注册到 importedSymbols，使模块内部可以用原始名称实例化
+                this.importedSymbols.set(originalName, {
+                    modulePath: this.currentModulePath,
+                    exportName: originalName,
+                    constructorLabel: constructorLabel,
+                    classInfoLabel: classInfoLabel,
+                    labelId: labelId,
+                    type: "class",
+                });
+                // 同时注册到上下文的类表
+                this.ctx.classes[originalName] = {
+                    constructorLabel: constructorLabel,
+                    classInfoLabel: classInfoLabel,
+                    labelId: labelId,
+                    modulePrefix: modulePrefix,
+                };
             } else if (stmt.type === "ExportDeclaration" && stmt.declaration) {
                 const decl = stmt.declaration;
                 if (decl.type === "FunctionDeclaration" && decl.id) {
@@ -367,6 +526,26 @@ export class Compiler {
                         label: funcLabel,
                         type: "function",
                     });
+                } else if (decl.type === "ClassDeclaration" && decl.id) {
+                    // 收集导出的类声明
+                    const originalName = decl.id.name;
+                    const labelId = this.nextLabelId();
+                    const constructorLabel = `_class_${modulePrefix}${originalName}_${labelId}`;
+                    const classInfoLabel = `_class_info_${modulePrefix}${originalName}`;
+                    this.importedSymbols.set(originalName, {
+                        modulePath: this.currentModulePath,
+                        exportName: originalName,
+                        constructorLabel: constructorLabel,
+                        classInfoLabel: classInfoLabel,
+                        labelId: labelId,
+                        type: "class",
+                    });
+                    this.ctx.classes[originalName] = {
+                        constructorLabel: constructorLabel,
+                        classInfoLabel: classInfoLabel,
+                        labelId: labelId,
+                        modulePrefix: modulePrefix,
+                    };
                 }
             }
         }
@@ -384,15 +563,91 @@ export class Compiler {
     }
 
     /**
+     * 估算模块初始化函数所需的栈空间
+     */
+    estimateModuleStackSize(ast) {
+        let count = 0;
+
+        const countInNode = (node) => {
+            if (!node) return;
+
+            switch (node.type) {
+                case "VariableDeclaration":
+                    for (const decl of node.declarations || []) {
+                        count += this.countBindingPattern(decl.id);
+                    }
+                    break;
+
+                case "FunctionDeclaration":
+                case "FunctionExpression":
+                case "ArrowFunctionExpression":
+                    // 不递归进入嵌套函数
+                    break;
+
+                case "ExpressionStatement":
+                    count += 2; // 临时变量
+                    break;
+
+                case "BlockStatement":
+                    for (const stmt of node.body || []) {
+                        countInNode(stmt);
+                    }
+                    break;
+
+                default:
+                    // 遍历子节点
+                    for (const key in node) {
+                        const value = node[key];
+                        if (value && typeof value === "object") {
+                            if (Array.isArray(value)) {
+                                for (const item of value) {
+                                    if (item && typeof item === "object" && item.type) {
+                                        countInNode(item);
+                                    }
+                                }
+                            } else if (value.type) {
+                                countInNode(value);
+                            }
+                        }
+                    }
+            }
+        };
+
+        // 统计模块顶层语句
+        for (const stmt of ast.body || []) {
+            if (stmt.type === "ExportDeclaration" && stmt.declaration) {
+                countInNode(stmt.declaration);
+            } else if (stmt.type !== "FunctionDeclaration" && stmt.type !== "ImportDeclaration") {
+                countInNode(stmt);
+            }
+        }
+
+        // 添加余量
+        return count + 16;
+    }
+
+    /**
      * 编译模块主体（处理导出和顶层代码）
      */
     compileModuleBody(ast, modulePrefix, moduleExports) {
         const vm = this.vm;
         const initLabel = modulePrefix + "init";
 
+        // 保存 initLabel 到 moduleExports，供入口点调用
+        moduleExports.initLabel = initLabel;
+
+        // 估算模块初始化函数所需的栈空间
+        // 对于大型模块（如 cli.js 自举），需要更大的栈空间
+        // 基于 AST 大小和复杂度的估算往往不够准确
+        // 使用更保守的估算：每个局部变量 8 字节 + 基础 256 字节 + 每个表达式语句额外 16 字节
+        const estimatedLocals = this.estimateModuleStackSize(ast);
+        // 增加安全余量：至少 2048 字节，或者估算值的 4 倍
+        const stackSize = Math.max(2048, Math.ceil((estimatedLocals * 32 + 512) / 16) * 16);
+        this.ctx.allocatedStackSize = stackSize;
+
         // 生成模块初始化函数
         vm.label(initLabel);
-        vm.prologue(64, [VReg.S0, VReg.S1]);
+        vm.prologue(stackSize, [VReg.S0, VReg.S1]);
 
         // 处理导出声明
         for (const stmt of ast.body) {
@@ -405,10 +660,16 @@ export class Compiler {
         for (const stmt of ast.body) {
             if (stmt.type !== "FunctionDeclaration" && stmt.type !== "ImportDeclaration" && stmt.type !== "ExportDeclaration") {
                 this.compileStatement(stmt);
+            } else if (stmt.type === "ExportDeclaration" && stmt.declaration) {
+                // 对于导出声明中的变量，需要编译变量初始化并存储到全局位置
+                if (stmt.declaration.type === "VariableDeclaration") {
+                    this.compileExportVariableInit(stmt.declaration, modulePrefix, moduleExports);
+                }
+                // 注意：类声明已在 processExportDeclaration 中通过 compileStatement 编译
             }
         }
 
-        vm.epilogue([VReg.S0, VReg.S1], 64);
+        vm.epilogue([VReg.S0, VReg.S1], stackSize);
     }
 
     /**
@@ -430,39 +691,142 @@ export class Compiler {
                 }
             }
         } else if (stmt.declaration) {
-            // export function/const/let/var
+            // export function/const/let/var/class
             if (stmt.declaration.type === "FunctionDeclaration" && stmt.declaration.id) {
                 const funcName = stmt.declaration.id.name;
                 const funcLabel = "_user_" + modulePrefix + funcName;
+                // Debug
+                if (this.currentModulePath && this.currentModulePath.includes("compiler/core/types.js")) {
+                    console.log(`[DEBUG EXPORT] types.js exporting function: ${funcName} -> ${funcLabel}`);
+                }
                 moduleExports.addFunction(funcName, funcLabel);
+            } else if (stmt.declaration.type === "ClassDeclaration" && stmt.declaration.id) {
+                // 导出类 - 先编译类声明以注册类信息
+                const className = stmt.declaration.id.name;
+
+                // 先编译类声明，这会在 ctx.classes 中注册类信息
+                this.compileStatement(stmt.declaration);
+
+                // 然后从已注册的类信息中获取并导出
+                const classInfo = this.ctx.classes[className];
+                if (classInfo) {
+                    moduleExports.addClass(className, {
+                        constructorLabel: classInfo.constructorLabel,
+                        classInfoLabel: classInfo.classInfoLabel,
+                        labelId: classInfo.labelId,
+                    });
+                } else {
+                    console.warn(`Warning: Class '${className}' not found after compilation in module ${this.currentModulePath}`);
+                }
             } else if (stmt.declaration.type === "VariableDeclaration") {
-                for (const decl of stmt.declaration.declarations) {
-                    if (decl.id && decl.id.type === "Identifier") {
-                        const varName = decl.id.name;
-                        const globalLabel = this.ctx.allocGlobal(modulePrefix + varName);
-                        moduleExports.addVariable(varName, globalLabel);
-                        // 为导出变量分配数据段空间
-                        this.asm.addDataLabel(globalLabel);
-                        this.asm.addDataQword(0);
+                // 变量已在 registerExportVariables 中预注册，这里跳过
+                // 变量初始化在 compileModuleBody 中的 compileExportVariableInit 处理
+            }
+        } else if (stmt.specifiers && stmt.specifiers.length > 0) {
+            // export { a, b as c } 或 export { a, b as c } from "module"
+            if (stmt.source) {
+                // 重导出: export { ... } from "module"
+                const sourceModule = stmt.source.value;
+                const resolvedPath = this.moduleManager.resolveModulePath(sourceModule, this.currentModulePath);
+                if (resolvedPath && !this.moduleManager.isBuiltinModule(resolvedPath)) {
+                    // 先编译源模块
+                    const sourceExports = this.compileModule(resolvedPath);
+                    for (const spec of stmt.specifiers) {
+                        const localName = spec.local ? spec.local.name : null;
+                        const exportedName = spec.exported ? spec.exported.name : localName;
+                        if (localName) {
+                            // 检查是否是类的重导出
+                            if (sourceExports.classes.has(localName)) {
+                                const classInfo = sourceExports.getClass(localName);
+                                moduleExports.addClass(exportedName, classInfo);
+                            } else if (sourceExports.functions.has(localName)) {
+                                // 函数重导出
+                                const funcLabel = sourceExports.functions.get(localName);
+                                moduleExports.addFunction(exportedName, funcLabel);
+                            } else {
+                                const label = sourceExports.getExport(localName);
+                                if (label) {
+                                    moduleExports.addNamed(exportedName, label);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // 普通导出: export { a, b as c }
+                for (const spec of stmt.specifiers) {
+                    const localName = spec.local ? spec.local.name : null;
+                    const exportedName = spec.exported ? spec.exported.name : localName;
+
+                    if (localName) {
+                        // 首先检查是否是导入的符号
+                        if (this.importedSymbols.has(localName)) {
+                            const importInfo = this.importedSymbols.get(localName);
+                            moduleExports.addNamed(exportedName, importInfo.label);
+                        } else {
+                            // 查找本地符号
+                            const funcLabel = "_user_" + modulePrefix + localName;
+                            if (this.ctx.hasFunction(modulePrefix + localName)) {
+                                moduleExports.addFunction(exportedName, funcLabel);
+                            } else {
+                                // 可能是变量
+                                const globalLabel = this.ctx.getGlobal(modulePrefix + localName);
+                                if (globalLabel) {
+                                    moduleExports.addNamed(exportedName, globalLabel);
+                                }
+                            }
+                        }
                     }
                 }
             }
-        } else if (stmt.specifiers && stmt.specifiers.length > 0) {
-            // export { a, b as c }
-            for (const spec of stmt.specifiers) {
-                const localName = spec.local ? spec.local.name : null;
-                const exportedName = spec.exported ? spec.exported.name : localName;
+        }
+    }
 
-                if (localName) {
-                    // 查找本地符号
-                    const funcLabel = "_user_" + modulePrefix + localName;
-                    if (this.ctx.hasFunction(modulePrefix + localName)) {
-                        moduleExports.addFunction(exportedName, funcLabel);
-                    } else {
-                        // 可能是变量
-                        const globalLabel = this.ctx.getGlobal(modulePrefix + localName);
-                        if (globalLabel) {
-                            moduleExports.addNamed(exportedName, globalLabel);
+    /**
+     * 编译导出变量的初始化
+     */
+    compileExportVariableInit(varDecl, modulePrefix, moduleExports) {
+        const vm = this.vm;
+        for (const decl of varDecl.declarations) {
+            if (decl.id && decl.id.type === "Identifier" && decl.init) {
+                const varName = decl.id.name;
+                const globalLabel = moduleExports.getExport(varName);
+                if (globalLabel) {
+                    // 编译初始化表达式
+                    this.compileExpression(decl.init);
+                    // 先保存表达式结果到 V1（因为 RET 和 V0 是同一个寄存器 X0）
+                    vm.mov(VReg.V1, VReg.RET);
+                    // 存储到全局位置
+                    vm.lea(VReg.V0, globalLabel);
+                    vm.store(VReg.V0, 0, VReg.V1);
+                }
+            }
+        }
+    }
+
+    /**
+     * 预注册导出变量到 importedSymbols
+     * 这需要在编译函数之前调用，以便模块内的函数可以访问这些变量
+     */
+    registerExportVariables(ast, modulePrefix, moduleExports) {
+        for (const stmt of ast.body) {
+            if (stmt.type === "ExportDeclaration" && stmt.declaration) {
+                if (stmt.declaration.type === "VariableDeclaration") {
+                    for (const decl of stmt.declaration.declarations) {
+                        if (decl.id && decl.id.type === "Identifier") {
+                            const varName = decl.id.name;
+                            const globalLabel = this.ctx.allocGlobal(modulePrefix + varName);
+                            moduleExports.addVariable(varName, globalLabel);
+                            // 为导出变量分配数据段空间
+                            this.asm.addDataLabel(globalLabel);
+                            this.asm.addDataQword(0);
+                            // 注册到 importedSymbols，让模块内部可以通过变量名访问
+                            this.importedSymbols.set(varName, {
+                                modulePath: this.currentModulePath,
+                                exportName: varName,
+                                label: globalLabel,
+                                type: "variable",
+                            });
                         }
                     }
                 }
@@ -498,6 +862,22 @@ export class Compiler {
                     continue;
                 }
 
+                // 处理内置模块
+                if (this.moduleManager.isBuiltinModule(resolvedPath)) {
+                    const builtinName = resolvedPath.substring(8); // 移除 "builtin:" 前缀
+                    for (const spec of stmt.specifiers || []) {
+                        const localName = spec.local.name;
+                        // 标记为内置模块，编译时会被特殊处理
+                        this.importedSymbols.set(localName, {
+                            modulePath: resolvedPath,
+                            exportName: spec.default ? "default" : "*",
+                            builtinName: builtinName,
+                            type: "builtin",
+                        });
+                    }
+                    continue;
+                }
+
                 // 编译导入的模块
                 const moduleExports = this.compileModule(resolvedPath);
 
@@ -530,14 +910,27 @@ export class Compiler {
                         const importedName = spec.imported ? spec.imported.name : localName;
                         const label = moduleExports.getExport(importedName);
                         if (label) {
-                            // 检查是函数还是变量
+                            // 检查是函数、变量还是类
                             const isFunc = moduleExports.functions.has(importedName);
-                            this.importedSymbols.set(localName, {
-                                modulePath: resolvedPath,
-                                exportName: importedName,
-                                label: label,
-                                type: isFunc ? "function" : "variable",
-                            });
+                            const isClass = moduleExports.classes.has(importedName);
+                            if (isClass) {
+                                const classInfo = moduleExports.getClass(importedName);
+                                this.importedSymbols.set(localName, {
+                                    modulePath: resolvedPath,
+                                    exportName: importedName,
+                                    constructorLabel: classInfo.constructorLabel,
+                                    classInfoLabel: classInfo.classInfoLabel,
+                                    labelId: classInfo.labelId,
+                                    type: "class",
+                                });
+                            } else {
+                                this.importedSymbols.set(localName, {
+                                    modulePath: resolvedPath,
+                                    exportName: importedName,
+                                    label: label,
+                                    type: isFunc ? "function" : "variable",
+                                });
+                            }
                         } else {
                             console.warn(`Export '${importedName}' not found in ${resolvedPath}`);
                         }
@@ -554,21 +947,58 @@ export class Compiler {
     }
 
     parse(source) {
+        console.log("[parse] Creating Lexer");
+        console.log("[parse] Source length:", source.length, "First 100 chars:", source.substring(0, 100));
         const lexer = new Lexer(source);
+        console.log("[parse] Lexer created");
+        console.log("[parse] Creating Parser");
         const parser = new Parser(lexer);
-        return parser.parseProgram();
+        console.log("[parse] Parser created");
+        console.log("[parse] Parsing program");
+        const ast = parser.parseProgram();
+        console.log("[parse] Parse complete");
+        return ast;
     }
 
     compile(source) {
+        console.log("[compile] Starting");
         const ast = this.parse(source);
+        console.log("[compile] Parse done");
 
         if (this.outputType === "shared" || this.outputType === "static") {
+            console.log("[compile] Generating shared library runtime");
             this.generateSharedLibraryRuntime();
             this.compileProgramForLibrary(ast);
         } else {
-            this.generateEntry();
+            // 在生成运行时之前初始化 GC（如果启用），这样 generateRuntime 才能生成 _gc_init
+            console.log("[compile] Checking GC option");
+            if (this.options.gc === true) {
+                this.gcManager = new GenerationalGCManager(this);
+                this.gcEnabled = true;
+                if (this.options.debug) {
+                    console.log("Generational GC enabled");
+                }
+            }
+
+            // 先生成运行时
+            console.log("[compile] Generating runtime");
             this.generateRuntime();
+            console.log("[compile] Runtime generated");
+
+            // 编译程序（包括所有导入的模块）
+            console.log("[compile] Compiling program");
             this.compileProgram(ast);
+            console.log("[compile] Program compiled");
+
+            // 然后生成入口点（此时模块已经编译完成，可以正确调用初始化函数）
+            console.log("[compile] Generating entry");
+            this.generateEntry();
+            console.log("[compile] Entry generated");
+
+            // 在编译程序后生成 IC 槽位（因为 IC 槽位是在编译过程中动态创建的）
+            console.log("[compile] Generating IC slots");
+            this.generateICSlots();
+            console.log("[compile] IC slots generated");
 
             if (this.staticLibs && this.staticLibs.length > 0) {
                 this.embedStaticLibraries();
@@ -580,6 +1010,7 @@ export class Compiler {
             this.dumpAssembly();
         }
 
+        console.log("[compile] Generating executable");
         return this.generateExecutable();
     }
 
@@ -622,19 +1053,48 @@ export class Compiler {
     }
 
     compileFile(inputFile, outputFile) {
+        console.log("[compileFile] Starting, inputFile =", inputFile);
         const source = fs.readFileSync(inputFile, "utf-8");
+        console.log("[compileFile] Read source, length =", source.length);
 
         // 设置当前模块路径
+        console.log("[compileFile] Setting currentModulePath");
         this.currentModulePath = path.resolve(inputFile);
+        console.log("[compileFile] currentModulePath =", this.currentModulePath);
+
+        console.log("[compileFile] Adding search path");
         this.moduleManager.addSearchPath(path.dirname(this.currentModulePath));
+        console.log("[compileFile] Search path added");
 
         if (!outputFile) {
+            console.log("[compileFile] No outputFile, generating from baseName");
             const baseName = path.basename(inputFile, ".js");
-            outputFile = baseName + Targets[this.target].ext;
+            // 使用 getTargets() 和已知的 ext 值来避免 selfhost 计算属性访问 bug
+            let ext = "";
+            if (this.target === "windows-x64") {
+                ext = ".exe";
+            }
+            outputFile = baseName + ext;
+            console.log("[compileFile] Generated outputFile =", outputFile);
         }
 
         this.outputFileName = outputFile;
+        console.log("[compileFile] outputFileName set");
+
+        // 初始化 Source Map (如果启用)
+        console.log("[compileFile] Checking sourceMap option");
+        if (this.options.sourceMap) {
+            console.log("[compileFile] Initializing SourceMap");
+            this.sourceMapGenerator = new SourceMapGenerator({
+                file: path.basename(outputFile),
+            });
+            this.sourceContent = source;
+            this.sourceIndex = this.sourceMapGenerator.addSource(path.basename(inputFile), source);
+        }
+
+        console.log("[compileFile] Calling compile");
         const result = this.compile(source);
+        console.log("[compileFile] Compile done");
 
         if (result && result.type === "static") {
             const writeResult = this.writeStaticLibrary(result.objectData, outputFile);
@@ -648,6 +1108,13 @@ export class Compiler {
         const binary = result;
         fs.writeFileSync(outputFile, Buffer.from(binary));
         fs.chmodSync(outputFile, 0o755);
+
+        // 生成 Source Map 文件
+        if (this.options.sourceMap && this.sourceMapGenerator) {
+            const mapFile = outputFile + ".map";
+            fs.writeFileSync(mapFile, this.sourceMapGenerator.toFormattedString());
+            console.log(`Generated source map: ${mapFile}`);
+        }
 
         // 生成 jslib 声明文件 (仅共享库，除非禁用)
         if (this.outputType === "shared" && !this.options.noJslib) {
@@ -694,11 +1161,22 @@ export class Compiler {
     // ========== 运行时生成 ==========
 
     generateRuntime() {
+        console.log("[generateRuntime] Creating AllocatorGenerator");
         const allocGen = new AllocatorGenerator(this.vm);
+        console.log("[generateRuntime] AllocatorGenerator created");
         allocGen.generate();
+        console.log("[generateRuntime] AllocatorGenerator.generate() done");
         const runtimeGen = new RuntimeGenerator(this.vm, this.ctx);
+        console.log("[generateRuntime] RuntimeGenerator created");
         runtimeGen.generate();
+        console.log("[generateRuntime] RuntimeGenerator.generate() done");
+        // 分代 GC 运行时
+        if (this.gcEnabled && this.gcManager) {
+            const gcRuntimeGen = new GenerationalGCRuntimeGenerator(this.vm, this.ctx);
+            gcRuntimeGen.generate();
+        }
         this.generateDataSection();
+        // 注意：IC 槽位在 compileProgram 后通过 generateICSlots() 单独生成;
     }
 
     generateDataSection() {
@@ -718,8 +1196,48 @@ export class Compiler {
         // Error 数据段
         const errorGen = new ErrorGenerator(this.vm, this.ctx);
         errorGen.generateDataSection(this.asm);
+        // FS/Path 数据段
+        const fsGen = new FSGenerator(this.vm, this.ctx);
+        fsGen.generateDataSection(this.asm);
+        const pathGen = new PathGenerator(this.vm, this.ctx);
+        pathGen.generateDataSection(this.asm);
+        // Process 数据段
+        const processGen = new ProcessGenerator(this.vm, this.ctx);
+        processGen.generateDataSection(this.asm);
+        // OS 数据段
+        const osGen = new OSGenerator(this.vm, this.ctx);
+        osGen.generateDataSection(this.asm);
+        // Child Process 数据段
+        const childProcessGen = new ChildProcessGenerator(this.vm, this.ctx);
+        childProcessGen.generateDataSection(this.asm);
+        // Coercion 数据段
+        const coercionGen = new CoercionGenerator(this.vm);
+        if (coercionGen.generateDataSection) {
+            coercionGen.generateDataSection(this.asm);
+        }
         // 私有字段字符串常量
         this.generatePrivateFieldStrings();
+        // 分代 GC 数据段
+        if (this.gcEnabled && this.gcManager) {
+            this.gcManager.generateDataSection(this.asm);
+        }
+        // 注意：IC 槽位在 compile() 中 compileProgram 之后单独生成
+    }
+
+    generateICSlots() {
+        // 为内联缓存生成数据段
+        if (!this.icManager || !this.icEnabled) return;
+
+        const slots = this.icManager.icSlots;
+        if (slots.length === 0) return;
+
+        // 生成 IC 槽位（每个槽位 24 字节：state + cached_count + offset）
+        for (const slot of slots) {
+            this.asm.addDataLabel(slot.label);
+            this.asm.addDataQword(0); // state (UNINITIALIZED)
+            this.asm.addDataQword(0); // cached_count
+            this.asm.addDataQword(0); // offset
+        }
     }
 
     generatePrivateFieldStrings() {
@@ -747,9 +1265,65 @@ export class Compiler {
     generateEntry() {
         const vm = this.vm;
         vm.label("_start");
-        vm.prologue(0, []);
+
+        // macOS 使用 LC_MAIN 入口点，参数通过寄存器传递：
+        // x64: argc 在 A0 (RDI), argv 在 A1 (RSI)
+        // arm64: argc 在 A0 (X0), argv 在 A1 (X1)
+        //
+        // Linux 使用传统的 _start 入口点，参数在栈上：
+        // [SP] = argc, [SP+8] = argv[0], [SP+16] = argv[1], ...
+
+        // 保存 argc 和 argv 到 callee-saved 寄存器
+        if (this.os === "macos") {
+            // macOS: 从寄存器获取
+            vm.mov(VReg.S0, VReg.A0); // S0 = argc
+            vm.mov(VReg.S1, VReg.A1); // S1 = argv
+        } else if (this.os !== "windows") {
+            // Linux: 从栈获取
+            vm.load(VReg.S0, VReg.SP, 0); // S0 = argc
+            vm.mov(VReg.S1, VReg.SP);
+            vm.addImm(VReg.S1, VReg.S1, 8); // S1 = &argv[0]
+        }
+
+        vm.prologue(0, [VReg.S0, VReg.S1]);
+
         vm.call("_heap_init");
+
+        // 初始化内置类的类信息对象（供继承使用）
+        vm.call("_init_error_class_info");
+
+        // 初始化 process.argv
+        // S0 = argc, S1 = argv (指向 char* 数组的指针)
+        if (this.os !== "windows") {
+            vm.mov(VReg.A0, VReg.S0); // argc
+            vm.mov(VReg.A1, VReg.S1); // argv
+            vm.call("_process_argv_init");
+
+            // 计算并保存 envp: envp = argv + (argc + 1) * 8
+            // S0 = argc, S1 = argv
+            vm.mov(VReg.V0, VReg.S0); // V0 = argc
+            vm.addImm(VReg.V0, VReg.V0, 1); // V0 = argc + 1
+            vm.shlImm(VReg.V0, VReg.V0, 3); // V0 = (argc + 1) * 8
+            vm.add(VReg.V0, VReg.S1, VReg.V0); // V0 = argv + (argc + 1) * 8 = envp
+            vm.lea(VReg.V1, "_process_envp_ptr");
+            vm.store(VReg.V1, 0, VReg.V0); // 保存 envp
+        }
+
+        // 如果启用 GC，初始化分代 GC
+        if (this.gcEnabled) {
+            vm.call("_gc_init");
+        }
         vm.call("_scheduler_init");
+
+        // 调用所有已编译模块的初始化函数（按编译顺序）
+        console.log("[ENTRY] Compiled modules count:", this.moduleManager.modules.size);
+        for (const [modulePath, moduleExports] of this.moduleManager.modules) {
+            console.log("[ENTRY] Module:", modulePath, "initLabel:", moduleExports.initLabel);
+            if (moduleExports.initLabel) {
+                vm.call(moduleExports.initLabel);
+            }
+        }
+
         vm.call("_main");
         vm.call("_scheduler_run");
         vm.movImm(VReg.A0, 0);
@@ -769,6 +1343,37 @@ export class Compiler {
         this.processMainModuleImports(ast);
 
         this.collectFunctions(ast);
+
+        // 初始化函数内联优化器
+        if (this.options.inline !== false) {
+            this.inlineGenerator = createInlineGenerator(this);
+            this.inlineGenerator.initialize();
+            this.inlineEnabled = true;
+
+            // 输出内联分析结果（调试用）
+            if (this.options.debug) {
+                const candidates = this.inlineGenerator.analyzer.getInlineCandidates();
+                if (candidates.length > 0) {
+                    console.log(`Inline candidates: ${candidates.join(", ")}`);
+                }
+            }
+        }
+
+        // 初始化内联缓存 (IC) 优化器
+        if (this.options.ic !== false) {
+            this.icManager = createInlineCacheManager(this);
+            this.icEnabled = true;
+        }
+
+        // 初始化分代 GC（通过 --gc 选项启用）
+        // 注意：可能已在 compile() 中初始化，检查避免重复
+        if (this.options.gc === true && !this.gcManager) {
+            this.gcManager = new GenerationalGCManager(this);
+            this.gcEnabled = true;
+            if (this.options.debug) {
+                console.log("Generational GC enabled");
+            }
+        }
 
         const mainBoxedVars = analyzeTopLevelSharedVariables(ast);
         const mainFunc = {
@@ -795,7 +1400,8 @@ export class Compiler {
 
         vm.label("_main");
         // 分配较大的栈空间以容纳动态分配的局部变量（如数组方法的临时变量）
-        vm.prologue(512, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+        // 使用 1024 字节以支持更多局部变量（之前 512 字节对于复杂程序不够）
+        vm.prologue(1024, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
         // 保留 callee-saved 寄存器占用的栈空间
         this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
         this.ctx.returnLabel = "_main_return";
@@ -808,7 +1414,7 @@ export class Compiler {
 
         vm.movImm(VReg.RET, 0);
         vm.label("_main_return");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 512);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 1024);
 
         this.compileUserFunctions();
         this.generatePendingFunctions();
@@ -861,6 +1467,7 @@ export class Compiler {
         }
 
         const savedCtx = this.ctx;
+        const savedImportedSymbols = this.importedSymbols; // 也保存 importedSymbols
         this.ctx = savedCtx.clone(name);
         this.ctx.returnLabel = returnLabel;
         this.ctx.inAsyncFunction = isAsync;
@@ -868,21 +1475,105 @@ export class Compiler {
         const boxedVars = analyzeSharedVariables(func);
         this.ctx.boxedVars = boxedVars;
 
+        // 估算所需栈空间
+        const estimatedLocals = this.estimateStackSize(func);
+        // 每个变量 8 字节，加上参数、callee-saved 寄存器和临时变量的余量
+        // 对于复杂函数，增加更多余量以避免栈溢出
+        // 对齐到 16 字节
+        const stackSize = Math.max(128, Math.ceil((estimatedLocals * 16 + 128) / 16) * 16);
+        this.ctx.allocatedStackSize = stackSize;
+
         vm.label(funcLabel);
-        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
+        vm.prologue(stackSize, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
         // 保留 callee-saved 寄存器占用的栈空间
         this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
 
         const params = func.params || [];
         const paramOffsets = [];
+        const defaultParams = []; // 记录有默认值的参数
+
+        // 处理寄存器传递的参数（前 6 个）
         for (let i = 0; i < params.length && i < 6; i++) {
             const param = params[i];
+            let paramName = null;
+            let hasDefault = false;
+            let defaultValue = null;
+
             if (param.type === "Identifier") {
-                const paramName = param.name;
+                paramName = param.name;
+            } else if (param.type === "AssignmentPattern") {
+                // 默认参数: b = 10
+                paramName = param.left.name;
+                hasDefault = true;
+                defaultValue = param.right;
+            }
+
+            if (paramName) {
                 const offset = this.ctx.allocLocal(paramName);
                 paramOffsets.push({ name: paramName, offset: offset });
                 vm.store(VReg.FP, offset, vm.getArgReg(i));
+
+                if (hasDefault) {
+                    defaultParams.push({ offset: offset, defaultValue: defaultValue });
+                }
             }
+        }
+
+        // 处理栈传递的参数（第 7 个及之后）
+        // 栈布局（调用后）：
+        //   FP+16+... : 调用者 push 的栈参数
+        //   FP+8      : 保存的 LR
+        //   FP        : 保存的旧 FP
+        //   FP-16     : 保存的 S0, S1
+        //   FP-32     : 保存的 S2, S3
+        //   FP-32-stackSize : SP (局部变量空间)
+        //
+        // 注意：callee-saved 寄存器保存在 FP **下方**（负偏移）
+        // 栈参数在 FP **上方**（正偏移），从 FP + 16 开始
+        const stackArgsBaseOffset = 16; // 跳过保存的 FP(8) + LR(8)
+
+        for (let i = 6; i < params.length; i++) {
+            const param = params[i];
+            let paramName = null;
+            let hasDefault = false;
+            let defaultValue = null;
+
+            if (param.type === "Identifier") {
+                paramName = param.name;
+            } else if (param.type === "AssignmentPattern") {
+                paramName = param.left.name;
+                hasDefault = true;
+                defaultValue = param.right;
+            }
+
+            if (paramName) {
+                const offset = this.ctx.allocLocal(paramName);
+                paramOffsets.push({ name: paramName, offset: offset });
+                // 从栈上加载参数（相对于调用时的栈位置）
+                const stackArgOffset = stackArgsBaseOffset + (i - 6) * 8;
+                vm.load(VReg.V0, VReg.FP, stackArgOffset);
+                vm.store(VReg.FP, offset, VReg.V0);
+
+                if (hasDefault) {
+                    defaultParams.push({ offset: offset, defaultValue: defaultValue });
+                }
+            }
+        }
+
+        // 处理默认参数：检查参数是否为 undefined，如果是则使用默认值
+        for (const dp of defaultParams) {
+            const skipDefaultLabel = `_skip_default_${this.ctx.labelId++}`;
+            // 加载参数值
+            vm.load(VReg.V0, VReg.FP, dp.offset);
+            // 检查是否为 undefined (0x7FFB000000000000)
+            vm.shrImm(VReg.V1, VReg.V0, 48);
+            vm.movImm(VReg.V2, 0x7ffb);
+            vm.cmp(VReg.V1, VReg.V2);
+            vm.jne(skipDefaultLabel);
+            // 是 undefined，编译并存储默认值
+            this.compileExpression(dp.defaultValue);
+            vm.store(VReg.FP, dp.offset, VReg.RET);
+            vm.label(skipDefaultLabel);
         }
 
         for (let i = 0; i < paramOffsets.length; i++) {
@@ -913,11 +1604,185 @@ export class Compiler {
         if (isAsync) {
             this.emitAsyncResolveAndReturnFromRet();
         } else {
-            vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 64);
+            vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], this.ctx.allocatedStackSize);
         }
 
         this.generatePendingFunctions();
         this.ctx = savedCtx;
+        this.importedSymbols = savedImportedSymbols; // 恢复 importedSymbols
+    }
+
+    /**
+     * 估算函数所需的栈空间（局部变量数量）
+     * 遍历 AST 统计变量声明
+     */
+    estimateStackSize(func) {
+        let count = 0;
+
+        const countInNode = (node) => {
+            if (!node) return;
+
+            switch (node.type) {
+                case "VariableDeclaration":
+                    // 每个声明器可能声明多个变量
+                    for (const decl of node.declarations || []) {
+                        count += this.countBindingPattern(decl.id);
+                    }
+                    break;
+
+                case "FunctionDeclaration":
+                case "FunctionExpression":
+                case "ArrowFunctionExpression":
+                    // 不递归进入嵌套函数
+                    break;
+
+                case "BlockStatement":
+                    for (const stmt of node.body || []) {
+                        countInNode(stmt);
+                    }
+                    break;
+
+                case "IfStatement":
+                    countInNode(node.consequent);
+                    countInNode(node.alternate);
+                    break;
+
+                case "ForStatement":
+                    countInNode(node.init);
+                    countInNode(node.body);
+                    count += 2; // 循环变量和临时变量
+                    break;
+
+                case "ForInStatement":
+                case "ForOfStatement":
+                    countInNode(node.left);
+                    countInNode(node.body);
+                    count += 3; // 迭代器、键/值、临时变量
+                    break;
+
+                case "WhileStatement":
+                case "DoWhileStatement":
+                    countInNode(node.body);
+                    count += 1;
+                    break;
+
+                case "SwitchStatement":
+                    for (const c of node.cases || []) {
+                        for (const stmt of c.consequent || []) {
+                            countInNode(stmt);
+                        }
+                    }
+                    break;
+
+                case "TryStatement":
+                    countInNode(node.block);
+                    if (node.handler) {
+                        countInNode(node.handler.body);
+                        count += 1; // catch 参数
+                    }
+                    if (node.finalizer) {
+                        countInNode(node.finalizer);
+                    }
+                    count += 2; // 异常处理临时变量
+                    break;
+
+                case "ExpressionStatement":
+                    // 某些表达式可能需要临时变量
+                    count += 1;
+                    // 递归检查表达式内部
+                    countInNode(node.expression);
+                    break;
+
+                case "AssignmentExpression":
+                    // 成员赋值表达式需要额外的临时变量
+                    if (node.left && node.left.type === "MemberExpression") {
+                        if (node.left.computed) {
+                            // obj[key] = value 需要 3 个临时变量: idx, arr, val
+                            count += 3;
+                        } else {
+                            // obj.prop = value 需要 1 个临时变量: obj
+                            count += 1;
+                        }
+                    }
+                    // 递归检查右侧表达式
+                    countInNode(node.right);
+                    break;
+
+                case "CallExpression":
+                    // 调用表达式可能需要临时变量存储参数
+                    count += (node.arguments || []).length;
+                    for (const arg of node.arguments || []) {
+                        countInNode(arg);
+                    }
+                    break;
+
+                default:
+                    // 遍历所有子节点
+                    for (const key in node) {
+                        const value = node[key];
+                        if (value && typeof value === "object") {
+                            if (Array.isArray(value)) {
+                                for (const item of value) {
+                                    if (item && typeof item === "object" && item.type) {
+                                        countInNode(item);
+                                    }
+                                }
+                            } else if (value.type) {
+                                countInNode(value);
+                            }
+                        }
+                    }
+            }
+        };
+
+        // 统计参数
+        count += (func.params || []).length;
+
+        // 统计函数体
+        if (func.body) {
+            countInNode(func.body);
+        }
+
+        // 添加额外余量用于临时变量和溢出
+        // 每个函数调用可能需要额外临时变量，特别是大量赋值的场景
+        return count + 32;
+    }
+
+    /**
+     * 统计绑定模式中的变量数量
+     */
+    countBindingPattern(pattern) {
+        if (!pattern) return 0;
+
+        switch (pattern.type) {
+            case "Identifier":
+                return 1;
+
+            case "ObjectPattern":
+                let objCount = 0;
+                for (const prop of pattern.properties || []) {
+                    objCount += this.countBindingPattern(prop.value || prop.key);
+                }
+                return objCount;
+
+            case "ArrayPattern":
+                let arrCount = 0;
+                for (const elem of pattern.elements || []) {
+                    if (elem) {
+                        arrCount += this.countBindingPattern(elem);
+                    }
+                }
+                return arrCount;
+
+            case "RestElement":
+                return this.countBindingPattern(pattern.argument);
+
+            case "AssignmentPattern":
+                return this.countBindingPattern(pattern.left);
+
+            default:
+                return 1;
+        }
     }
 
     // 编译顶层 Generator 函数声明

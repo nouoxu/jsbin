@@ -36,6 +36,8 @@ export const FunctionCompiler = {
                 return "Array";
             case Type.TYPED_ARRAY:
                 return "TypedArray";
+            case Type.BUFFER:
+                return "Buffer";
             case Type.OBJECT:
                 return "Object";
             case Type.STRING:
@@ -71,6 +73,260 @@ export const FunctionCompiler = {
             }
         }
         return false;
+    },
+
+    // 判断标识符是否是内置模块的命名空间导入
+    // 例如 `import * as fs from "fs"` 中的 `fs`
+    isBuiltinModuleNamespace(name, moduleName) {
+        // 检查是否是导入的符号
+        if (this.isImportedSymbol && this.isImportedSymbol(name)) {
+            const importInfo = this.getImportedSymbol(name);
+            if (importInfo && importInfo.type === "namespace" && importInfo.source === moduleName) {
+                return true;
+            }
+        }
+        // 直接匹配名称（用于简单情况）
+        if (name === moduleName) {
+            return true;
+        }
+        return false;
+    },
+
+    // 编译 console.log/warn/error 的打印输出
+    // 这个方法抽取了 console.log 的打印逻辑，便于 warn 和 error 复用
+    compileConsolePrint(args) {
+        for (let i = 0; i < args.length; i++) {
+            const arg = args[i];
+            const isLast = i === args.length - 1;
+
+            // 根据参数类型选择打印方法
+            if (arg.type === "Literal") {
+                if (typeof arg.value === "string") {
+                    // 字符串字面量 - 使用 _print_value 来处理 NaN-boxed 字符串
+                    this.compileExpression(arg);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    if (isLast) {
+                        this.vm.call("_print_value");
+                    } else {
+                        this.vm.call("_print_value_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (typeof arg.value === "number") {
+                    // 数字字面量 - 现在是 boxed Number 对象
+                    this.compileExpression(arg);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    if (isLast) {
+                        this.vm.call("_print_number");
+                    } else {
+                        this.vm.call("_print_number_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (typeof arg.value === "boolean") {
+                    // 布尔字面量 - 打印 "true" 或 "false"
+                    if (arg.value) {
+                        this.vm.lea(VReg.A0, "_str_true");
+                    } else {
+                        this.vm.lea(VReg.A0, "_str_false");
+                    }
+                    if (isLast) {
+                        this.vm.call("_print_str");
+                    } else {
+                        this.vm.call("_print_str_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (arg.value === null) {
+                    // null
+                    this.vm.lea(VReg.A0, "_str_null");
+                    if (isLast) {
+                        this.vm.call("_print_str");
+                    } else {
+                        this.vm.call("_print_str_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (arg.value === undefined) {
+                    // undefined
+                    this.vm.lea(VReg.A0, "_str_undefined");
+                    if (isLast) {
+                        this.vm.call("_print_str");
+                    } else {
+                        this.vm.call("_print_str_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else {
+                    // 其他未知字面量
+                    this.compileExpression(arg);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    if (isLast) {
+                        this.vm.call("_print_value");
+                    } else {
+                        this.vm.call("_print_value_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                }
+            } else if (arg.type === "Identifier" && arg.name === "undefined") {
+                // undefined 标识符
+                this.vm.lea(VReg.A0, "_str_undefined");
+                if (isLast) {
+                    this.vm.call("_print_str");
+                } else {
+                    this.vm.call("_print_str_no_nl");
+                    this.vm.call("_print_space");
+                }
+            } else if (arg.type === "Identifier" && (arg.name === "true" || arg.name === "false")) {
+                // true/false 标识符
+                if (arg.name === "true") {
+                    this.vm.lea(VReg.A0, "_str_true");
+                } else {
+                    this.vm.lea(VReg.A0, "_str_false");
+                }
+                if (isLast) {
+                    this.vm.call("_print_str");
+                } else {
+                    this.vm.call("_print_str_no_nl");
+                    this.vm.call("_print_space");
+                }
+            } else if (arg.type === "Identifier") {
+                // 标识符 - 检查是否是导入/导出的变量
+                if (this.isImportedSymbol && this.isImportedSymbol(arg.name)) {
+                    const importInfo = this.getImportedSymbol(arg.name);
+                    this.compileExpression(arg);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    if (importInfo && importInfo.type === "variable") {
+                        // 导入的变量假定为数字类型
+                        if (isLast) {
+                            this.vm.call("_print_number");
+                        } else {
+                            this.vm.call("_print_number_no_nl");
+                            this.vm.call("_print_space");
+                        }
+                    } else {
+                        // 其他导入类型
+                        if (isLast) {
+                            this.vm.call("_print_value");
+                        } else {
+                            this.vm.call("_print_value_no_nl");
+                            this.vm.call("_print_space");
+                        }
+                    }
+                } else {
+                    // 普通标识符 - 使用类型推断
+                    const argType = inferType(arg, this.ctx);
+                    this.compileExpression(arg);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    const isNumberType = argType === Type.NUMBER || argType === Type.INT8 || argType === Type.INT16 || argType === Type.INT32 || argType === Type.INT64 || argType === Type.UINT8 || argType === Type.UINT16 || argType === Type.UINT32 || argType === Type.UINT64 || argType === Type.FLOAT32 || argType === Type.FLOAT64;
+                    if (isNumberType) {
+                        if (isLast) {
+                            this.vm.call("_print_number");
+                        } else {
+                            this.vm.call("_print_number_no_nl");
+                            this.vm.call("_print_space");
+                        }
+                    } else {
+                        if (isLast) {
+                            this.vm.call("_print_value");
+                        } else {
+                            this.vm.call("_print_value_no_nl");
+                            this.vm.call("_print_space");
+                        }
+                    }
+                }
+            } else if (arg.type === "UnaryExpression" && arg.operator === "-") {
+                // 负数表达式（如 -2.5）- boxed Number
+                this.compileExpression(arg);
+                this.vm.mov(VReg.A0, VReg.RET);
+                if (isLast) {
+                    this.vm.call("_print_number");
+                } else {
+                    this.vm.call("_print_number_no_nl");
+                    this.vm.call("_print_space");
+                }
+            } else if (this.isBooleanExpression(arg)) {
+                // 返回布尔值的表达式 (如 s.has(), m.has(), 比较表达式等)
+                this.compileExpression(arg);
+                this.vm.mov(VReg.A0, VReg.RET);
+                if (isLast) {
+                    this.vm.call("_print_bool");
+                } else {
+                    this.vm.call("_print_bool_no_nl");
+                    this.vm.call("_print_space");
+                }
+            } else {
+                // 其他表达式（变量、函数调用等）
+                // 使用静态类型推断来选择打印函数
+                const argType = inferType(arg, this.ctx);
+                this.compileExpression(arg);
+                this.vm.mov(VReg.A0, VReg.RET);
+
+                // 检查是否是数字类型
+                const isNumberType = argType === Type.NUMBER || argType === Type.INT8 || argType === Type.INT16 || argType === Type.INT32 || argType === Type.INT64 || argType === Type.UINT8 || argType === Type.UINT16 || argType === Type.UINT32 || argType === Type.UINT64 || argType === Type.FLOAT32 || argType === Type.FLOAT64;
+
+                // 对于用户定义函数（不包括导入的函数），假设返回数字类型
+                const isUserFunctionCall = arg.type === "CallExpression" && arg.callee && arg.callee.type === "Identifier" && this.ctx.hasFunction(arg.callee.name);
+
+                // 对于导入的函数调用，使用 _print_value 进行运行时类型检测
+                const isImportedFunctionCall = arg.type === "CallExpression" && arg.callee && arg.callee.type === "Identifier" && this.isImportedSymbol && this.isImportedSymbol(arg.callee.name);
+
+                // 检查是否是导入的数字变量
+                const isImportedVariable = arg.type === "Identifier" && this.isImportedSymbol && this.isImportedSymbol(arg.name);
+                const importedVarInfo = isImportedVariable ? this.getImportedSymbol(arg.name) : null;
+                const isImportedNumberVariable = importedVarInfo && importedVarInfo.type === "variable";
+
+                // 调试：打印变量信息
+                if (arg.type === "Identifier") {
+                    console.log(`[PRINT_DEBUG] arg=${arg.name}, isImportedVariable=${isImportedVariable}, importedVarInfo=${JSON.stringify(importedVarInfo)}, isImportedNumberVariable=${isImportedNumberVariable}`);
+                }
+
+                if (isImportedFunctionCall) {
+                    // 导入的函数，使用运行时类型检测
+                    if (isLast) {
+                        this.vm.call("_print_value");
+                    } else {
+                        this.vm.call("_print_value_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (isNumberType || isUserFunctionCall || isImportedNumberVariable) {
+                    // 数字类型使用 _print_number（包括导入的数字变量）
+                    if (isLast) {
+                        this.vm.call("_print_number");
+                    } else {
+                        this.vm.call("_print_number_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (argType === Type.BOOLEAN) {
+                    // 布尔类型使用 _print_bool
+                    if (isLast) {
+                        this.vm.call("_print_bool");
+                    } else {
+                        this.vm.call("_print_bool_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (argType === Type.STRING) {
+                    // 字符串类型 - 现在字符串是 NaN-boxed 的，使用 _print_value
+                    if (isLast) {
+                        this.vm.call("_print_value");
+                    } else {
+                        this.vm.call("_print_value_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (argType === Type.ARRAY) {
+                    // 数组类型
+                    if (isLast) {
+                        this.vm.call("_print_array");
+                    } else {
+                        this.vm.call("_print_array_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else {
+                    // 其他类型使用运行时类型检测
+                    if (isLast) {
+                        this.vm.call("_print_value");
+                    } else {
+                        this.vm.call("_print_value_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                }
+            }
+        }
     },
 
     // 编译 Generator 方法调用
@@ -127,19 +383,53 @@ export const FunctionCompiler = {
     },
 
     // 编译函数参数 - 先全部压栈，再统一弹出到参数寄存器
-    // 这是因为 VReg.RET 和 VReg.A0 都映射到同一个物理寄存器 (X0/RAX)
+    // 前 6 个参数通过寄存器 A0-A5 传递
+    // 超过 6 个的参数通过栈传递（在调用指令前压栈）
+    // 返回栈传递的参数数量，调用者需要在调用后清理栈
     compileCallArguments(args) {
-        const argCount = Math.min(args.length, 6);
+        const regArgCount = Math.min(args.length, 6); // 寄存器传递的参数数量
+        const stackArgCount = Math.max(0, args.length - 6); // 栈传递的参数数量
 
-        // 先编译所有参数并压栈（逆序，因为栈是LIFO）
-        for (let i = argCount - 1; i >= 0; i--) {
-            this.compileExpression(args[i]);
+        // 先处理栈传递的参数（倒序压栈，这样在被调用函数中正序访问）
+        // 参数 6, 7, 8... 需要按这个顺序在栈上
+        for (let i = args.length - 1; i >= 6; i--) {
+            if (args[i] === null) {
+                console.log("[compileCallArguments] Warning: null argument at index", i, "total args:", args.length);
+                // 使用 undefined 替代 null 参数
+                this.vm.movImm64(VReg.RET, "0x7ffb000000000000");
+            } else {
+                this.compileExpression(args[i]);
+            }
             this.vm.push(VReg.RET);
         }
 
-        // 再按顺序弹出到参数寄存器
-        for (let i = 0; i < argCount; i++) {
+        // 再编译寄存器传递的参数并压栈（逆序，因为栈是LIFO）
+        for (let i = regArgCount - 1; i >= 0; i--) {
+            if (args[i] === null) {
+                console.log("[compileCallArguments] Warning: null argument at index", i, "total args:", args.length);
+                // 使用 undefined 替代 null 参数
+                this.vm.movImm64(VReg.RET, "0x7ffb000000000000");
+            } else {
+                this.compileExpression(args[i]);
+            }
+            this.vm.push(VReg.RET);
+        }
+
+        // 按顺序弹出到参数寄存器
+        for (let i = 0; i < regArgCount; i++) {
             this.vm.pop(this.vm.getArgReg(i));
+        }
+
+        // 栈上的参数保持在栈上，被调用函数会通过 FP 偏移访问
+        // 返回栈参数数量，调用者负责在调用后清理
+        return stackArgCount;
+    },
+
+    // 清理调用后的栈参数
+    cleanupStackArgs(stackArgCount) {
+        if (stackArgCount > 0) {
+            // 每个栈参数占 16 字节（因为 push 使用 stpPre 对齐到 16）
+            this.vm.addImm(VReg.SP, VReg.SP, stackArgCount * 16);
         }
     },
 
@@ -156,13 +446,14 @@ export const FunctionCompiler = {
 
     // 编译闭包调用 - 处理可能是闭包对象或普通函数指针的情况
     // funcReg: 存放函数指针或闭包对象的寄存器
+    // 调用约定: A0-A5=参数, S0=闭包指针
     compileClosureCall(funcReg, args) {
         const vm = this.vm;
 
         // 保存函数指针/闭包对象到栈
         vm.push(funcReg);
 
-        // 编译参数
+        // 编译参数到 A0-A5
         this.compileCallArguments(args);
 
         // 恢复函数指针/闭包对象到 S0 (callee-saved)
@@ -174,10 +465,15 @@ export const FunctionCompiler = {
         const notClosureLabel = this.ctx.newLabel("not_closure");
         const callLabel = this.ctx.newLabel("do_call");
 
+        // 检查是否为 null/0，防止从地址 0 读取
+        const nullFuncLabel = this.ctx.newLabel("null_func");
+        vm.cmpImm(VReg.S0, 0);
+        vm.jeq(nullFuncLabel);
+
         // 加载第一个 8 字节（magic）到 S1
         vm.load(VReg.S1, VReg.S0, 0);
 
-        // 先检查是否是 async 闭包
+        // 先检查是否是 async 闘包
         vm.movImm(VReg.S2, ASYNC_CLOSURE_MAGIC);
         vm.cmp(VReg.S1, VReg.S2);
         vm.jeq(asyncCallLabel);
@@ -207,6 +503,11 @@ export const FunctionCompiler = {
         vm.label(callLabel);
         // 通过 S1 间接调用（不能用 V6 因为它映射到 X6 = A5+1）
         vm.callIndirect(VReg.S1);
+        vm.jmp(asyncDoneLabel);
+
+        vm.label(nullFuncLabel);
+        // 函数指针为 null，返回 undefined (NaN-boxed)
+        vm.movImm64(VReg.RET, "0x7ffb000000000000");
 
         vm.label(asyncDoneLabel);
     },
@@ -214,7 +515,7 @@ export const FunctionCompiler = {
     // 编译方法调用 - 类似闭包调用但传递 this
     // funcReg: 存放函数指针或闭包对象的寄存器
     // thisReg: 存放 this 对象 (NaN-boxed) 的寄存器
-    // 类方法调用约定: A0 = this (解包后的指针), A1-A5 = 参数
+    // 调用约定: A0-A4=参数, V5=this (解包后的指针), S0=闭包指针
     compileMethodCall(funcReg, thisReg, args) {
         const vm = this.vm;
 
@@ -223,7 +524,7 @@ export const FunctionCompiler = {
         vm.push(funcReg);
 
         // 编译参数并压栈（逆序，因为栈是 LIFO）
-        // 参数将从 A1 开始，所以最多 5 个参数 (A1-A5)
+        // 参数将从 A0 开始，所以最多 5 个参数 (A0-A4)
         const argCount = Math.min(args.length, 5);
         for (let i = argCount - 1; i >= 0; i--) {
             this.compileExpression(args[i]);
@@ -231,36 +532,37 @@ export const FunctionCompiler = {
         }
 
         // 恢复函数指针和 this
-        // 注意：需要跳过已压栈的参数
-        // 栈结构: [thisReg][funcReg][arg_n-1]...[arg_0] <- SP
-        // 先把参数弹到临时位置（S4, S5 是 callee-saved）
-        // 为了简化，直接用栈操作：先弹所有参数到栈顶，处理完再弹回
-
         // 方案：用临时寄存器保存参数值
-        // 暂时只支持最多 2 个参数（使用 S4, S5）
         if (argCount > 0) vm.pop(VReg.S4); // arg0
         if (argCount > 1) vm.pop(VReg.S5); // arg1
-        // 超过 2 个参数的情况暂不处理
+        if (argCount > 2) vm.pop(VReg.V6); // arg2
+        if (argCount > 3) vm.pop(VReg.V7); // arg3
+        // argCount > 4 暂不处理
 
         vm.pop(VReg.S0); // 函数指针/闭包
         vm.pop(VReg.S3); // this 对象 (NaN-boxed)
 
-        // 解包 this 到 S2（避免与 A0 冲突）
+        // 解包 this 到 S2
         vm.mov(VReg.A0, VReg.S3);
         vm.call("_js_unbox");
         vm.mov(VReg.S2, VReg.RET); // S2 = 解包后的 this 指针
 
-        // 检查是否是闭包 (使用 V7 作为临时寄存器，避免覆盖参数寄存器)
+        // 检查是否是闭包
         const notClosureLabel = this.ctx.newLabel("method_not_closure");
         const callLabel = this.ctx.newLabel("method_do_call");
+        const nullFuncLabel = this.ctx.newLabel("method_null_func");
+
+        // 检查是否为 null/0
+        vm.cmpImm(VReg.S0, 0);
+        vm.jeq(nullFuncLabel);
 
         // 加载 magic
         vm.load(VReg.S1, VReg.S0, 0);
-        vm.movImm(VReg.V7, CLOSURE_MAGIC); // 使用 V7 而不是 V0
-        vm.cmp(VReg.S1, VReg.V7);
+        vm.movImm(VReg.V0, CLOSURE_MAGIC);
+        vm.cmp(VReg.S1, VReg.V0);
         vm.jne(notClosureLabel);
 
-        // 是闭包：加载函数指针
+        // 是闭包：加载函数指针，保持 S0 作为闭包指针
         vm.load(VReg.S1, VReg.S0, 8);
         vm.jmp(callLabel);
 
@@ -270,12 +572,24 @@ export const FunctionCompiler = {
         vm.movImm(VReg.S0, 0);
 
         vm.label(callLabel);
-        // 现在设置参数寄存器（在闭包检查之后，确保不会被覆盖）
-        vm.mov(VReg.A0, VReg.S2); // this
-        if (argCount > 0) vm.mov(VReg.A1, VReg.S4); // arg0
-        if (argCount > 1) vm.mov(VReg.A2, VReg.S5); // arg1
+        // 设置参数寄存器：A0-A4=参数, V5=this
+        if (argCount > 0) vm.mov(VReg.A0, VReg.S4); // arg0
+        if (argCount > 1) vm.mov(VReg.A1, VReg.S5); // arg1
+        if (argCount > 2) vm.mov(VReg.A2, VReg.V6); // arg2
+        if (argCount > 3) vm.mov(VReg.A3, VReg.V7); // arg3
+        // this 通过 V5 传递（compileFunctionBody 会从 V5 读取）
+        vm.mov(VReg.V5, VReg.S2);
 
         vm.callIndirect(VReg.S1);
+
+        const methodDoneLabel = this.ctx.newLabel("method_done");
+        vm.jmp(methodDoneLabel);
+
+        vm.label(nullFuncLabel);
+        // 函数指针为 null，返回 undefined (NaN-boxed)
+        vm.movImm64(VReg.RET, "0x7ffb000000000000");
+
+        vm.label(methodDoneLabel);
     },
 
     // 编译 async 闭包调用
@@ -343,7 +657,30 @@ export const FunctionCompiler = {
         }
 
         // 获取父类构造函数标签
-        const parentClassInfo = this.ctx.classes[superClass];
+        let parentClassInfo = this.ctx.classes[superClass];
+
+        // 如果不在本地类注册表中，检查是否是导入的类
+        if (!parentClassInfo && this.isImportedSymbol && this.isImportedSymbol(superClass)) {
+            const importInfo = this.getImportedSymbol(superClass);
+            if (importInfo && importInfo.type === "class") {
+                parentClassInfo = {
+                    constructorLabel: importInfo.constructorLabel,
+                    classInfoLabel: importInfo.classInfoLabel,
+                };
+            }
+        }
+
+        // 处理内置类 (Error, TypeError 等)
+        if (!parentClassInfo) {
+            const builtinClasses = ["Error", "TypeError", "ReferenceError", "SyntaxError", "RangeError"];
+            if (builtinClasses.includes(superClass)) {
+                parentClassInfo = {
+                    constructorLabel: `_class_${superClass}`,
+                    classInfoLabel: `_class_info_${superClass}`,
+                };
+            }
+        }
+
         if (!parentClassInfo) {
             console.warn("Parent class not found:", superClass);
             this.vm.movImm(VReg.RET, 0);
@@ -389,10 +726,114 @@ export const FunctionCompiler = {
         // 内置函数处理
         if (callee.type === "Identifier") {
             if (callee.name === "print") {
+                // print 支持多参数，类似 console.log
+                if (expr.arguments.length > 0) {
+                    for (let i = 0; i < expr.arguments.length; i++) {
+                        const arg = expr.arguments[i];
+                        const isLast = i === expr.arguments.length - 1;
+                        this.compileExpression(arg);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        if (isLast) {
+                            this.vm.call("_print_value");
+                        } else {
+                            this.vm.call("_print_value_no_nl");
+                            this.vm.call("_print_space");
+                        }
+                    }
+                }
+                return;
+            }
+
+            // 内置类型转换函数: Number(), String(), Boolean(), BigInt()
+            if (callee.name === "Number") {
+                // Number(value) - 转换为数字
+                if (expr.arguments.length > 0) {
+                    this.compileExpression(expr.arguments[0]);
+                    // 已经是 NaN-boxed 值，调用运行时转换函数
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_to_number");
+                } else {
+                    // Number() 无参数返回 0
+                    this.compileNumericLiteral(0);
+                }
+                return;
+            }
+
+            if (callee.name === "String") {
+                // String(value) - 转换为字符串
                 if (expr.arguments.length > 0) {
                     this.compileExpression(expr.arguments[0]);
                     this.vm.mov(VReg.A0, VReg.RET);
-                    this.vm.call("_print_value");
+                    this.vm.call("_to_string");
+                } else {
+                    // String() 无参数返回空字符串
+                    this.compileStringValue("");
+                }
+                return;
+            }
+
+            // 内置全局函数: parseInt, parseFloat, isNaN, isFinite
+            if (callee.name === "parseInt") {
+                // parseInt(str, radix) -> Number
+                this.compileCallArguments(expr.arguments);
+                this.vm.call("_parseInt");
+                return;
+            }
+
+            if (callee.name === "parseFloat") {
+                // parseFloat(str) -> Number
+                this.compileCallArguments(expr.arguments);
+                this.vm.call("_parseFloat");
+                return;
+            }
+
+            if (callee.name === "isNaN") {
+                // isNaN(value) -> Boolean
+                this.compileCallArguments(expr.arguments);
+                this.vm.call("_isNaN");
+                return;
+            }
+
+            if (callee.name === "isFinite") {
+                // isFinite(value) -> Boolean
+                this.compileCallArguments(expr.arguments);
+                this.vm.call("_isFinite");
+                return;
+            }
+
+            if (callee.name === "Boolean") {
+                // Boolean(value) - 转换为布尔值
+                if (expr.arguments.length > 0) {
+                    this.compileExpression(expr.arguments[0]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_to_boolean");
+                } else {
+                    // Boolean() 无参数返回 false
+                    this.vm.lea(VReg.RET, "_js_false");
+                    this.vm.load(VReg.RET, VReg.RET, 0);
+                }
+                return;
+            }
+
+            if (callee.name === "BigInt") {
+                // BigInt(value) - 转换为 BigInt（编译时计算）
+                if (expr.arguments.length > 0) {
+                    const arg = expr.arguments[0];
+                    // 如果参数是字面量，编译时计算
+                    if (arg.type === "Literal" && typeof arg.value === "number") {
+                        const bigintVal = BigInt(Math.trunc(arg.value));
+                        // 转换为字符串格式以避免 BigInt 混合错误
+                        this.vm.movImm64(VReg.RET, "0x" + bigintVal.toString(16));
+                    } else if (arg.type === "Literal" && typeof arg.value === "bigint") {
+                        // 转换为字符串格式
+                        this.vm.movImm64(VReg.RET, "0x" + arg.value.toString(16));
+                    } else {
+                        // 运行时转换 - 简单处理：编译参数并截断为整数
+                        this.compileExpression(arg);
+                        // 对于复杂情况，需要运行时支持
+                    }
+                } else {
+                    this.vm.movImm64(VReg.RET, "0x0");
                 }
                 return;
             }
@@ -483,8 +924,20 @@ export const FunctionCompiler = {
                     return;
                 }
 
-                this.compileCallArguments(expr.arguments);
+                const stackArgCount = this.compileCallArguments(expr.arguments);
+
+                // 为缺失的参数填充 undefined（支持默认参数）
+                const declaredParamCount = (funcDef.params || []).length;
+                const providedArgCount = expr.arguments.length;
+                if (providedArgCount < declaredParamCount) {
+                    // undefinedValue = 0x7FFB000000000000
+                    for (let i = providedArgCount; i < Math.min(declaredParamCount, 6); i++) {
+                        this.vm.movImm64(this.vm.getArgReg(i), "0x7ffb000000000000");
+                    }
+                }
+
                 this.vm.call("_user_" + callee.name);
+                this.cleanupStackArgs(stackArgCount);
                 return;
             }
 
@@ -497,6 +950,63 @@ export const FunctionCompiler = {
                     this.vm.call(importInfo.label);
                     return;
                 }
+                if (importInfo && importInfo.type === "builtin") {
+                    // 内置模块函数 - 调用运行时实现
+                    // 例如: execSync from "child_process"
+                    const builtinName = importInfo.builtinName; // 例如 "child_process"
+                    const funcName = callee.name; // 例如 "execSync"
+
+                    // 尝试调用内置方法编译器
+                    if (this.compileBuiltinModuleCall) {
+                        if (this.compileBuiltinModuleCall(builtinName, funcName, expr.arguments)) {
+                            return;
+                        }
+                    }
+
+                    // 回退：调用运行时函数
+                    this.compileCallArguments(expr.arguments);
+                    this.vm.call("_" + builtinName + "_" + funcName);
+                    return;
+                }
+            }
+
+            // 检查是否是局部变量（函数表达式或嵌套函数声明）
+            // 必须在警告之前检查！
+            if (localOffset !== undefined) {
+                // 检查是否是装箱变量
+                const isBoxed = this.ctx.boxedVars && this.ctx.boxedVars.has(callee.name);
+                if (isBoxed) {
+                    // 装箱变量：先加载 box 指针，再解引用
+                    this.vm.load(VReg.V6, VReg.FP, localOffset);
+                    this.vm.load(VReg.V6, VReg.V6, 0);
+                } else {
+                    // 普通变量：直接加载函数指针/闭包对象
+                    this.vm.load(VReg.V6, VReg.FP, localOffset);
+                }
+                // 使用闭包调用机制
+                this.compileClosureCall(VReg.V6, expr.arguments);
+                return;
+            }
+
+            // 未知函数 - 回退到 _user_ 前缀
+            // 这种情况下可能是编译器内部的函数引用问题
+            if (callee.name === "inferType" || callee.name === "isCompatible" || callee.name === "typeName") {
+                console.warn(`[DEBUG] Unknown function call: ${callee.name}`);
+                console.warn(`[DEBUG]   currentModulePath:`, this.currentModulePath);
+                console.warn(`[DEBUG]   ctx.name:`, this.ctx ? this.ctx.name : "no ctx");
+                console.warn(`[DEBUG]   isImportedSymbol:`, this.isImportedSymbol ? this.isImportedSymbol(callee.name) : "no method");
+                console.warn(`[DEBUG]   importedSymbols has:`, this.importedSymbols ? this.importedSymbols.has(callee.name) : "no map");
+                if (this.importedSymbols) {
+                    console.warn(`[DEBUG]   importedSymbols keys:`, [...this.importedSymbols.keys()]);
+                }
+            }
+            console.warn(`Unknown function call: ${callee.name}, importedSymbols.size=${this.importedSymbols ? this.importedSymbols.size : "N/A"}`);
+            if (callee.name === "stringToBytes" || callee.name === "alignValue") {
+                console.warn(`[DEBUG] Unknown call ${callee.name} stack:`, new Error().stack);
+                console.warn(`[DEBUG] callee:`, JSON.stringify(callee, null, 2));
+                console.warn(`[DEBUG] full expr:`, JSON.stringify(expr, null, 2));
+                console.warn(`[DEBUG] ctx.name:`, this.ctx ? this.ctx.name : "none");
+                console.warn(`[DEBUG] currentModulePath:`, this.currentModulePath);
             }
 
             // 检查是否是外部库函数
@@ -548,23 +1058,6 @@ export const FunctionCompiler = {
                     return;
                 }
             }
-
-            // 检查是否是局部变量（函数表达式或嵌套函数声明）
-            if (localOffset !== undefined) {
-                // 检查是否是装箱变量
-                const isBoxed = this.ctx.boxedVars && this.ctx.boxedVars.has(callee.name);
-                if (isBoxed) {
-                    // 装箱变量：先加载 box 指针，再解引用
-                    this.vm.load(VReg.V6, VReg.FP, localOffset);
-                    this.vm.load(VReg.V6, VReg.V6, 0);
-                } else {
-                    // 普通变量：直接加载函数指针/闭包对象
-                    this.vm.load(VReg.V6, VReg.FP, localOffset);
-                }
-                // 使用闭包调用机制
-                this.compileClosureCall(VReg.V6, expr.arguments);
-                return;
-            }
         }
 
         // 处理成员调用 (obj.method())
@@ -583,13 +1076,13 @@ export const FunctionCompiler = {
                         // 根据参数类型选择打印方法
                         if (arg.type === "Literal") {
                             if (typeof arg.value === "string") {
-                                // 字符串字面量
+                                // 字符串字面量 - 使用 _print_value 来处理 NaN-boxed 字符串
                                 this.compileExpression(arg);
                                 this.vm.mov(VReg.A0, VReg.RET);
                                 if (isLast) {
-                                    this.vm.call("_print_str");
+                                    this.vm.call("_print_value");
                                 } else {
-                                    this.vm.call("_print_str_no_nl");
+                                    this.vm.call("_print_value_no_nl");
                                     this.vm.call("_print_space");
                                 }
                             } else if (typeof arg.value === "number") {
@@ -666,6 +1159,27 @@ export const FunctionCompiler = {
                                 this.vm.call("_print_str_no_nl");
                                 this.vm.call("_print_space");
                             }
+                        } else if (arg.type === "Identifier" && this.isImportedSymbol && this.isImportedSymbol(arg.name)) {
+                            // 导入/导出的变量 - 使用 _print_number
+                            const importInfo = this.getImportedSymbol(arg.name);
+                            this.compileExpression(arg);
+                            this.vm.mov(VReg.A0, VReg.RET);
+                            if (importInfo && importInfo.type === "variable") {
+                                // 导入的变量使用 _print_number
+                                if (isLast) {
+                                    this.vm.call("_print_number");
+                                } else {
+                                    this.vm.call("_print_number_no_nl");
+                                    this.vm.call("_print_space");
+                                }
+                            } else {
+                                if (isLast) {
+                                    this.vm.call("_print_value");
+                                } else {
+                                    this.vm.call("_print_value_no_nl");
+                                    this.vm.call("_print_space");
+                                }
+                            }
                         } else if (arg.type === "UnaryExpression" && arg.operator === "-") {
                             // 负数表达式（如 -2.5）- boxed Number
                             this.compileExpression(arg);
@@ -728,11 +1242,11 @@ export const FunctionCompiler = {
                                     this.vm.call("_print_space");
                                 }
                             } else if (argType === Type.STRING) {
-                                // 字符串类型 - 使用智能打印（处理数据段和堆字符串）
+                                // 字符串类型 - 现在字符串是 NaN-boxed 的，使用 _print_value
                                 if (isLast) {
-                                    this.vm.call("_print_string_smart");
+                                    this.vm.call("_print_value");
                                 } else {
-                                    this.vm.call("_print_string_smart_no_nl");
+                                    this.vm.call("_print_value_no_nl");
                                     this.vm.call("_print_space");
                                 }
                             } else if (argType === Type.ARRAY) {
@@ -756,6 +1270,158 @@ export const FunctionCompiler = {
                     }
                     return;
                 }
+                // console.warn - 与 console.log 行为相同，输出警告信息
+                if (prop.name === "warn") {
+                    this.compileConsolePrint(expr.arguments);
+                    return;
+                }
+                // console.error - 与 console.log 行为相同，输出错误信息
+                if (prop.name === "error") {
+                    this.compileConsolePrint(expr.arguments);
+                    return;
+                }
+            }
+
+            // fs 模块方法 (import * as fs from "fs")
+            if (obj.type === "Identifier" && this.isBuiltinModuleNamespace(obj.name, "fs")) {
+                if (this.compileFSMethod(prop.name, expr.arguments)) {
+                    return;
+                }
+            }
+
+            // path 模块方法 (import * as path from "path")
+            if (obj.type === "Identifier" && this.isBuiltinModuleNamespace(obj.name, "path")) {
+                if (this.compilePathMethod(prop.name, expr.arguments)) {
+                    return;
+                }
+            }
+
+            // os 模块方法 (import * as os from "os")
+            if (obj.type === "Identifier" && this.isBuiltinModuleNamespace(obj.name, "os")) {
+                if (this.compileOSMethod(prop.name, expr.arguments)) {
+                    return;
+                }
+            }
+
+            // Array 静态方法 (Array.from, Array.isArray)
+            if (obj.type === "Identifier" && obj.name === "Array") {
+                if (prop.name === "from") {
+                    // Array.from(iterable) -> 新数组
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_array_from");
+                    } else {
+                        // 无参数返回空数组
+                        this.vm.movImm(VReg.A0, 0);
+                        this.vm.call("_array_new_with_size");
+                    }
+                    return;
+                }
+                if (prop.name === "isArray") {
+                    // Array.isArray(value) -> boolean
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_array_is_array");
+                    } else {
+                        this.vm.movImm(VReg.RET, 0);
+                    }
+                    return;
+                }
+            }
+
+            // String 静态方法 (String.fromCharCode)
+            if (obj.type === "Identifier" && obj.name === "String") {
+                if (prop.name === "fromCharCode") {
+                    // String.fromCharCode(code1, code2, ...) -> 字符串
+                    if (expr.arguments.length > 0) {
+                        // 单个参数的情况
+                        if (expr.arguments.length === 1) {
+                            this.compileExpression(expr.arguments[0]);
+                            // 将 Number 对象转换为整数
+                            this.vm.f2i(VReg.A0, VReg.RET);
+                            this.vm.call("_string_from_char_code");
+                        } else {
+                            // 多参数：创建数组然后转换
+                            // 暂时只支持单参数
+                            this.compileExpression(expr.arguments[0]);
+                            this.vm.f2i(VReg.A0, VReg.RET);
+                            this.vm.call("_string_from_char_code");
+                        }
+                    } else {
+                        // 无参数返回空字符串
+                        this.compileStringValue("");
+                    }
+                    return;
+                }
+            }
+
+            // Buffer 静态方法 (Buffer.alloc, Buffer.allocUnsafe, Buffer.from, Buffer.concat, Buffer.isBuffer)
+            if (obj.type === "Identifier" && obj.name === "Buffer") {
+                if (prop.name === "alloc") {
+                    // Buffer.alloc(size) -> Buffer
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_buffer_alloc");
+                    } else {
+                        this.vm.movImm(VReg.A0, 0);
+                        this.vm.call("_buffer_alloc");
+                    }
+                    return;
+                }
+                if (prop.name === "allocUnsafe") {
+                    // Buffer.allocUnsafe(size) -> Buffer
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_buffer_alloc_unsafe");
+                    } else {
+                        this.vm.movImm(VReg.A0, 0);
+                        this.vm.call("_buffer_alloc_unsafe");
+                    }
+                    return;
+                }
+                if (prop.name === "from") {
+                    // Buffer.from(data, encoding?) -> Buffer
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        if (expr.arguments.length > 1) {
+                            this.compileExpression(expr.arguments[1]);
+                            this.vm.mov(VReg.A1, VReg.RET);
+                        } else {
+                            this.vm.movImm(VReg.A1, 0); // 默认 encoding
+                        }
+                        this.vm.call("_buffer_from");
+                    } else {
+                        this.vm.movImm(VReg.RET, 0);
+                    }
+                    return;
+                }
+                if (prop.name === "concat") {
+                    // Buffer.concat(arr) -> Buffer
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_buffer_concat");
+                    } else {
+                        this.vm.movImm(VReg.RET, 0);
+                    }
+                    return;
+                }
+                if (prop.name === "isBuffer") {
+                    // Buffer.isBuffer(obj) -> boolean
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_buffer_is_buffer");
+                    } else {
+                        this.vm.movImm(VReg.RET, 0);
+                    }
+                    return;
+                }
             }
 
             // Math 对象方法
@@ -768,6 +1434,13 @@ export const FunctionCompiler = {
             // JSON 对象方法
             if (obj.type === "Identifier" && obj.name === "JSON") {
                 if (this.compileJSONMethod(prop.name, expr.arguments)) {
+                    return;
+                }
+            }
+
+            // process 对象方法
+            if (obj.type === "Identifier" && obj.name === "process") {
+                if (this.compileProcessMethod(prop.name, expr.arguments)) {
                     return;
                 }
             }
@@ -970,10 +1643,11 @@ export const FunctionCompiler = {
             }
 
             // String 方法 - 优先检查，因为 slice/indexOf 在字符串和数组中都有
-            if (objType === "String") {
-                const stringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "slice", "substring", "indexOf", "concat"];
+            // 对于 unknown 类型，也检查这些共享方法（通过运行时类型检测处理）
+            if (objType === "String" || objType === "unknown") {
+                const stringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "slice", "substring", "indexOf", "lastIndexOf", "includes", "startsWith", "endsWith", "concat", "split", "replace", "replaceAll", "repeat", "at", "match", "matchAll", "search"];
                 if (stringMethods.includes(prop.name)) {
-                    if (this.compileStringMethod(obj, prop.name, expr.arguments)) {
+                    if (this.compileStringMethodWithTypeCheck(obj, prop.name, expr.arguments, objType === "unknown")) {
                         return;
                     }
                 }
@@ -981,7 +1655,7 @@ export const FunctionCompiler = {
 
             // 数组方法 - Array 和 TypedArray 共享
             if (objType === "Array" || objType === "TypedArray" || objType === "unknown") {
-                const arrayMethods = ["push", "pop", "shift", "unshift", "length", "at", "slice", "indexOf", "includes", "forEach", "map", "filter", "reduce", "flat", "flatMap", "sort", "reverse"];
+                const arrayMethods = ["push", "pop", "shift", "unshift", "length", "at", "slice", "indexOf", "includes", "forEach", "map", "filter", "reduce", "flat", "flatMap", "sort", "reverse", "find", "findIndex", "some", "every", "join", "concat", "splice", "fill"];
                 if (arrayMethods.includes(prop.name)) {
                     this.compileArrayMethod(obj, prop.name, expr.arguments);
                     return;
@@ -990,7 +1664,7 @@ export const FunctionCompiler = {
 
             // Map 方法
             if (objType === "Map") {
-                const mapMethods = ["set", "get", "has", "delete", "size", "clear"];
+                const mapMethods = ["set", "get", "has", "delete", "size", "clear", "keys", "values", "entries"];
                 if (mapMethods.includes(prop.name)) {
                     if (this.compileMapMethod(obj, prop.name, expr.arguments)) {
                         return;
@@ -1000,7 +1674,7 @@ export const FunctionCompiler = {
 
             // Set 方法
             if (objType === "Set") {
-                const setMethods = ["add", "has", "delete", "size", "clear"];
+                const setMethods = ["add", "has", "delete", "size", "clear", "keys", "values", "entries"];
                 if (setMethods.includes(prop.name)) {
                     if (this.compileSetMethod(obj, prop.name, expr.arguments)) {
                         return;
@@ -1013,6 +1687,16 @@ export const FunctionCompiler = {
                 const dateMethods = ["getTime", "toString", "valueOf", "toISOString"];
                 if (dateMethods.includes(prop.name)) {
                     if (this.compileDateMethod(obj, prop.name, expr.arguments)) {
+                        return;
+                    }
+                }
+            }
+
+            // Buffer 方法
+            if (objType === "Buffer") {
+                const bufferMethods = ["toString", "length", "slice", "write"];
+                if (bufferMethods.includes(prop.name)) {
+                    if (this.compileBufferMethod(obj, prop.name, expr.arguments)) {
                         return;
                     }
                 }
@@ -1031,7 +1715,7 @@ export const FunctionCompiler = {
             // 如果无法确定类型，尝试所有可能的方法（旧的回退逻辑）
             if (objType === "unknown") {
                 // String 方法 - 对于未知类型，也尝试字符串方法
-                const stringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "slice", "substring", "indexOf", "concat"];
+                const stringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "slice", "substring", "indexOf", "lastIndexOf", "includes", "startsWith", "endsWith", "concat", "split", "replace", "replaceAll", "repeat", "at", "match", "matchAll", "search"];
                 if (stringMethods.includes(prop.name)) {
                     if (this.compileStringMethod(obj, prop.name, expr.arguments)) {
                         return;

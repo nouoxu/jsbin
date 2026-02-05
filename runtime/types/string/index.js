@@ -17,9 +17,22 @@ export class StringGenerator {
         vm.label("_strlen");
         vm.prologue(0, [VReg.S0, VReg.S1]);
 
+        // 保存原始指针到 S0
+        vm.mov(VReg.S0, VReg.A0);
+
+        // 非指针或空指针直接返回 0，避免非法访存
+        vm.cmpImm(VReg.S0, 0);
+        const nullPtrLabel = "_strlen_null_ptr";
+        vm.jeq(nullPtrLabel);
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 48);
+        vm.movImm(VReg.V1, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V1);
+        const nonPtrLabel = "_strlen_non_ptr";
+        vm.jge(nonPtrLabel);
+
         // S0 = str pointer
         // S1 = counter
-        vm.mov(VReg.S0, VReg.A0);
         vm.movImm(VReg.S1, 0);
 
         const loopLabel = "_strlen_loop";
@@ -40,6 +53,14 @@ export class StringGenerator {
         vm.label(doneLabel);
         vm.mov(VReg.RET, VReg.S1);
         vm.epilogue([VReg.S0, VReg.S1], 0);
+
+        vm.label(nullPtrLabel);
+        vm.movImm(VReg.RET, 0);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+
+        vm.label(nonPtrLabel);
+        vm.movImm(VReg.RET, 0);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
     }
 
     // _raw_strlen(str) -> length
@@ -57,28 +78,95 @@ export class StringGenerator {
 
         vm.label("_strcmp");
         vm.prologue(0, [VReg.S0, VReg.S1]);
-
-        vm.mov(VReg.S0, VReg.A0);
-        vm.mov(VReg.S1, VReg.A1);
-
         const loopLabel = "_strcmp_loop";
         const notEqualLabel = "_strcmp_ne";
         const doneLabel = "_strcmp_done";
 
+        // 支持 NaN-boxed 字符串：解箱 0x7FFC，高位非字符串直接返回不等，避免非法访存
+        // 处理第一个参数
+        vm.mov(VReg.S0, VReg.A0);
+        vm.shrImm(VReg.V0, VReg.S0, 48); // high16
+        vm.movImm(VReg.V2, 0x7ffc);
+        vm.cmp(VReg.V0, VReg.V2);
+        const arg0NotString = "_strcmp_arg0_not_string";
+        const arg0Done = "_strcmp_arg0_done";
+        const arg0IsNanboxed = "_strcmp_arg0_is_nanboxed";
+        vm.jne(arg0NotString);
+
+        // arg0 是 NaN-boxed 字符串
+        vm.label(arg0IsNanboxed);
+        vm.movImm64(VReg.V2, "0x0000ffffffffffff");
+        vm.and(VReg.S0, VReg.S0, VReg.V2); // 清除高16位得到原始指针
+        // 检查指针是否在堆范围内
+        vm.lea(VReg.V2, "_heap_base");
+        vm.load(VReg.V2, VReg.V2, 0);
+        vm.cmp(VReg.S0, VReg.V2);
+        vm.jlt(arg0Done); // 数据段字符串，直接使用指针
+        // 堆字符串，+16 跳过头部
+        vm.addImm(VReg.S0, VReg.S0, 16);
+        vm.jmp(arg0Done);
+
+        vm.label(arg0NotString);
+        vm.movImm(VReg.V2, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V2);
+        vm.jlt(arg0Done); // 非 NaN-boxed，视为原始指针
+        vm.movImm(VReg.RET, 1); // NaN-boxed 非字符串，直接不等
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+
+        vm.label(arg0Done);
+        vm.cmpImm(VReg.S0, 0);
+        vm.jne(arg0Done + "_nonnull");
+        vm.movImm(VReg.RET, 1);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+        vm.label(arg0Done + "_nonnull");
+
+        // 处理第二个参数
+        vm.mov(VReg.S1, VReg.A1);
+        vm.shrImm(VReg.V0, VReg.S1, 48);
+        vm.movImm(VReg.V2, 0x7ffc);
+        vm.cmp(VReg.V0, VReg.V2);
+        const arg1NotString = "_strcmp_arg1_not_string";
+        const arg1Done = "_strcmp_arg1_done";
+        const arg1IsNanboxed = "_strcmp_arg1_is_nanboxed";
+        vm.jne(arg1NotString);
+
+        // arg1 是 NaN-boxed 字符串
+        vm.label(arg1IsNanboxed);
+        vm.movImm64(VReg.V2, "0x0000ffffffffffff");
+        vm.and(VReg.S1, VReg.S1, VReg.V2);
+        // 检查指针是否在堆范围内
+        vm.lea(VReg.V2, "_heap_base");
+        vm.load(VReg.V2, VReg.V2, 0);
+        vm.cmp(VReg.S1, VReg.V2);
+        vm.jlt(arg1Done); // 数据段字符串，直接使用指针
+        // 堆字符串，+16 跳过头部
+        vm.addImm(VReg.S1, VReg.S1, 16);
+        vm.jmp(arg1Done);
+
+        vm.label(arg1NotString);
+        vm.movImm(VReg.V2, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V2);
+        vm.jlt(arg1Done);
+        vm.movImm(VReg.RET, 1);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+
+        vm.label(arg1Done);
+        vm.cmpImm(VReg.S1, 0);
+        vm.jne(arg1Done + "_nonnull");
+        vm.movImm(VReg.RET, 1);
+        vm.epilogue([VReg.S0, VReg.S1], 0);
+        vm.label(arg1Done + "_nonnull");
+
         vm.label(loopLabel);
-        // 加载两个字符（使用 loadByte 加载单字节）
         vm.loadByte(VReg.V0, VReg.S0, 0);
         vm.loadByte(VReg.V1, VReg.S1, 0);
 
-        // 比较
         vm.cmp(VReg.V0, VReg.V1);
         vm.jne(notEqualLabel);
 
-        // 如果都是 0，相等
         vm.cmpImm(VReg.V0, 0);
         vm.jeq(doneLabel);
 
-        // 继续
         vm.addImm(VReg.S0, VReg.S0, 1);
         vm.addImm(VReg.S1, VReg.S1, 1);
         vm.jmp(loopLabel);
@@ -166,15 +254,31 @@ export class StringGenerator {
 
     // 获取字符串长度
     // 智能处理堆字符串（有头部）和数据段字符串（无头部）
+    // 也处理 NaN-boxed 字符串（高16位是 0x7FFD）
     // _str_length(str) -> length
     generateStrLength() {
         const vm = this.vm;
         const TYPE_STRING = 6;
+        const NANBOX_STRING_TAG = 0x7ffc; // NaN-boxed string 标签 (与 JS_TAG_STRING_BASE 一致)
 
         vm.label("_str_length");
         vm.prologue(0, [VReg.S0]);
         vm.mov(VReg.S0, VReg.A0);
 
+        // 首先检查是否是 NaN-boxed 字符串（高16位是 0x7FFD）
+        vm.mov(VReg.V1, VReg.S0);
+        vm.shrImm(VReg.V1, VReg.V1, 48); // 取高16位
+        vm.movImm(VReg.V2, NANBOX_STRING_TAG);
+        vm.cmp(VReg.V1, VReg.V2);
+        const notNanboxedLabel = "_str_length_not_nanboxed";
+        vm.jne(notNanboxedLabel);
+
+        // 是 NaN-boxed 字符串，解箱获取原始指针
+        // 清除高16位标签，获取真实指针
+        vm.movImm(VReg.V1, 0x0000ffffffffffff);
+        vm.and(VReg.S0, VReg.S0, VReg.V1);
+
+        vm.label(notNanboxedLabel);
         // 检查是否在堆范围内
         vm.lea(VReg.V1, "_heap_base");
         vm.load(VReg.V1, VReg.V1, 0);
@@ -200,9 +304,22 @@ export class StringGenerator {
         vm.jmp(doneLabel);
 
         vm.label(notHeapLabel);
+        // 非堆字符串：可能是数据段字符串，也可能是非字符串（如 undefined）。
+        // 如果高 16 位仍落在 NaN-box 范围（非字符串标签），直接返回 0，避免对无效指针 strlen。
+        vm.mov(VReg.V1, VReg.S0);
+        vm.shrImm(VReg.V1, VReg.V1, 48);
+        vm.movImm(VReg.V2, 0x7ff8);
+        vm.cmp(VReg.V1, VReg.V2);
+        const nonStringLabel = "_str_length_non_string";
+        vm.jge(nonStringLabel);
+
         // 数据段字符串，使用 strlen 计算
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_strlen");
+        vm.jmp(doneLabel);
+
+        vm.label(nonStringLabel);
+        vm.movImm(VReg.RET, 0);
 
         vm.label(doneLabel);
         vm.epilogue([VReg.S0], 0);
@@ -215,11 +332,26 @@ export class StringGenerator {
     generateGetStrContent() {
         const vm = this.vm;
         const TYPE_STRING = 6;
+        const NANBOX_STRING_TAG = 0x7ffc; // NaN-boxed string 标签
 
         vm.label("_getStrContent");
         vm.prologue(0, [VReg.S0]);
         vm.mov(VReg.S0, VReg.A0);
 
+        // 首先检查是否是 NaN-boxed 字符串（高16位是 0x7FFC）
+        vm.mov(VReg.V1, VReg.S0);
+        vm.shrImm(VReg.V1, VReg.V1, 48); // 取高16位
+        vm.movImm(VReg.V2, NANBOX_STRING_TAG);
+        vm.cmp(VReg.V1, VReg.V2);
+        const notNanboxedLabel = "_getStrContent_not_nanboxed";
+        vm.jne(notNanboxedLabel);
+
+        // 是 NaN-boxed 字符串，解箱获取原始指针
+        // 清除高16位标签，获取真实指针
+        vm.movImm(VReg.V1, 0x0000ffffffffffff);
+        vm.and(VReg.S0, VReg.S0, VReg.V1);
+
+        vm.label(notNanboxedLabel);
         // 检查是否在堆范围内
         vm.lea(VReg.V1, "_heap_base");
         vm.load(VReg.V1, VReg.V1, 0);
@@ -449,6 +581,8 @@ export class StringGenerator {
 
     // 布尔值转字符串
     // _boolToStr(b) -> str
+    // 输入: A0 = NaN-boxed 布尔值 (0x7FF9000000000000 = false, 0x7FF9000000000001 = true)
+    // 或原始值 (0 = false, 非0 = true)
     generateBoolToStr() {
         const vm = this.vm;
 
@@ -457,7 +591,11 @@ export class StringGenerator {
         const falseLabel = "_boolToStr_false";
         const endLabel = "_boolToStr_end";
 
-        vm.cmpImm(VReg.A0, 0);
+        // 检查最低位来判断 true/false
+        // 对于 NaN-boxed: 0x7FF9000000000000 & 1 = 0, 0x7FF9000000000001 & 1 = 1
+        // 对于原始值: 0 & 1 = 0, 1 & 1 = 1
+        vm.andImm(VReg.V0, VReg.A0, 1);
+        vm.cmpImm(VReg.V0, 0);
         vm.jeq(falseLabel);
 
         // true
@@ -637,19 +775,99 @@ export class StringGenerator {
 
         vm.mov(VReg.S0, VReg.A0); // S0 = 值
 
+        // ============ 首先检查是否是 NaN-boxed 值 ============
+        // NaN-boxed: 高 16 位在 0x7FF8 到 0x7FFF 范围内
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 48); // 右移 48 位得到高 16 位
+        vm.movImm(VReg.V1, 0x7ff8);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jlt("_valueToStr_not_nanboxed"); // < 0x7FF8，不是 NaN-boxed
+        vm.movImm(VReg.V1, 0x7fff);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jgt("_valueToStr_not_nanboxed"); // > 0x7FFF，不是 NaN-boxed
+
+        // ============ 是 NaN-boxed 值 ============
+        // 提取 tag: 低 3 位 of 高 16 位
+        vm.andImm(VReg.V0, VReg.V0, 0x7); // 取低 3 位 = tag
+
+        // tag 0: int32 - 提取低 32 位作为整数
+        vm.cmpImm(VReg.V0, 0);
+        vm.jne("_valueToStr_check_bool");
+        // 提取低 32 位作为有符号整数并转换为字符串
+        vm.mov(VReg.V0, VReg.S0);
+        vm.andImm(VReg.V0, VReg.V0, 0xffffffff); // 取低 32 位
+        // 转换整数为字符串
+        vm.mov(VReg.A0, VReg.V0);
+        vm.call("_intToStr");
+        vm.mov(VReg.A0, VReg.RET);
+        vm.call("_createStrFromCStr");
+        vm.epilogue([VReg.S0], 16);
+
+        vm.label("_valueToStr_check_bool");
+        // tag 1: boolean
+        vm.cmpImm(VReg.V0, 1);
+        vm.jne("_valueToStr_check_null");
+        // 提取最低位判断 true/false
+        vm.andImm(VReg.V1, VReg.S0, 1);
+        vm.cmpImm(VReg.V1, 0);
+        vm.jeq("_valueToStr_false");
+        vm.lea(VReg.A0, "_str_true");
+        vm.call("_createStrFromCStr");
+        vm.epilogue([VReg.S0], 16);
+        vm.label("_valueToStr_false");
+        vm.lea(VReg.A0, "_str_false");
+        vm.call("_createStrFromCStr");
+        vm.epilogue([VReg.S0], 16);
+
+        vm.label("_valueToStr_check_null");
+        // tag 2: null
+        vm.cmpImm(VReg.V0, 2);
+        vm.jne("_valueToStr_check_undefined");
+        vm.lea(VReg.A0, "_str_null");
+        vm.call("_createStrFromCStr");
+        vm.epilogue([VReg.S0], 16);
+
+        vm.label("_valueToStr_check_undefined");
+        // tag 3: undefined
+        vm.cmpImm(VReg.V0, 3);
+        vm.jne("_valueToStr_check_nanbox_string");
+        vm.lea(VReg.A0, "_str_undefined");
+        vm.call("_createStrFromCStr");
+        vm.epilogue([VReg.S0], 16);
+
+        vm.label("_valueToStr_check_nanbox_string");
+        // tag 4: string pointer (NaN-boxed)
+        vm.cmpImm(VReg.V0, 4);
+        vm.jne("_valueToStr_nanbox_other");
+        // 提取字符串指针（低 48 位）
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
+        vm.and(VReg.RET, VReg.S0, VReg.V1);
+        vm.epilogue([VReg.S0], 16);
+
+        vm.label("_valueToStr_nanbox_other");
+        // tag 5/6/7: object/array/function - 返回 "[object Object]" 等
+        vm.lea(VReg.A0, "_str_object");
+        vm.call("_createStrFromCStr");
+        vm.epilogue([VReg.S0], 16);
+
+        vm.label("_valueToStr_not_nanboxed");
+        // ============ 不是 NaN-boxed 值 ============
         // 检查是否在代码/数据段范围内（字符串指针）
         vm.lea(VReg.V0, "_heap_base");
         vm.load(VReg.V0, VReg.V0, 0);
         vm.cmp(VReg.S0, VReg.V0);
         vm.jge("_valueToStr_check_heap");
 
-        // 地址 < heap_base，检查是否是合理的数据段地址
-        vm.movImm(VReg.V0, 0x100000);
-        vm.cmp(VReg.S0, VReg.V0);
-        vm.jlt("_valueToStr_as_raw_number");
+        // 地址 < heap_base，检查是否可能是数据段字符串指针
+        // 在 macOS ARM64 上，程序通常加载在 0x100000000 附近
+        // 检查高 32 位是否是 1（即地址在 0x100000000 到 0x1FFFFFFFF 范围内）
+        vm.mov(VReg.V0, VReg.S0);
+        vm.shrImm(VReg.V0, VReg.V0, 32);
+        vm.cmpImm(VReg.V0, 1);
+        vm.jeq("_valueToStr_as_string"); // 是 0x1xxxxxxxx，可能是数据段字符串
 
-        // 看起来是数据段字符串指针
-        vm.jmp("_valueToStr_as_string");
+        // 不是 macOS 数据段地址，当作数字
+        vm.jmp("_valueToStr_as_raw_number");
 
         vm.label("_valueToStr_check_heap");
         // 检查是否在堆范围内
@@ -900,6 +1118,42 @@ export class StringGenerator {
         vm.epilogue([VReg.S0], 0);
     }
 
+    // 从字符码创建单字符字符串
+    // _string_from_char_code(charCode) -> 堆字符串指针
+    generateStringFromCharCode() {
+        const vm = this.vm;
+        const TYPE_STRING = 6;
+
+        vm.label("_string_from_char_code");
+        vm.prologue(16, [VReg.S0, VReg.S1]);
+
+        vm.mov(VReg.S0, VReg.A0); // S0 = charCode
+
+        // 分配堆字符串: 16 字节头部 + 2 字节内容 (1 字符 + null)
+        vm.movImm(VReg.A0, 24);
+        vm.call("_alloc");
+        vm.mov(VReg.S1, VReg.RET); // S1 = 字符串对象指针
+
+        // 写入类型标记 (TYPE_STRING = 6)
+        vm.movImm(VReg.V0, TYPE_STRING);
+        vm.store(VReg.S1, 0, VReg.V0);
+
+        // 写入长度 (1)
+        vm.movImm(VReg.V0, 1);
+        vm.store(VReg.S1, 8, VReg.V0);
+
+        // 写入字符到 offset 16
+        vm.storeByte(VReg.S1, 16, VReg.S0);
+
+        // 写入 null 终结符到 offset 17
+        vm.movImm(VReg.V0, 0);
+        vm.storeByte(VReg.S1, 17, VReg.V0);
+
+        // 返回字符串对象指针
+        vm.mov(VReg.RET, VReg.S1);
+        vm.epilogue([VReg.S0, VReg.S1], 16);
+    }
+
     // 去除首尾空白
     // _str_trim(str) -> 新字符串
     generateTrim() {
@@ -1013,15 +1267,16 @@ export class StringGenerator {
     // 字符串切片
     // _str_slice(str, start, end) -> 新字符串
     // end = -1 表示到末尾
+    // str 是内容指针（C 字符串），不是 String 对象
     generateSlice() {
         const vm = this.vm;
         const TYPE_STRING = 6;
 
         vm.label("_str_slice");
-        // S0=str, S1=start, S2=end/result, S3=len, S4=newLen, S5=index
+        // S0=str (内容指针), S1=start, S2=end/result, S3=len, S4=newLen, S5=index
         vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
-        vm.mov(VReg.S0, VReg.A0); // S0 = str
+        vm.mov(VReg.S0, VReg.A0); // S0 = str (内容指针)
         vm.mov(VReg.S1, VReg.A1); // S1 = start
         vm.mov(VReg.S2, VReg.A2); // S2 = end (临时)
 
@@ -1060,7 +1315,7 @@ export class StringGenerator {
         vm.cmp(VReg.S5, VReg.S4);
         vm.jge(copyDone);
 
-        // 源位置 = str + start + index
+        // 源位置 = str + start + index （str 是内容指针）
         vm.add(VReg.V0, VReg.S0, VReg.S1);
         vm.add(VReg.V0, VReg.V0, VReg.S5);
         vm.loadByte(VReg.V1, VReg.V0, 0);
@@ -1093,7 +1348,8 @@ export class StringGenerator {
         this.generateStrcpy();
         this.generateStrcat();
         this.generateStrstr();
-        this.generateMemcpy();
+        // 注意: _memcpy 已经在 allocator.js 中定义，不要重复生成
+        // this.generateMemcpy();
         this.generateGetStrContent();
         this.generateCreateStrFromCStr();
         this.generateStrconcat();
@@ -1107,6 +1363,7 @@ export class StringGenerator {
         this.generateToLowerCase();
         this.generateCharAt();
         this.generateCharCodeAt();
+        this.generateStringFromCharCode(); // String.fromCharCode
         this.generateTrim();
         this.generateSlice();
         this.generateIndexOf();
@@ -1179,6 +1436,65 @@ export class StringGenerator {
         vm.label("_strstr_notfound");
         vm.movImm(VReg.RET, 0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
+    }
+
+    // _string_concat(s1, s2) -> new_string
+    generateStringConcat() {
+        const vm = this.vm;
+        const TYPE_STRING = 6;
+
+        vm.label("_string_concat");
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+
+        vm.mov(VReg.S0, VReg.A0); // s1
+        vm.mov(VReg.S1, VReg.A1); // s2
+
+        // Get lengths
+        // len1 = [s1 + 8]
+        vm.load(VReg.S2, VReg.S0, 8);
+        // len2 = [s2 + 8]
+        vm.load(VReg.S3, VReg.S1, 8);
+
+        // Total len = len1 + len2
+        vm.add(VReg.S4, VReg.S2, VReg.S3);
+
+        // Alloc: 16 + total_len + 1
+        vm.addImm(VReg.A0, VReg.S4, 17);
+        vm.call("_alloc");
+        vm.mov(VReg.V5, VReg.RET); // New obj
+
+        // Set Header (Type String = 6 << 2 = 24)
+        vm.movImm(VReg.V0, 24);
+        vm.store(VReg.V5, 0, VReg.V0);
+        // Set Length
+        vm.store(VReg.V5, 8, VReg.S4);
+
+        // Copy s1
+        // dest = new + 16
+        vm.addImm(VReg.A0, VReg.V5, 16);
+        // src = s1 + 16
+        vm.addImm(VReg.A1, VReg.S0, 16);
+        vm.mov(VReg.A2, VReg.S2); // len1
+        vm.call("_memcpy");
+
+        // Copy s2
+        // dest = new + 16 + len1
+        vm.addImm(VReg.A0, VReg.V5, 16);
+        vm.add(VReg.A0, VReg.A0, VReg.S2);
+        // src = s2 + 16
+        vm.addImm(VReg.A1, VReg.S1, 16);
+        vm.mov(VReg.A2, VReg.S3); // len2
+        vm.call("_memcpy");
+
+        // Null terminate
+        vm.addImm(VReg.A0, VReg.V5, 16);
+        vm.add(VReg.A0, VReg.A0, VReg.S4); // end
+        vm.movImm(VReg.V0, 0);
+        vm.storeByte(VReg.A0, 0, VReg.V0);
+
+        vm.mov(VReg.RET, VReg.V5); // Return new string
+
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
     }
 
     // _memcpy(dest, src, len) -> dest

@@ -913,10 +913,16 @@ export class X64Backend extends Backend {
             totalStack += 8; // S5 槽位
         }
 
-        // 分配栈空间（16 字节对齐）
-        const aligned = totalStack > 0 ? Math.ceil(totalStack / 16) * 16 : 0;
-        if (aligned > 0) {
-            this.asm.subImm(Reg.RSP, aligned);
+        // 确保栈指针 16 字节对齐
+        // RSP 必须在调用指令前 16 字节对齐
+        // 目前 RSP 已经减去了 (regsWithoutS5.length * 8)
+        const pushedBytes = regsWithoutS5.length * 8;
+        const currentDepth = pushedBytes + totalStack;
+        const padding = (16 - (currentDepth % 16)) % 16;
+        const allocSize = totalStack + padding;
+
+        if (allocSize > 0) {
+            this.asm.subImm(Reg.RSP, allocSize);
         }
 
         // S5 槽位在分配的栈空间的最高地址处（紧贴 pushed regs 下方）
@@ -946,11 +952,16 @@ export class X64Backend extends Backend {
         if (hasS5) {
             totalStack += 8; // S5 槽位
         }
-        const aligned = totalStack > 0 ? Math.ceil(totalStack / 16) * 16 : 0;
+
+        // 使用与 prologue 相同的逻辑计算 allocSize
+        const pushedBytes = regsWithoutS5.length * 8;
+        const currentDepth = pushedBytes + totalStack;
+        const padding = (16 - (currentDepth % 16)) % 16;
+        const allocSize = totalStack + padding;
 
         // 恢复栈空间（使 RSP 指向 saved regs）
-        if (aligned > 0) {
-            this.asm.addImm(Reg.RSP, aligned);
+        if (allocSize > 0) {
+            this.asm.addImm(Reg.RSP, allocSize);
         }
 
         // 恢复 callee-saved 寄存器（反序 pop）
@@ -1235,6 +1246,48 @@ export class X64Backend extends Backend {
             this.asm.movsd(fpDest, fpA);
         }
         this.asm.divsd(fpDest, fpB);
+    }
+
+    // 浮点开方
+    fsqrt(fpDest, fpSrc) {
+        this.asm.sqrtsd(fpDest, fpSrc);
+    }
+
+    // 浮点舍入 - 向下取整 (floor)
+    frintm(fpDest, fpSrc) {
+        this.asm.roundsd(fpDest, fpSrc, 1);
+    }
+
+    // 浮点舍入 - 向上取整 (ceil)
+    frintp(fpDest, fpSrc) {
+        this.asm.roundsd(fpDest, fpSrc, 2);
+    }
+
+    // 浮点舍入 - 向零取整 (trunc)
+    frintz(fpDest, fpSrc) {
+        this.asm.roundsd(fpDest, fpSrc, 3);
+    }
+
+    // 浮点舍入 - 最近取整 (round)
+    frinta(fpDest, fpSrc) {
+        this.asm.roundsd(fpDest, fpSrc, 0);
+    }
+
+    // 计数前导零 (Count Leading Zeros)
+    clz(dest, src) {
+        const tempReg = Reg.R10;
+        const rs = this._getReg(src, tempReg);
+
+        if (this.isS5(dest)) {
+            if (rs !== tempReg) {
+                this.asm.movReg(tempReg, rs);
+            }
+            this.asm.lzcnt(tempReg, rs); // dest=temp, src=rs
+            this.asm.movStoreOffset(Reg.RBP, this.s5StackOffset, tempReg);
+        } else {
+            const rd = this.mapReg(dest);
+            this.asm.lzcnt(rd, rs);
+        }
     }
 
     // 浮点转整数 (截断)

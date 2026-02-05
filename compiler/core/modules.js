@@ -15,6 +15,8 @@ export class ModuleExports {
         this.named = new Map(); // 命名导出: 导出名 -> 标签名
         this.functions = new Map(); // 函数导出: 函数名 -> 函数标签
         this.variables = new Map(); // 变量导出: 变量名 -> 全局标签
+        this.classes = new Map(); // 类导出: 类名 -> 构造函数标签
+        this.initLabel = null; // 模块初始化函数标签
     }
 
     setDefault(label) {
@@ -33,6 +35,16 @@ export class ModuleExports {
     addVariable(name, label) {
         this.variables.set(name, label);
         this.named.set(name, label);
+    }
+
+    addClass(name, classInfo) {
+        // classInfo: { constructorLabel, classInfoLabel, labelId }
+        this.classes.set(name, classInfo);
+        this.named.set(name, classInfo.constructorLabel);
+    }
+
+    getClass(name) {
+        return this.classes.get(name);
     }
 
     getExport(name) {
@@ -89,9 +101,15 @@ export class ModuleManager {
      * 解析模块路径
      * @param {string} specifier - 导入说明符 (如 "./module.js" 或 "lodash")
      * @param {string} fromPath - 导入语句所在文件的路径
-     * @returns {string|null} 解析后的绝对路径
+     * @returns {string|null} 解析后的绝对路径，或内置模块的虚拟路径
      */
     resolveModulePath(specifier, fromPath) {
+        // 内置模块 - 返回虚拟路径
+        const builtinModules = ["path", "fs", "process", "os", "child_process", "buffer", "url", "util"];
+        if (builtinModules.includes(specifier)) {
+            return `builtin:${specifier}`;
+        }
+
         // 相对路径
         if (specifier.startsWith("./") || specifier.startsWith("../")) {
             const dir = path.dirname(fromPath);
@@ -180,9 +198,21 @@ export class ModuleManager {
     }
 
     /**
+     * 检查是否是内置模块
+     */
+    isBuiltinModule(modulePath) {
+        return modulePath && modulePath.startsWith("builtin:");
+    }
+
+    /**
      * 读取并解析模块文件
      */
     parseModuleFile(modulePath) {
+        // 内置模块不需要解析
+        if (this.isBuiltinModule(modulePath)) {
+            return null;
+        }
+
         if (!fs.existsSync(modulePath)) {
             throw new Error(`Module not found: ${modulePath}`);
         }

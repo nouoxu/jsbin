@@ -30,13 +30,20 @@ run_test() {
     local output_file="$BUILD_DIR/$output_name"
     
     printf "%-50s " "$rel_path"
-    
-    # 检查是否有已知问题标记
-    if grep -q "已知问题" "$test_file" 2>/dev/null; then
-        echo -e "${YELLOW}SKIP${NC} (已知问题)"
+
+    # 跳过非测试的调试/工具脚本（不保证可被 JSBin 编译运行）
+    if [ "$rel_path" = "debug/find_crash_labels.js" ] || [ "$rel_path" = "debug/test_type_infer.js" ]; then
+        echo -e "${YELLOW}SKIP${NC} (调试工具)"
         ((SKIPPED++))
         return
     fi
+    
+    # 检查是否有已知问题标记
+    # if grep -q "已知问题" "$test_file" 2>/dev/null; then
+    #     echo -e "${YELLOW}SKIP${NC} (已知问题)"
+    #     ((SKIPPED++))
+    #     return
+    # fi
     
     # 编译
     if ! node "$PROJECT_DIR/cli.js" "$test_file" -o "$output_file" >/dev/null 2>&1; then
@@ -46,7 +53,14 @@ run_test() {
     fi
     
     # 运行
-    if timeout 5 "$output_file" >/dev/null 2>&1; then
+    local run_cmd="$output_file"
+    if command -v timeout >/dev/null 2>&1; then
+        run_cmd="timeout 5 $output_file"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        run_cmd="gtimeout 5 $output_file"
+    fi
+
+    if $run_cmd >/dev/null 2>&1; then
         echo -e "${GREEN}PASS${NC}"
         ((PASSED++))
     else
