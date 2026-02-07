@@ -276,6 +276,50 @@ export class PrintGenerator {
         vm.epilogue([VReg.S0], 16);
     }
 
+    // 打印 BigInt（无换行）
+    // BigInt 存储为 raw int64，直接转换为十进制字符串打印
+    generatePrintBigIntNoNL() {
+        const vm = this.vm;
+
+        vm.label("_print_bigint_no_nl");
+        vm.prologue(16, [VReg.S0]);
+
+        // 保存 A0（BigInt 值）到 S0
+        vm.mov(VReg.S0, VReg.A0);
+
+        // 调用 _intToStr 将 int64 转换为十进制字符串
+        // A0 已经是 BigInt 值，不需要再移动
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_intToStr");
+
+        // _intToStr 返回带类型头的字符串对象，内容在 offset 16
+        // 跳过头部，获取实际字符串内容的指针
+        vm.addImm(VReg.A0, VReg.RET, 16);
+        vm.call("_print_str_no_nl");
+
+        // 打印 "n" 后缀
+        vm.movImm(VReg.A0, 110); // 'n'
+        vm.call("_print_char");
+
+        vm.epilogue([VReg.S0], 16);
+    }
+
+    // 打印 BigInt（带换行）
+    generatePrintBigInt() {
+        const vm = this.vm;
+
+        vm.label("_print_bigint");
+        vm.prologue(16, [VReg.S0]);
+
+        vm.call("_print_bigint_no_nl");
+
+        // 打印换行
+        vm.movImm(VReg.A0, 10); // '\n'
+        vm.call("_print_char");
+
+        vm.epilogue([VReg.S0], 16);
+    }
+
     // 统一的值打印函数
     // 支持 NaN-boxing 格式的值打印
     //
@@ -1570,6 +1614,8 @@ export class PrintGenerator {
         this.generatePrintNewline();
         this.generatePrintBool();
         this.generatePrintBoolNoNL();
+        this.generatePrintBigIntNoNL();
+        this.generatePrintBigInt();
         this.generatePrintSpace();
         this.generatePrintWrapper();
         this.generatePrintValue();

@@ -92,6 +92,7 @@ export class ARM64Backend extends Backend {
     mapReg(vreg) {
         const phys = this.regMap[vreg];
         if (phys === undefined) {
+            console.log("[mapReg ERROR] vreg =", vreg, "regMap keys =", Object.keys(this.regMap));
             throw new Error("Unknown virtual register: " + vreg);
         }
         return phys;
@@ -489,16 +490,14 @@ export class ARM64Backend extends Backend {
 
     // ========== 类型转换 ==========
 
-    // Float to Int: 从 Number 对象中提取整数值
-    // src 是指向 Number 对象的指针，dest 接收整数值
+    // Float bits to Int: 从 float64 位模式转换为整数
+    // src 是包含 float64 位模式的整数寄存器，dest 接收整数值
     f2i(dest, src) {
         const rd = this.mapReg(dest);
         const rs = this.mapReg(src);
-        // Number 对象: offset 0 = type, offset 8 = float64 bits
-        // 加载 float64 位模式
-        this.asm.ldr(Reg.X9, rs, 8); // X9 = float64 bits
+        // src 已经包含 float64 位模式（不是指针！）
         // 将位模式移到 D0
-        this.asm.fmovToFloat(0, Reg.X9); // D0 = float from bits
+        this.asm.fmovToFloat(0, rs); // D0 = float from bits
         // 转换为整数
         this.asm.fcvtzs(rd, 0); // rd = int(D0)
     }

@@ -1151,13 +1151,30 @@ export const StatementCompiler = {
         this.vm.store(VReg.S0, 16, VReg.S1);
 
         // 添加实例方法到 prototype
+        // 闭包对象结构: [magic: 0xc105, func_ptr] (16 bytes)
+        const CLOSURE_MAGIC = 0xc105;
         for (const method of instanceMethods) {
             const methodName = method.key.name || method.key.value;
             const methodLabel = `_class_${className}_${methodName}_${labelId}`;
 
+            // 为方法创建闭包对象，使 typeof 返回 "function"
+            this.vm.push(VReg.S0); // 保存类信息
+            this.vm.push(VReg.S1); // 保存 prototype
+            this.vm.movImm(VReg.A0, 16); // 闭包大小
+            this.vm.call("_alloc");
+            this.vm.mov(VReg.S2, VReg.RET); // S2 = 闭包对象
+            // 写入 magic
+            this.vm.movImm(VReg.V0, CLOSURE_MAGIC);
+            this.vm.store(VReg.S2, 0, VReg.V0);
+            // 写入函数指针
+            this.vm.lea(VReg.V0, methodLabel);
+            this.vm.store(VReg.S2, 8, VReg.V0);
+            this.vm.pop(VReg.S1);
+            this.vm.pop(VReg.S0);
+            // 设置 prototype[methodName] = 闭包对象
             this.vm.mov(VReg.A0, VReg.S1); // prototype 对象
             this.vm.lea(VReg.A1, this.addStringConstant(methodName));
-            this.vm.lea(VReg.A2, methodLabel);
+            this.vm.mov(VReg.A2, VReg.S2); // 闭包对象，不是原始地址
             this.vm.call("_object_set");
         }
 
@@ -1188,9 +1205,22 @@ export const StatementCompiler = {
             const methodName = method.key.name || method.key.value;
             const methodLabel = `_class_${className}_static_${methodName}_${labelId}`;
 
+            // 为静态方法创建闭包对象
+            this.vm.push(VReg.S0); // 保存类信息
+            this.vm.push(VReg.S1); // 保存 prototype
+            this.vm.movImm(VReg.A0, 16);
+            this.vm.call("_alloc");
+            this.vm.mov(VReg.S2, VReg.RET);
+            this.vm.movImm(VReg.V0, CLOSURE_MAGIC);
+            this.vm.store(VReg.S2, 0, VReg.V0);
+            this.vm.lea(VReg.V0, methodLabel);
+            this.vm.store(VReg.S2, 8, VReg.V0);
+            this.vm.pop(VReg.S1);
+            this.vm.pop(VReg.S0);
+
             this.vm.mov(VReg.A0, VReg.S0); // 类对象
             this.vm.lea(VReg.A1, this.addStringConstant(methodName));
-            this.vm.lea(VReg.A2, methodLabel);
+            this.vm.mov(VReg.A2, VReg.S2); // 闭包对象
             this.vm.call("_object_set");
         }
 

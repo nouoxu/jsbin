@@ -14,6 +14,15 @@ export class Lexer {
         this.column = 0;
         this.templateDepth = 0; // 跟踪模板字符串嵌套深度
         this.readChar();
+        // 跳过 shebang 行 (#!/usr/bin/env node 等)
+        if (this.ch === "#" && this.peekChar() === "!") {
+            while (this.ch !== "\n" && this.ch !== "\0") {
+                this.readChar();
+            }
+            if (this.ch === "\n") {
+                this.readChar();
+            }
+        }
     }
 
     // 读取下一个字符

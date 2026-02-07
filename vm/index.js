@@ -8,53 +8,33 @@ import { X64Backend } from "../backend/x64.js";
 
 // 辅助函数来创建 backend（避免 selfhost 中方法调用的 bug）
 function createBackendHelper(arch, os, asm) {
-    console.log("[createBackendHelper] arch =", arch, ", os =", os);
-    console.log("[createBackendHelper] typeof arch =", typeof arch);
-
     // 使用 indexOf 来避免字符串下标访问的 bug
     const isArm = arch.indexOf("arm") === 0;
-    console.log("[createBackendHelper] isArm =", isArm);
 
     if (isArm) {
-        console.log("[createBackendHelper] Creating ARM64Backend");
         return new ARM64Backend(asm, os);
     } else {
-        console.log("[createBackendHelper] Creating X64Backend");
         return new X64Backend(asm, os);
     }
 }
 
 export class VirtualMachine {
     constructor(arch, os, asm) {
-        console.log("[VM] Constructor: arch =", arch, ", os =", os);
-        console.log("[VM] Step 1: storing arch");
         this._arch = arch;
-        console.log("[VM] Step 2: storing os");
         this._os = os;
-        console.log("[VM] Step 3: storing asm");
         this.asm = asm;
-        console.log("[VM] Step 4: calling createBackendHelper");
         this.backend = createBackendHelper(arch, os, asm);
-        console.log("[VM] Step 5: backend created");
         this.instructions = []; // 用于调试/优化
-        console.log("[VM] Constructor done");
     }
 
     _createBackend(arch, os, asm) {
-        console.log("[VM] _createBackend: arch =", arch, ", os =", os);
-        console.log("[VM] typeof arch =", typeof arch);
-        console.log("[VM] arch === 'arm64' ?", arch === "arm64");
-
         // 避免字符串比较问题 (selfhost bug workaround)
         // 直接检测第一个字符
         const isArm = arch[0] === "a" || arch[0] === "A";
-        console.log("[VM] isArm =", isArm);
 
         if (isArm) {
-            console.log("[VM] Creating ARM64Backend");
             return new ARM64Backend(asm, os);
         } else {
-            console.log("[VM] Creating X64Backend");
             return new X64Backend(asm, os);
         }
     }
@@ -437,11 +417,8 @@ export class VirtualMachine {
     // ========== 标签与其他 ==========
 
     label(name) {
-        console.log("[VM.label] called with name = " + name);
         this._emit(OpCode.LABEL, [name]);
-        console.log("[VM.label] after _emit, calling backend.label...");
         this.backend.label(name);
-        console.log("[VM.label] done");
     }
 
     nop() {
@@ -623,7 +600,8 @@ export class VirtualMachine {
     // ========== 辅助方法 ==========
 
     _emit(op, operands) {
-        this.instructions.push(new Instruction(op, operands));
+        const inst = new Instruction(op, operands);
+        this.instructions.push(inst);
     }
 
     // 获取底层汇编器（用于特殊情况）

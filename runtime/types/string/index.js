@@ -3,6 +3,7 @@
 
 import { VReg } from "../../../vm/registers.js";
 import { StringMethodsGenerator } from "./methods.js";
+import { StringTrimPadGenerator } from "./trimpad.js";
 
 export class StringGenerator {
     constructor(vm) {
@@ -1377,6 +1378,9 @@ export class StringGenerator {
         this.generateSplit();
         this.generateReplace();
         this.generateReplaceAll();
+        this.generateBigIntToString();
+        this.generatePadStart();
+        this.generatePadEnd();
     }
 
     // _strstr(haystack, needle) -> 指针或 0
@@ -1497,6 +1501,28 @@ export class StringGenerator {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
     }
 
+    // _bigint_toString(bigintValue, radix) -> JSString (NaN-boxed)
+    // 将 BigInt 值转换为指定进制的字符串
+    // 目前简化实现：radix=10 时使用 _intToStr，其他进制暂不支持
+    generateBigIntToString() {
+        const vm = this.vm;
+
+        vm.label("_bigint_toString");
+        // 使用和 _print_bigint_no_nl 相同的调用模式
+        vm.prologue(16, [VReg.S0]);
+        // 保存 BigInt 值到 S0
+        vm.mov(VReg.S0, VReg.A0);
+        // 准备参数并调用 _intToStr
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_intToStr");
+        // _intToStr 返回带类型头的字符串指针
+        // 返回 NaN-boxed 字符串
+        // 注意：V0 和 RET 都映射到 X0，必须用 V1 来避免覆盖
+        vm.movImm64(VReg.V1, "0x7ffc000000000000");
+        vm.or(VReg.RET, VReg.RET, VReg.V1);
+        vm.epilogue([VReg.S0], 16);
+    }
+
     // _memcpy(dest, src, len) -> dest
     generateMemcpy() {
         const vm = this.vm;
@@ -1531,3 +1557,4 @@ export class StringGenerator {
 
 // 混入字符串方法生成器
 Object.assign(StringGenerator.prototype, StringMethodsGenerator);
+Object.assign(StringGenerator.prototype, StringTrimPadGenerator);

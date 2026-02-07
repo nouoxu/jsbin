@@ -1234,6 +1234,9 @@ export class ARM64Assembler {
     // ==================== 数据段操作 ====================
 
     addString(str) {
+        if (typeof str !== "string") {
+            str = String(str);
+        }
         let labelIndex = this.strings.length;
         let labelName = "_str_" + labelIndex;
         this.strings.push(str);

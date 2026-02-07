@@ -56,6 +56,7 @@ export { BufferGenerator } from "./types/buffer/index.js";
 // 运算符
 export { TypeofGenerator } from "./operators/typeof.js";
 export { EqualityGenerator } from "./operators/equality.js";
+export { AddGenerator } from "./operators/add.js";
 
 // 下标访问
 export { SubscriptGenerator } from "./core/subscript.js";
@@ -85,6 +86,7 @@ import { PrintGenerator } from "./core/print.js";
 import { SubscriptGenerator } from "./core/subscript.js";
 import { TypeofGenerator } from "./operators/typeof.js";
 import { EqualityGenerator } from "./operators/equality.js";
+import { AddGenerator } from "./operators/add.js";
 import { AsyncGenerator } from "./async/index.js";
 import { JSValueGenerator } from "./core/jsvalue.js";
 import { CoercionGenerator } from "./core/coercion.js";
@@ -132,6 +134,7 @@ export class RuntimeGenerator {
         this.subscriptGen = new SubscriptGenerator(vm, ctx);
         this.typeofGen = new TypeofGenerator(vm);
         this.equalityGen = new EqualityGenerator(vm);
+        this.addGen = new AddGenerator(vm);
         this.coercionGen = new CoercionGenerator(vm);
         // 异步运行时
         this.asyncGen = new AsyncGenerator(vm);
@@ -188,6 +191,7 @@ export class RuntimeGenerator {
         this.subscriptGen.generate();
         this.typeofGen.generate();
         this.equalityGen.generate();
+        this.addGen.generate();
         this.coercionGen.generate();
         // 异步
         this.asyncGen.generate();

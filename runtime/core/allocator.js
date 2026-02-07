@@ -76,8 +76,8 @@ export const NUM_FLOAT32 = 0x31;
 export const NUM_FLOAT64 = 0x32;
 
 // ==================== 堆配置（参考 Go runtime）====================
-export const INITIAL_HEAP_SIZE = 4194304; // 初始堆大小 4MB
-export const HEAP_GROW_SIZE = 65536; // 每次扩展大小 64KB
+export const INITIAL_HEAP_SIZE = 268435456; // 初始堆大小 256MB（用于大型编译）
+export const HEAP_GROW_SIZE = 1048576; // 每次扩展大小 1MB
 export const MAX_HEAP_SIZE = 0; // 最大堆大小，0 = 无限制
 export const GC_THRESHOLD_PERCENT = 75; // 使用率达到 75% 时触发 GC
 
@@ -254,25 +254,14 @@ export class AllocatorGenerator {
 
     // 生成堆初始化代码
     generateHeapInit() {
-        console.log("[generateHeapInit] start");
-        console.log("[generateHeapInit] this = " + typeof this);
-        console.log("[generateHeapInit] this.vm = " + typeof this.vm);
         const vm = this.vm;
-        console.log("[generateHeapInit] got vm, type = " + typeof vm);
         if (!vm) {
-            console.log("[generateHeapInit] ERROR: vm is null/undefined!");
             return;
         }
-        console.log("[generateHeapInit] vm.platform = " + vm.platform);
-        console.log("[generateHeapInit] vm.label = " + typeof vm.label);
         const platform = vm.platform;
-        console.log("[generateHeapInit] platform = " + platform);
 
-        console.log("[generateHeapInit] calling vm.label");
         vm.label("_heap_init");
-        console.log("[generateHeapInit] after label");
         vm.prologue(0, [VReg.S0, VReg.S1]);
-        console.log("[generateHeapInit] after prologue");
 
         if (platform === "windows") {
             // Windows: 使用 VirtualAlloc API
@@ -810,12 +799,8 @@ export class AllocatorGenerator {
 
     // 生成所有 allocator 相关代码
     generate() {
-        console.log("[AllocatorGen] generate() called");
-        console.log("[AllocatorGen] Before generateHeapInit");
         this.generateHeapInit();
-        console.log("[AllocatorGen] After generateHeapInit");
         this.generateGetSizeClass();
-        console.log("[AllocatorGen] After generateGetSizeClass");
         this.generateGetClassSize();
         this.generateBumpAlloc();
         this.generateHeapGrow();

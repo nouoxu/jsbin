@@ -44,6 +44,13 @@ export const FunctionCompiler = {
                 return "String";
             case Type.GENERATOR:
                 return "Generator";
+            case Type.BIGINT:
+                return "BigInt";
+            case Type.NUMBER:
+            case Type.FLOAT64:
+            case Type.INT64:
+            case Type.INT:
+                return "Number";
             default:
                 return "unknown";
         }
@@ -134,6 +141,16 @@ export const FunctionCompiler = {
                         this.vm.call("_print_str_no_nl");
                         this.vm.call("_print_space");
                     }
+                } else if (typeof arg.value === "bigint" || arg.bigint) {
+                    // BigInt 字面量 - 使用 _print_bigint
+                    this.compileExpression(arg);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    if (isLast) {
+                        this.vm.call("_print_bigint");
+                    } else {
+                        this.vm.call("_print_bigint_no_nl");
+                        this.vm.call("_print_space");
+                    }
                 } else if (arg.value === null) {
                     // null
                     this.vm.lea(VReg.A0, "_str_null");
@@ -186,6 +203,7 @@ export const FunctionCompiler = {
                     this.vm.call("_print_space");
                 }
             } else if (arg.type === "Identifier") {
+                console.log(`[ID_DEBUG] Processing identifier: ${arg.name}`);
                 // 标识符 - 检查是否是导入/导出的变量
                 if (this.isImportedSymbol && this.isImportedSymbol(arg.name)) {
                     const importInfo = this.getImportedSymbol(arg.name);
@@ -211,6 +229,7 @@ export const FunctionCompiler = {
                 } else {
                     // 普通标识符 - 使用类型推断
                     const argType = inferType(arg, this.ctx);
+                    console.log(`[BIGINT_DEBUG] Identifier ${arg.name} type = ${argType}`);
                     this.compileExpression(arg);
                     this.vm.mov(VReg.A0, VReg.RET);
                     const isNumberType = argType === Type.NUMBER || argType === Type.INT8 || argType === Type.INT16 || argType === Type.INT32 || argType === Type.INT64 || argType === Type.UINT8 || argType === Type.UINT16 || argType === Type.UINT32 || argType === Type.UINT64 || argType === Type.FLOAT32 || argType === Type.FLOAT64;
@@ -219,6 +238,14 @@ export const FunctionCompiler = {
                             this.vm.call("_print_number");
                         } else {
                             this.vm.call("_print_number_no_nl");
+                            this.vm.call("_print_space");
+                        }
+                    } else if (argType === Type.BIGINT) {
+                        // BigInt 类型使用 _print_bigint
+                        if (isLast) {
+                            this.vm.call("_print_bigint");
+                        } else {
+                            this.vm.call("_print_bigint_no_nl");
                             this.vm.call("_print_space");
                         }
                     } else {
@@ -298,6 +325,14 @@ export const FunctionCompiler = {
                         this.vm.call("_print_bool");
                     } else {
                         this.vm.call("_print_bool_no_nl");
+                        this.vm.call("_print_space");
+                    }
+                } else if (argType === Type.BIGINT) {
+                    // BigInt 类型使用 _print_bigint
+                    if (isLast) {
+                        this.vm.call("_print_bigint");
+                    } else {
+                        this.vm.call("_print_bigint_no_nl");
                         this.vm.call("_print_space");
                     }
                 } else if (argType === Type.STRING) {
@@ -445,7 +480,7 @@ export const FunctionCompiler = {
     },
 
     // 编译闭包调用 - 处理可能是闭包对象或普通函数指针的情况
-    // funcReg: 存放函数指针或闭包对象的寄存器
+    // funcReg: 存放函数指针或闭包对象的寄存器 (可能是 NaN-boxed)
     // 调用约定: A0-A5=参数, S0=闭包指针
     compileClosureCall(funcReg, args) {
         const vm = this.vm;
@@ -456,8 +491,10 @@ export const FunctionCompiler = {
         // 编译参数到 A0-A5
         this.compileCallArguments(args);
 
-        // 恢复函数指针/闭包对象到 S0 (callee-saved)
-        vm.pop(VReg.S0);
+        // 恢复函数指针/闭包对象并 unbox
+        vm.pop(VReg.A0); // 可能是 NaN-boxed
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // S0 = 原始堆指针
 
         // 检查是否是 async 闭包（magic == 0xA51C）
         const notAsyncLabel = this.ctx.newLabel("not_async");
@@ -539,8 +576,12 @@ export const FunctionCompiler = {
         if (argCount > 3) vm.pop(VReg.V7); // arg3
         // argCount > 4 暂不处理
 
-        vm.pop(VReg.S0); // 函数指针/闭包
+        vm.pop(VReg.A0); // 函数指针/闭包 (可能是 NaN-boxed)
         vm.pop(VReg.S3); // this 对象 (NaN-boxed)
+        vm.push(VReg.S3); // 暂存 this
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET); // S0 = 原始函数指针/闭包
+        vm.pop(VReg.S3); // 恢复 this (NaN-boxed)
 
         // 解包 this 到 S2
         vm.mov(VReg.A0, VReg.S3);
@@ -1108,6 +1149,16 @@ export const FunctionCompiler = {
                                     this.vm.call("_print_str_no_nl");
                                     this.vm.call("_print_space");
                                 }
+                            } else if (typeof arg.value === "bigint" || arg.bigint) {
+                                // BigInt 字面量 - 使用 _print_bigint
+                                this.compileExpression(arg);
+                                this.vm.mov(VReg.A0, VReg.RET);
+                                if (isLast) {
+                                    this.vm.call("_print_bigint");
+                                } else {
+                                    this.vm.call("_print_bigint_no_nl");
+                                    this.vm.call("_print_space");
+                                }
                             } else if (arg.value === null) {
                                 // null
                                 this.vm.lea(VReg.A0, "_str_null");
@@ -1239,6 +1290,14 @@ export const FunctionCompiler = {
                                     this.vm.call("_print_bool");
                                 } else {
                                     this.vm.call("_print_bool_no_nl");
+                                    this.vm.call("_print_space");
+                                }
+                            } else if (argType === Type.BIGINT) {
+                                // BigInt 类型使用 _print_bigint
+                                if (isLast) {
+                                    this.vm.call("_print_bigint");
+                                } else {
+                                    this.vm.call("_print_bigint_no_nl");
                                     this.vm.call("_print_space");
                                 }
                             } else if (argType === Type.STRING) {
@@ -1631,6 +1690,7 @@ export const FunctionCompiler = {
 
             // 根据对象类型推断，调用正确的方法
             const objType = this.inferObjectType(obj);
+            console.log("[DEBUG] objType =", objType, "prop.name =", prop.name);
 
             // Generator 方法
             if (objType === "Generator" || objType === "unknown") {
@@ -1702,6 +1762,19 @@ export const FunctionCompiler = {
                 }
             }
 
+            // BigInt 方法
+            if (objType === "BigInt") {
+                const bigintMethods = ["toString"];
+                if (bigintMethods.includes(prop.name)) {
+                    console.log("[DEBUG] Calling compileBigIntMethod for", prop.name);
+                    if (this.compileBigIntMethod(obj, prop.name, expr.arguments)) {
+                        console.log("[DEBUG] compileBigIntMethod returned true");
+                        return;
+                    }
+                    console.log("[DEBUG] compileBigIntMethod returned false");
+                }
+            }
+
             // RegExp 方法
             if (objType === "RegExp") {
                 const regexpMethods = ["test", "exec"];
@@ -1712,33 +1785,22 @@ export const FunctionCompiler = {
                 }
             }
 
-            // 如果无法确定类型，尝试所有可能的方法（旧的回退逻辑）
+            // 如果无法确定类型，尝试一些比较安全的方法（不容易与用户方法冲突）
+            // 对于 "add", "get", "set", "has", "delete" 等常见名称，太容易与用户方法冲突，不进行回退
             if (objType === "unknown") {
-                // String 方法 - 对于未知类型，也尝试字符串方法
-                const stringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "slice", "substring", "indexOf", "lastIndexOf", "includes", "startsWith", "endsWith", "concat", "split", "replace", "replaceAll", "repeat", "at", "match", "matchAll", "search"];
-                if (stringMethods.includes(prop.name)) {
+                // String 方法 - 这些方法名比较独特，不容易冲突
+                const safeStringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "substring", "lastIndexOf", "startsWith", "endsWith", "repeat", "matchAll", "search"];
+                if (safeStringMethods.includes(prop.name)) {
                     if (this.compileStringMethod(obj, prop.name, expr.arguments)) {
                         return;
                     }
                 }
 
-                // Map 方法
-                const mapMethods = ["set", "get"]; // 只有 Map 独有的方法
-                if (mapMethods.includes(prop.name)) {
-                    if (this.compileMapMethod(obj, prop.name, expr.arguments)) {
-                        return;
-                    }
-                }
+                // 注意：对于 "add", "get", "set", "has", "delete", "includes", "indexOf", "slice", "concat", "split", "replace" 等
+                // 这些方法名太常见，在多种类型上都有，不应该在 unknown 类型时回退
+                // 让它们走通用对象方法调用路径
 
-                // Set 方法
-                const setOnlyMethods = ["add"]; // 只有 Set 独有的方法
-                if (setOnlyMethods.includes(prop.name)) {
-                    if (this.compileSetMethod(obj, prop.name, expr.arguments)) {
-                        return;
-                    }
-                }
-
-                // Date 方法
+                // Date 方法 - 这些方法名相对独特
                 const dateMethods = ["getTime", "toString", "valueOf"];
                 if (dateMethods.includes(prop.name)) {
                     if (this.compileDateMethod(obj, prop.name, expr.arguments)) {

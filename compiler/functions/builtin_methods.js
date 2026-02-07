@@ -36,6 +36,9 @@ export const BuiltinMethodCompiler = {
             if (args.length > 0) {
                 this.compileExpression(args[0]);
                 // 从 Number 对象中提取值并取绝对值
+                // 先 unbox 获取原始堆指针
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_js_unbox");
                 this.vm.load(VReg.V0, VReg.RET, 8);
                 this.vm.fmovToFloat(0, VReg.V0);
                 this.vm.fabs(0, 0);
@@ -76,11 +79,27 @@ export const BuiltinMethodCompiler = {
             // 逐个比较后续参数，保持相同 boxed 对象返回
             for (let i = 1; i < args.length; i++) {
                 this.compileExpression(args[i]); // RET = current
-                this.vm.pop(VReg.V1); // V1 = best
+                this.vm.pop(VReg.V1); // V1 = best (NaN-boxed)
 
                 // 比较两个 Number 对象的值
-                this.vm.load(VReg.V2, VReg.V1, 8); // best.value
+                // 先 unbox best
+                this.vm.push(VReg.RET); // 保存 current
+                this.vm.push(VReg.V1); // 保存 best
+                this.vm.mov(VReg.A0, VReg.V1);
+                this.vm.call("_js_unbox");
+                this.vm.load(VReg.V2, VReg.RET, 8); // best.value
+                // 再 unbox current
+                this.vm.pop(VReg.V1); // 恢复 best (NaN-boxed)
+                this.vm.pop(VReg.A0); // 恢复 current (NaN-boxed) 到 A0
+                this.vm.push(VReg.V1); // 保存 best
+                this.vm.push(VReg.A0); // 保存 current
+                this.vm.push(VReg.V2); // 保存 best.value
+                this.vm.call("_js_unbox");
                 this.vm.load(VReg.V3, VReg.RET, 8); // cur.value
+                this.vm.pop(VReg.V2); // 恢复 best.value
+                this.vm.pop(VReg.RET); // 恢复 current (NaN-boxed)
+                this.vm.pop(VReg.V1); // 恢复 best (NaN-boxed)
+
                 this.vm.fmovToFloat(0, VReg.V2);
                 this.vm.fmovToFloat(1, VReg.V3);
                 this.vm.fcmp(0, 1);
@@ -304,6 +323,9 @@ export const BuiltinMethodCompiler = {
                 this.compileExpression(args[0]);
                 // RET 可能是一个 Number 对象指针，需要提取原始整数值
                 // Number 对象布局: [type:8][value:8]
+                // 先 unbox 获取原始堆指针
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_js_unbox");
                 // 从 offset 8 读取 double 值 (作为整数位模式)
                 this.vm.load(VReg.V1, VReg.RET, 8);
                 // 使用 fmovToFloat 将整数寄存器的位模式移到浮点寄存器 D0
@@ -402,6 +424,9 @@ export const BuiltinMethodCompiler = {
                 this.vm.call("_array_pop");
                 break;
             case "length":
+                // 先 unbox 获取原始堆指针
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_js_unbox");
                 this.vm.load(VReg.RET, VReg.RET, 8);
                 break;
             case "at":
@@ -1442,7 +1467,8 @@ export const BuiltinMethodCompiler = {
 
             case "size":
                 // map.size - 直接从头部读取 length 字段 (统一头部结构 +8)
-                this.vm.pop(VReg.RET);
+                this.vm.pop(VReg.A0);
+                this.vm.call("_js_unbox");
                 this.vm.load(VReg.RET, VReg.RET, 8);
                 return true;
 
@@ -2317,6 +2343,30 @@ export const BuiltinMethodCompiler = {
                 this.vm.pop(VReg.RET);
                 this.vm.lea(VReg.RET, "_js_undefined");
                 break;
+        }
+    },
+
+    // 编译 BigInt 实例方法调用
+    // bigint.toString(radix?)
+    compileBigIntMethod(obj, method, args) {
+        // 先编译 BigInt 值
+        this.compileExpression(obj);
+
+        switch (method) {
+            case "toString":
+                // bigint.toString(radix?) -> string
+                // 目前只支持 radix = 10 或 16
+                let radix = 10;
+                if (args.length > 0 && args[0].type === "Literal" && typeof args[0].value === "number") {
+                    radix = args[0].value;
+                }
+                this.vm.mov(VReg.A0, VReg.RET); // BigInt 值
+                this.vm.movImm(VReg.A1, radix); // radix
+                this.vm.call("_bigint_toString");
+                return true;
+
+            default:
+                return false;
         }
     },
 };

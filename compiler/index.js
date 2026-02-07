@@ -343,6 +343,9 @@ export class Compiler {
         // 处理导入声明
         this.processModuleImports(ast, modulePath);
 
+        // 收集模块级常量（用于常量折叠）
+        this.collectModuleConstants(ast);
+
         // 预注册导出变量到 importedSymbols，这样模块内的函数可以访问它们
         this.registerExportVariables(ast, modulePrefix, moduleExports);
 
@@ -799,6 +802,58 @@ export class Compiler {
                     // 存储到全局位置
                     vm.lea(VReg.V0, globalLabel);
                     vm.store(VReg.V0, 0, VReg.V1);
+                }
+            }
+        }
+    }
+
+    /**
+     * 收集模块级常量（用于常量折叠）
+     * 只收集初始值为字面量的 const 声明
+     */
+    collectModuleConstants(ast) {
+        for (const stmt of ast.body) {
+            // 直接的 const 声明
+            if (stmt.type === "VariableDeclaration" && stmt.kind === "const") {
+                this._collectConstDeclarations(stmt.declarations);
+            }
+            // export const 声明
+            if (stmt.type === "ExportDeclaration" && stmt.declaration) {
+                if (stmt.declaration.type === "VariableDeclaration" && stmt.declaration.kind === "const") {
+                    this._collectConstDeclarations(stmt.declaration.declarations);
+                }
+            }
+        }
+    }
+
+    /**
+     * 从声明列表中收集常量
+     */
+    _collectConstDeclarations(declarations) {
+        for (const decl of declarations) {
+            if (decl.id && decl.id.type === "Identifier" && decl.init) {
+                const name = decl.id.name;
+                const init = decl.init;
+
+                // 只收集字面量初始值
+                if (init.type === "Literal" || init.type === "NumericLiteral") {
+                    const value = init.value;
+                    let type;
+                    if (typeof value === "number") {
+                        type = "number";
+                    } else if (typeof value === "string") {
+                        type = "string";
+                    } else if (typeof value === "boolean") {
+                        type = "boolean";
+                    } else {
+                        continue; // 不支持的类型
+                    }
+                    this.ctx.registerModuleConstant(name, value, type);
+                }
+                // 支持负数: -42
+                else if (init.type === "UnaryExpression" && init.operator === "-" && (init.argument.type === "Literal" || init.argument.type === "NumericLiteral")) {
+                    const value = -init.argument.value;
+                    this.ctx.registerModuleConstant(name, value, "number");
                 }
             }
         }
@@ -1341,6 +1396,9 @@ export class Compiler {
 
         // 先处理模块导入
         this.processMainModuleImports(ast);
+
+        // 收集模块级常量（用于常量折叠）
+        this.collectModuleConstants(ast);
 
         this.collectFunctions(ast);
 

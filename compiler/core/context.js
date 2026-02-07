@@ -42,6 +42,10 @@ export class CompileContext {
 
         // 异常处理
         this.exceptionLabel = null; // catch 目标标签
+
+        // 模块级常量支持（常量折叠）
+        // 变量名 -> { value: 字面量值, type: 'number'|'string'|'boolean' }
+        this.moduleConstants = {};
     }
 
     // 兼容旧接口
@@ -202,7 +206,26 @@ export class CompileContext {
         for (let key in this.classes) {
             newCtx.classes[key] = this.classes[key];
         }
+        // 复制模块常量
+        for (let key in this.moduleConstants) {
+            newCtx.moduleConstants[key] = this.moduleConstants[key];
+        }
         return newCtx;
+    }
+
+    // 注册模块级常量（用于常量折叠）
+    registerModuleConstant(name, value, type) {
+        this.moduleConstants[name] = { value, type };
+    }
+
+    // 获取模块级常量
+    getModuleConstant(name) {
+        return this.moduleConstants[name];
+    }
+
+    // 检查是否是模块级常量
+    hasModuleConstant(name) {
+        return this.moduleConstants[name] !== undefined;
     }
 }
 

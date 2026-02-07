@@ -74,7 +74,8 @@ export const CollectionMethodCompiler = {
 
             case "size":
                 // map.size - 直接从头部读取 length 字段 (统一头部结构 +8)
-                this.vm.pop(VReg.RET);
+                this.vm.pop(VReg.A0);
+                this.vm.call("_js_unbox");
                 this.vm.load(VReg.RET, VReg.RET, 8);
                 // box 整数为 Number 对象
                 this.boxIntAsNumber(VReg.RET);
@@ -168,7 +169,8 @@ export const CollectionMethodCompiler = {
 
             case "size":
                 // set.size - 直接从头部读取 length 字段 (统一头部结构 +8)
-                this.vm.pop(VReg.RET);
+                this.vm.pop(VReg.A0);
+                this.vm.call("_js_unbox");
                 this.vm.load(VReg.RET, VReg.RET, 8);
                 return true;
 

@@ -4,21 +4,22 @@
 import { VReg } from "../../../vm/registers.js";
 
 // 对象内存布局:
-// +0:  type (8 bytes) = TYPE_OBJECT (2)
+// +0:  type (8 bytes) = this.TYPE_OBJECT (2)
 // +8:  属性数量 count (8 bytes)
 // +16: __proto__ 指针 (8 bytes)
 // +24: 属性区开始
 //      每个属性: key指针(8) + value(8) = 16 bytes
 
-const TYPE_OBJECT = 2;
-const OBJECT_HEADER_SIZE = 24; // type + count + __proto__
-const PROP_SIZE = 16; // key + value
-// 4096 bytes total per object -> (4096 - 24) / 16 ≈ 254 usable slots
-const MAX_PROP_COUNT = 254;
-
 export class ObjectGenerator {
     constructor(vm) {
         this.vm = vm;
+
+        // 常量 (移到实例属性以避免自举编译问题)
+        this.TYPE_OBJECT = 2;
+        this.OBJECT_HEADER_SIZE = 24; // type + count + __proto__
+        this.PROP_SIZE = 16; // key + value
+        // 4096 bytes total per object -> (4096 - 24) / 16 ≈ 254 usable slots
+        this.MAX_PROP_COUNT = 254;
     }
 
     generate() {
@@ -62,7 +63,7 @@ export class ObjectGenerator {
         vm.mov(VReg.S0, VReg.RET);
 
         // 设置类型
-        vm.movImm(VReg.V0, TYPE_OBJECT);
+        vm.movImm(VReg.V0, this.TYPE_OBJECT);
         vm.store(VReg.S0, 0, VReg.V0);
 
         // 初始化属性数量为 0
@@ -115,7 +116,7 @@ export class ObjectGenerator {
 
         // 加载属性数量并进行上限裁剪，避免越界读取未初始化槽位
         vm.load(VReg.S2, VReg.S0, 8); // prop count
-        vm.movImm(VReg.V0, MAX_PROP_COUNT);
+        vm.movImm(VReg.V0, this.MAX_PROP_COUNT);
         vm.cmp(VReg.S2, VReg.V0);
         vm.jle("_object_get_count_ok");
         vm.mov(VReg.S2, VReg.V0);
@@ -131,9 +132,9 @@ export class ObjectGenerator {
         vm.cmp(VReg.S3, VReg.S2);
         vm.jge(checkProtoLabel);
 
-        // 计算属性偏移: OBJECT_HEADER_SIZE + index * PROP_SIZE
+        // 计算属性偏移: this.OBJECT_HEADER_SIZE + index * this.PROP_SIZE
         vm.shl(VReg.V0, VReg.S3, 4); // index * 16
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V0, VReg.S0, VReg.V0);
 
         // 加载 key；若 key 指针太小（疑似未初始化），跳过该槽位
@@ -155,7 +156,7 @@ export class ObjectGenerator {
         vm.label(foundLabel);
         // 加载 value: offset + 8
         vm.shl(VReg.V0, VReg.S3, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE + 8);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE + 8);
         vm.add(VReg.V0, VReg.S0, VReg.V0);
         vm.load(VReg.RET, VReg.V0, 0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
@@ -255,7 +256,7 @@ export class ObjectGenerator {
 
         // 先查找已有属性；对 prop count 做上限裁剪，避免越界写未初始化槽位
         vm.load(VReg.S3, VReg.S0, 8); // prop count
-        vm.movImm(VReg.V0, MAX_PROP_COUNT);
+        vm.movImm(VReg.V0, this.MAX_PROP_COUNT);
         vm.cmp(VReg.S3, VReg.V0);
         vm.jle("_object_set_count_ok");
         vm.mov(VReg.S3, VReg.V0);
@@ -268,7 +269,7 @@ export class ObjectGenerator {
 
         // 计算属性偏移
         vm.shl(VReg.V0, VReg.S4, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.S5, VReg.S0, VReg.V0); // S5 = 属性地址
 
         // 加载现有 key 并比较；若 key 太小（疑似未初始化），跳过该槽位
@@ -296,7 +297,7 @@ export class ObjectGenerator {
         vm.label(notFoundLabel);
         // 新属性偏移
         vm.shl(VReg.V0, VReg.S3, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V0, VReg.S0, VReg.V0);
 
         // 存储 key
@@ -338,7 +339,7 @@ export class ObjectGenerator {
         vm.jge("_object_has_false");
 
         vm.shl(VReg.V0, VReg.S3, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V0, VReg.S0, VReg.V0);
 
         vm.load(VReg.A0, VReg.V0, 0);
@@ -387,7 +388,7 @@ export class ObjectGenerator {
         vm.jge("_prop_in_check_proto");
 
         vm.shl(VReg.V0, VReg.S3, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V0, VReg.S0, VReg.V0);
 
         vm.load(VReg.A0, VReg.V0, 0);
@@ -439,7 +440,7 @@ export class ObjectGenerator {
         // 获取属性数量
         vm.load(VReg.S1, VReg.S0, 8); // count
         // 上限裁剪，避免越界访问
-        vm.movImm(VReg.V0, MAX_PROP_COUNT);
+        vm.movImm(VReg.V0, this.MAX_PROP_COUNT);
         vm.cmp(VReg.S1, VReg.V0);
         vm.jle("_object_keys_count_ok");
         vm.mov(VReg.S1, VReg.V0);
@@ -459,7 +460,7 @@ export class ObjectGenerator {
 
         // 获取 key
         vm.shl(VReg.V0, VReg.S3, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V0, VReg.S0, VReg.V0);
         vm.load(VReg.S4, VReg.V0, 0); // key -> S4 保存
         // 如果 key 看起来无效（过小），使用 0 占位并继续
@@ -504,7 +505,7 @@ export class ObjectGenerator {
         vm.jeq("_object_values_return_empty");
 
         vm.load(VReg.S1, VReg.S0, 8); // count
-        vm.movImm(VReg.V0, MAX_PROP_COUNT);
+        vm.movImm(VReg.V0, this.MAX_PROP_COUNT);
         vm.cmp(VReg.S1, VReg.V0);
         vm.jle("_object_values_count_ok");
         vm.mov(VReg.S1, VReg.V0);
@@ -521,7 +522,7 @@ export class ObjectGenerator {
         vm.jge("_object_values_done");
 
         vm.shl(VReg.V0, VReg.S3, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE + 8); // value offset
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE + 8); // value offset
         vm.add(VReg.V0, VReg.S0, VReg.V0);
         vm.load(VReg.S4, VReg.V0, 0); // value -> S4
 
@@ -560,7 +561,7 @@ export class ObjectGenerator {
         vm.jeq("_object_entries_return_empty");
 
         vm.load(VReg.S1, VReg.S0, 8); // count
-        vm.movImm(VReg.V0, MAX_PROP_COUNT);
+        vm.movImm(VReg.V0, this.MAX_PROP_COUNT);
         vm.cmp(VReg.S1, VReg.V0);
         vm.jle("_object_entries_count_ok");
         vm.mov(VReg.S1, VReg.V0);
@@ -577,9 +578,9 @@ export class ObjectGenerator {
         vm.cmp(VReg.S3, VReg.S1);
         vm.jge("_object_entries_done");
 
-        // propAddr = obj + OBJECT_HEADER_SIZE + index*16
+        // propAddr = obj + this.OBJECT_HEADER_SIZE + index*16
         vm.shl(VReg.V0, VReg.S3, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V0, VReg.S0, VReg.V0);
 
         // key/value；key 过小视为无效
@@ -656,7 +657,7 @@ export class ObjectGenerator {
 
         // 获取 source 的 key 和 value
         vm.shl(VReg.V0, VReg.S3, 4);
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V0, VReg.S1, VReg.V0);
 
         vm.load(VReg.V1, VReg.V0, 0); // key
@@ -913,7 +914,7 @@ export class ObjectGenerator {
 
         // 加载属性数量并进行上限裁剪，避免越界读取未初始化槽位
         vm.load(VReg.S2, VReg.S0, 8); // prop count
-        vm.movImm(VReg.V0, MAX_PROP_COUNT);
+        vm.movImm(VReg.V0, this.MAX_PROP_COUNT);
         vm.cmp(VReg.S2, VReg.V0);
         vm.jle("_object_get_wo_count_ok");
         vm.mov(VReg.S2, VReg.V0);
@@ -924,9 +925,9 @@ export class ObjectGenerator {
         vm.cmp(VReg.S3, VReg.S2);
         vm.jge("_object_get_wo_check_proto");
 
-        // 计算属性偏移: OBJECT_HEADER_SIZE + index * PROP_SIZE
+        // 计算属性偏移: this.OBJECT_HEADER_SIZE + index * this.PROP_SIZE
         vm.shl(VReg.V0, VReg.S3, 4); // index * 16
-        vm.addImm(VReg.V0, VReg.V0, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V1, VReg.S0, VReg.V0); // V1 = property address
 
         // 加载 key；若 key 指针太小（疑似未初始化），跳过该槽位
@@ -948,7 +949,7 @@ export class ObjectGenerator {
         vm.label("_object_get_wo_found");
         // 计算偏移量
         vm.shl(VReg.A2, VReg.S3, 4);
-        vm.addImm(VReg.A2, VReg.A2, OBJECT_HEADER_SIZE);
+        vm.addImm(VReg.A2, VReg.A2, this.OBJECT_HEADER_SIZE);
         // 加载 value
         vm.add(VReg.V1, VReg.S0, VReg.A2);
         vm.load(VReg.RET, VReg.V1, 8);

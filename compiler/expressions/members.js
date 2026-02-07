@@ -60,6 +60,28 @@ export const MemberCompiler = {
             return;
         }
 
+        // 检查是否是模块级常量（常量折叠）
+        if (this.ctx.hasModuleConstant && this.ctx.hasModuleConstant(name)) {
+            const constant = this.ctx.getModuleConstant(name);
+            if (constant.type === "number") {
+                // 数字常量 - 使用 compileNumericLiteral 来正确 box 数字
+                this.compileNumericLiteral(constant.value);
+            } else if (constant.type === "boolean") {
+                // 布尔常量
+                if (constant.value) {
+                    this.vm.lea(VReg.RET, "_js_true");
+                    this.vm.load(VReg.RET, VReg.RET, 0);
+                } else {
+                    this.vm.lea(VReg.RET, "_js_false");
+                    this.vm.load(VReg.RET, VReg.RET, 0);
+                }
+            } else if (constant.type === "string") {
+                // 字符串常量 - 创建字符串
+                this.compileStringLiteral({ value: constant.value });
+            }
+            return;
+        }
+
         // 检查是否是导入的符号
         if (this.isImportedSymbol && this.isImportedSymbol(name)) {
             const importInfo = this.getImportedSymbol(name);
@@ -372,6 +394,9 @@ export const MemberCompiler = {
                 const objType = this.inferObjectType ? this.inferObjectType(expr.object) : "unknown";
                 if (objType === "Map" || objType === "Set") {
                     this.compileExpression(expr.object);
+                    // 先 unbox 获取原始堆指针
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_js_unbox");
                     // Map/Set 内存布局: [type:8][size:8][...]
                     this.vm.load(VReg.RET, VReg.RET, 8);
                     this.boxIntAsNumber(VReg.RET);
@@ -398,5 +423,17 @@ export const MemberCompiler = {
                 this.vm.call("_object_get_prop");
             }
         }
+    },
+
+    // 将 JavaScript double 转换为 16 进制字符串（用于常量折叠）
+    _doubleToHex(value) {
+        const buffer = new ArrayBuffer(8);
+        const view = new DataView(buffer);
+        view.setFloat64(0, value, false); // big-endian
+        let hex = "";
+        for (let i = 0; i < 8; i++) {
+            hex += view.getUint8(i).toString(16).padStart(2, "0");
+        }
+        return hex;
     },
 };

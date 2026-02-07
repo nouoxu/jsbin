@@ -96,6 +96,28 @@ export const DataStructureCompiler = {
             const prop = props[i];
             if (!prop || !prop.key) continue;
 
+            // 计算属性名：{ [expr]: value } - 运行时计算 key
+            if (prop.computed) {
+                // 先计算 key 表达式
+                this.compileExpression(prop.key);
+                const keyTempName = `__prop_key_${this.nextLabelId()}`;
+                const keyOffset = this.ctx.allocLocal(keyTempName);
+                this.vm.store(VReg.FP, keyOffset, VReg.RET);
+
+                // 再计算 value 表达式
+                if (!prop.value) continue;
+                this.compileExpression(prop.value);
+                this.vm.mov(VReg.A2, VReg.RET);
+
+                // 加载 key（需要转为字符串指针）
+                this.vm.load(VReg.A1, VReg.FP, keyOffset);
+                // 加载 obj
+                this.vm.load(VReg.A0, VReg.FP, objOffset);
+                this.vm.call("_object_set");
+                continue;
+            }
+
+            // 静态属性名
             let keyName;
             if (prop.key.type === "Identifier") {
                 keyName = prop.key.name;

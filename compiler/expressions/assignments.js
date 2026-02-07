@@ -126,19 +126,48 @@ export const AssignmentCompiler = {
 
             switch (op) {
                 case "+=":
-                    this.vm.add(VReg.RET, VReg.V1, VReg.RET);
-                    break;
                 case "-=":
-                    this.vm.sub(VReg.RET, VReg.V1, VReg.RET);
-                    break;
                 case "*=":
-                    this.vm.mul(VReg.RET, VReg.V1, VReg.RET);
-                    break;
                 case "/=":
-                    this.vm.div(VReg.RET, VReg.V1, VReg.RET);
-                    break;
                 case "%=":
-                    this.vm.mod(VReg.RET, VReg.V1, VReg.RET);
+                    // 算术复合赋值：需要处理 NaN-boxed Number 对象
+                    // V1 = 左操作数（当前值 NaN-boxed），RET = 右操作数（NaN-boxed）
+                    // 使用 callee-saved 寄存器保存中间值（因为函数调用会破坏 V0-V7）
+
+                    // 先解包右操作数并保存到 S0
+                    this.vm.push(VReg.V1); // 保存左操作数到栈
+                    this.unboxNumber(VReg.RET); // RET = 右操作数 float64 bits
+                    this.vm.mov(VReg.S0, VReg.RET); // S0 = 右操作数 float bits (callee-saved)
+
+                    // 恢复并解包左操作数
+                    this.vm.pop(VReg.RET); // RET = 左操作数（NaN-boxed）
+                    this.unboxNumber(VReg.RET); // RET = 左操作数 float64 bits
+                    // S0 仍然保持不变（callee-saved）
+
+                    // 执行浮点运算
+                    this.vm.fmovToFloat(0, VReg.RET); // FP0 = left
+                    this.vm.fmovToFloat(1, VReg.S0); // FP1 = right
+                    if (op === "+=") {
+                        this.vm.fadd(0, 0, 1);
+                    } else if (op === "-=") {
+                        this.vm.fsub(0, 0, 1);
+                    } else if (op === "*=") {
+                        this.vm.fmul(0, 0, 1);
+                    } else if (op === "/=") {
+                        this.vm.fdiv(0, 0, 1);
+                    } else if (op === "%=") {
+                        // 取模需要特殊处理，使用浮点除法和截断
+                        this.vm.fdiv(2, 0, 1); // FP2 = a / b
+                        this.vm.fmovToInt(VReg.V2, 2);
+                        this.vm.fcvtzs(VReg.V2, 2); // V2 = trunc(a/b)
+                        this.vm.scvtf(2, VReg.V2); // FP2 = trunc(a/b) as float
+                        this.vm.fmul(2, 2, 1); // FP2 = trunc(a/b) * b
+                        this.vm.fsub(0, 0, 2); // FP0 = a - trunc(a/b) * b
+                    }
+
+                    // 结果打包为 Number 对象
+                    this.vm.fmovToInt(VReg.RET, 0); // RET = result float64 bits
+                    this.boxNumber(VReg.RET);
                     break;
                 case "&=":
                     this.vm.and(VReg.RET, VReg.V1, VReg.RET);
@@ -522,14 +551,77 @@ export const AssignmentCompiler = {
                     }
                 }
             }
+        } else if (expr.argument.type === "MemberExpression") {
+            // 处理成员表达式的自增/自减，如 this.count++ 或 obj.prop--
+            const member = expr.argument;
+
+            // 先读取当前值
+            this.compileExpression(member);
+
+            // 保存对象引用到临时槽位（用于后续写回）
+            const objTempName = `__update_obj_${this.nextLabelId()}`;
+            const objOffset = this.ctx.allocLocal(objTempName);
+            const valTempName = `__update_val_${this.nextLabelId()}`;
+            const valOffset = this.ctx.allocLocal(valTempName);
+
+            // 保存原始值
+            this.vm.store(VReg.FP, valOffset, VReg.RET);
+
+            // 重新计算对象引用并保存
+            this.compileExpression(member.object);
+            this.vm.store(VReg.FP, objOffset, VReg.RET);
+
+            // 加载原始值，执行自增/自减
+            this.vm.load(VReg.RET, VReg.FP, valOffset);
+
+            if (expr.prefix) {
+                // 前缀 ++x：先增，返回新值
+                this.compileFloatIncDec(expr.operator === "++");
+                this.vm.mov(VReg.S0, VReg.RET); // 保存新值（用于写回和返回）
+            } else {
+                // 后缀 x++：先返回原值，再增
+                this.vm.mov(VReg.S0, VReg.RET); // 保存原值作为返回值
+                this.compileFloatIncDec(expr.operator === "++");
+                // RET 现在是新值，需要写回
+                this.vm.mov(VReg.S1, VReg.RET); // S1 = 新值
+            }
+
+            // 写回新值到对象属性
+            // _object_set(obj, key, value)
+            this.vm.load(VReg.A0, VReg.FP, objOffset); // obj
+            if (member.computed) {
+                // obj[key]
+                this.vm.push(VReg.S0);
+                this.vm.push(VReg.S1);
+                this.compileExpression(member.property);
+                this.vm.mov(VReg.A1, VReg.RET);
+                this.vm.pop(VReg.S1);
+                this.vm.pop(VReg.S0);
+            } else {
+                // obj.prop
+                const propName = member.property.name;
+                this.vm.lea(VReg.A1, this.addStringConstant(propName));
+            }
+            if (expr.prefix) {
+                this.vm.mov(VReg.A2, VReg.S0); // 前缀：新值
+            } else {
+                this.vm.mov(VReg.A2, VReg.S1); // 后缀：新值
+            }
+            this.vm.call("_object_set");
+
+            // 返回正确的值
+            this.vm.mov(VReg.RET, VReg.S0);
         }
     },
 
     // 编译浮点自增/自减 (Number 对象版本)
-    // RET 包含当前 Number 对象指针，结果是新的 Number 对象指针存回 RET
+    // RET 包含当前 Number 对象指针（可能是 NaN-boxed），结果是新的 Number 对象指针存回 RET
     compileFloatIncDec(isIncrement) {
         // 使用 VM 的统一浮点接口
-        // 1. 从 Number 对象加载 float64 位
+        // 1. 先 unbox 获取原始堆指针
+        this.vm.mov(VReg.A0, VReg.RET);
+        this.vm.call("_js_unbox");
+        // 2. 从 Number 对象加载 float64 位
         this.vm.load(VReg.V0, VReg.RET, 8); // V0 = float64 位
         this.vm.fmovToFloat(0, VReg.V0); // FP0 = float
 

@@ -1,0 +1,773 @@
+[TOP] cli.js starting
+[TOP] After fs/path imports
+[TOP] After all imports
+[M1] start
+[M2] after slice
+[M3] after parseArgs
+[M4] opts.input = cli.js
+[M5] before input check
+[M6] after input check
+[DEBUG] Before path.resolve
+[DEBUG] After path.resolve, before log
+[DEBUG] inputFile = /Users/nouo/github/jsbin/cli.js
+[DEBUG] After log 1
+[A1]
+[A2]
+[A2.1] opts.target = null
+[A2.2] opts.os = null
+[A2.3] opts.arch = null
+[A3d] using full detect
+[A4] target = macos-arm64
+[A5]
+[DEBUG] Before template inputFile
+[DEBUG] inputFile = /Users/nouo/github/jsbin/cli.js
+[DEBUG] 1
+[DEBUG] Before template, output = /Users/nouo/github/jsbin/cli-macos-arm64
+[DEBUG] 2
+[DEBUG] target = macos-arm64
+[DEBUG] 3
+[DEBUG] outputTypeDesc = executable
+[DEBUG] 4
+Compiling...
+[DEBUG] 5
+  input: /Users/nouo/github/jsbin/cli.js
+[DEBUG] 6
+  output: /Users/nouo/github/jsbin/cli-macos-arm64
+[DEBUG] 7
+  target: macos-arm64
+[DEBUG] 8
+  type: executable
+[DEBUG] 9
+[DEBUG] 9.1] Creating compiler
+[COMPILER] Constructor called, target: macos-arm64
+[COMPILER] this.target = macos-arm64
+[COMPILER] targetInfo = { arch: 'arm64', os: 'macos', ext: '' }
+[COMPILER] Getting arch/os
+[COMPILER] arch = arm64 , os = macos
+[COMPILER] Calling _initAssembler
+[COMPILER] Assembler initialized
+[COMPILER] Creating VirtualMachine
+[COMPILER] Passing to VM: arch = arm64 , os = macos
+[VM] Constructor: arch = arm64 , os = macos
+[VM] Step 1: storing arch
+[VM] Step 2: storing os
+[VM] Step 3: storing asm
+[VM] Step 4: calling createBackendHelper
+[createBackendHelper] arch = arm64 , os = macos
+[createBackendHelper] typeof arch = string
+[createBackendHelper] isArm = true
+[createBackendHelper] Creating ARM64Backend
+[VM] Step 5: backend created
+[VM] Constructor done
+[COMPILER] VirtualMachine created
+[COMPILER] Creating CompileContext
+[COMPILER] CompileContext created
+[COMPILER] Creating LibraryManager
+[COMPILER] LibraryManager created
+[COMPILER] Resetting ModuleManager
+[COMPILER] ModuleManager reset
+[DEBUG] 9.2] Compiler created
+[DEBUG] 9.3] Source path set
+[DEBUG] 9.4] Calling compileFile
+[DEBUG] inputFile = /Users/nouo/github/jsbin/cli.js
+[DEBUG] output = /Users/nouo/github/jsbin/cli-macos-arm64
+[compileFile] Starting, inputFile = /Users/nouo/github/jsbin/cli.js
+[compileFile] Read source, length = 10266
+[compileFile] Setting currentModulePath
+[compileFile] currentModulePath = /Users/nouo/github/jsbin/cli.js
+[compileFile] Adding search path
+[compileFile] Search path added
+[compileFile] outputFileName set
+[compileFile] Checking sourceMap option
+[compileFile] Calling compile
+[compile] Starting
+[parse] Creating Lexer
+[parse] Source length: 10266 First 100 chars: // JSBin 命令行编译工具
+console.log("[TOP] cli.js starting");
+
+import * as fs from "fs";
+import * as path f
+[parse] Lexer created
+[parse] Creating Parser
+[parse] Parser created
+[parse] Parsing program
+[parse] Parse complete
+[compile] Parse done
+[compile] Checking GC option
+[compile] Generating runtime
+[AllocGen] start generateHeapInit
+[generateHeapInit] step 1: before label
+[generateHeapInit] step 2: before prologue
+[generateHeapInit] step 3: after prologue
+[AllocGen] start generateGetSizeClass
+[AllocGen] start generateGetClassSize
+[AllocGen] start generateBumpAlloc
+[AllocGen] start generateHeapGrow
+[AllocGen] start generateAlloc
+[AllocGen] start generateFree
+[AllocGen] start generateMemcpy
+[AllocGen] start generateMemcmp
+[AllocGen] done
+[compile] Runtime generated
+[compile] Compiling program
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/lexer/token.js initLabel: _mod_token_4_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/lexer/index.js initLabel: _mod_index_3_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/parser/ast.js initLabel: _mod_ast_6_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/parser/precedence.js initLabel: _mod_precedence_7_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/parser/statements.js initLabel: _mod_statements_8_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/parser/expressions.js initLabel: _mod_expressions_9_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/parser/classes.js initLabel: _mod_classes_10_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/parser/modules.js initLabel: _mod_modules_11_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/parser/index.js initLabel: _mod_index_5_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/analysis/closure.js initLabel: _mod_closure_12_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/lang/index.js initLabel: _mod_index_2_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/vm/registers.js initLabel: _mod_registers_14_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/vm/instructions.js initLabel: _mod_instructions_15_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/backend/base.js initLabel: _mod_base_17_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/backend/arm64.js initLabel: _mod_arm64_16_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/backend/x64.js initLabel: _mod_x64_18_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/vm/index.js initLabel: _mod_index_13_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/asm/arm64.js initLabel: _mod_arm64_19_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/asm/x64.js initLabel: _mod_x64_20_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/core/strings.js initLabel: _mod_strings_24_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/number/types.js initLabel: _mod_types_25_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/number/print.js initLabel: _mod_print_23_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/number/integers.js initLabel: _mod_integers_26_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/number/uintegers.js initLabel: _mod_uintegers_27_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/number/floats.js initLabel: _mod_floats_28_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/core/jsvalue.js initLabel: _mod_jsvalue_31_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/core/syscall.js initLabel: _mod_syscall_32_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/core/allocator.js initLabel: _mod_allocator_30_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/number/parse.js initLabel: _mod_parse_29_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/number/index.js initLabel: _mod_index_22_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/math/index.js initLabel: _mod_index_33_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/core/types.js initLabel: _mod_types_35_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/json/index.js initLabel: _mod_index_34_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/string/methods.js initLabel: _mod_methods_37_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/string/index.js initLabel: _mod_index_36_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/array/flat.js initLabel: _mod_flat_39_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/array/mutate.js initLabel: _mod_mutate_40_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/array/index.js initLabel: _mod_index_38_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/typedarray/index.js initLabel: _mod_index_41_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/object/index.js initLabel: _mod_index_42_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/map/index.js initLabel: _mod_index_43_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/set/index.js initLabel: _mod_index_44_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/date/index.js initLabel: _mod_index_45_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/regexp/engine.js initLabel: _mod_engine_47_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/regexp/index.js initLabel: _mod_index_46_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/symbol/index.js initLabel: _mod_index_48_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/iterator/index.js initLabel: _mod_index_49_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/generator/index.js initLabel: _mod_index_50_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/generator/async.js initLabel: _mod_async_51_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/private/index.js initLabel: _mod_index_52_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/error/index.js initLabel: _mod_index_53_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/core/print.js initLabel: _mod_print_54_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/core/subscript.js initLabel: _mod_subscript_55_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/operators/typeof.js initLabel: _mod_typeof_56_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/operators/equality.js initLabel: _mod_equality_57_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/async/coroutine.js initLabel: _mod_coroutine_59_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/async/promise.js initLabel: _mod_promise_60_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/async/index.js initLabel: _mod_index_58_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/core/coercion.js initLabel: _mod_coercion_61_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/fs/index.js initLabel: _mod_index_62_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/path/index.js initLabel: _mod_index_63_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/process/index.js initLabel: _mod_index_64_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/os/index.js initLabel: _mod_index_65_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/child_process/index.js initLabel: _mod_index_66_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/types/buffer/index.js initLabel: _mod_index_67_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/runtime/index.js initLabel: _mod_index_21_init
+[compileCallArguments] Warning: null argument at index 0 total args: 1
+[compileCallArguments] Warning: null argument at index 0 total args: 1
+[compileCallArguments] Warning: null argument at index 0 total args: 1
+[compileCallArguments] Warning: null argument at index 0 total args: 1
+[DEBUG EXPORT] types.js exporting function: sizeOf -> _user__mod_types_69_sizeOf
+[DEBUG EXPORT] types.js exporting function: isSigned -> _user__mod_types_69_isSigned
+[DEBUG EXPORT] types.js exporting function: isFloatType -> _user__mod_types_69_isFloatType
+[DEBUG EXPORT] types.js exporting function: isIntType -> _user__mod_types_69_isIntType
+[DEBUG EXPORT] types.js exporting function: isCompatible -> _user__mod_types_69_isCompatible
+[DEBUG EXPORT] types.js exporting function: inferType -> _user__mod_types_69_inferType
+[DEBUG EXPORT] types.js exporting function: typeName -> _user__mod_types_69_typeName
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/core/types.js initLabel: _mod_types_69_init
+[DEBUG IMPORT] From /Users/nouo/github/jsbin/compiler/core/context.js importing from /Users/nouo/github/jsbin/compiler/core/types.js
+[DEBUG IMPORT] moduleExports object: ModuleExports {
+  modulePath: '/Users/nouo/github/jsbin/compiler/core/types.js',
+  default: null,
+  named: Map(12) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker',
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName',
+    'TypeError' => '_class__mod_types_69_TypeError_19618'
+  },
+  functions: Map(7) {
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName'
+  },
+  variables: Map(3) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker'
+  },
+  classes: Map(2) {
+    'TypeChecker' => {
+      constructorLabel: '_class__mod_types_69_TypeChecker_19617',
+      classInfoLabel: '_class_info__mod_types_69_TypeChecker',
+      labelId: 19617
+    },
+    'TypeError' => {
+      constructorLabel: '_class__mod_types_69_TypeError_19618',
+      classInfoLabel: '_class_info__mod_types_69_TypeError',
+      labelId: 19618
+    }
+  },
+  initLabel: '_mod_types_69_init'
+}
+[DEBUG IMPORT] moduleExports.functions: Map(7) {
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName'
+}
+[DEBUG IMPORT] moduleExports.named: Map(12) {
+  'Type' => '_global__mod_types_69_Type',
+  'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+  'typeChecker' => '_global__mod_types_69_typeChecker',
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName',
+  'TypeError' => '_class__mod_types_69_TypeError_19618'
+}
+[DEBUG IMPORT] Same as this.currentModuleExports? false
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/core/context.js: Importing 'Type' as 'Type', label: _global__mod_types_69_Type
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/core/context.js initLabel: _mod_context_68_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/core/platform.js initLabel: _mod_platform_70_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/core/modules.js initLabel: _mod_modules_71_init
+[DEBUG IMPORT] From /Users/nouo/github/jsbin/compiler/functions/statements.js importing from /Users/nouo/github/jsbin/compiler/core/types.js
+[DEBUG IMPORT] moduleExports object: ModuleExports {
+  modulePath: '/Users/nouo/github/jsbin/compiler/core/types.js',
+  default: null,
+  named: Map(12) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker',
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName',
+    'TypeError' => '_class__mod_types_69_TypeError_19618'
+  },
+  functions: Map(7) {
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName'
+  },
+  variables: Map(3) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker'
+  },
+  classes: Map(2) {
+    'TypeChecker' => {
+      constructorLabel: '_class__mod_types_69_TypeChecker_19617',
+      classInfoLabel: '_class_info__mod_types_69_TypeChecker',
+      labelId: 19617
+    },
+    'TypeError' => {
+      constructorLabel: '_class__mod_types_69_TypeError_19618',
+      classInfoLabel: '_class_info__mod_types_69_TypeError',
+      labelId: 19618
+    }
+  },
+  initLabel: '_mod_types_69_init'
+}
+[DEBUG IMPORT] moduleExports.functions: Map(7) {
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName'
+}
+[DEBUG IMPORT] moduleExports.named: Map(12) {
+  'Type' => '_global__mod_types_69_Type',
+  'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+  'typeChecker' => '_global__mod_types_69_typeChecker',
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName',
+  'TypeError' => '_class__mod_types_69_TypeError_19618'
+}
+[DEBUG IMPORT] Same as this.currentModuleExports? false
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/functions/statements.js: Importing 'Type' as 'Type', label: _global__mod_types_69_Type
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/functions/statements.js: Importing 'inferType' as 'inferType', label: _user__mod_types_69_inferType
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/functions/statements.js: Importing 'isCompatible' as 'isCompatible', label: _user__mod_types_69_isCompatible
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/functions/statements.js: Importing 'typeName' as 'typeName', label: _user__mod_types_69_typeName
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/functions/statements.js initLabel: _mod_statements_72_init
+Type warning: Cannot redeclare 'constructor' as null, was function Object() { [native code] }
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/expressions/literals.js initLabel: _mod_literals_74_init
+[DEBUG IMPORT] From /Users/nouo/github/jsbin/compiler/expressions/operators.js importing from /Users/nouo/github/jsbin/compiler/core/types.js
+[DEBUG IMPORT] moduleExports object: ModuleExports {
+  modulePath: '/Users/nouo/github/jsbin/compiler/core/types.js',
+  default: null,
+  named: Map(12) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker',
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName',
+    'TypeError' => '_class__mod_types_69_TypeError_19618'
+  },
+  functions: Map(7) {
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName'
+  },
+  variables: Map(3) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker'
+  },
+  classes: Map(2) {
+    'TypeChecker' => {
+      constructorLabel: '_class__mod_types_69_TypeChecker_19617',
+      classInfoLabel: '_class_info__mod_types_69_TypeChecker',
+      labelId: 19617
+    },
+    'TypeError' => {
+      constructorLabel: '_class__mod_types_69_TypeError_19618',
+      classInfoLabel: '_class_info__mod_types_69_TypeError',
+      labelId: 19618
+    }
+  },
+  initLabel: '_mod_types_69_init'
+}
+[DEBUG IMPORT] moduleExports.functions: Map(7) {
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName'
+}
+[DEBUG IMPORT] moduleExports.named: Map(12) {
+  'Type' => '_global__mod_types_69_Type',
+  'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+  'typeChecker' => '_global__mod_types_69_typeChecker',
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName',
+  'TypeError' => '_class__mod_types_69_TypeError_19618'
+}
+[DEBUG IMPORT] Same as this.currentModuleExports? false
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/expressions/operators.js: Importing 'Type' as 'Type', label: _global__mod_types_69_Type
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/expressions/operators.js: Importing 'inferType' as 'inferType', label: _user__mod_types_69_inferType
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/expressions/operators.js: Importing 'isIntType' as 'isIntType', label: _user__mod_types_69_isIntType
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/expressions/operators.js initLabel: _mod_operators_75_init
+[DEBUG IMPORT] From /Users/nouo/github/jsbin/compiler/expressions/assignments.js importing from /Users/nouo/github/jsbin/compiler/core/types.js
+[DEBUG IMPORT] moduleExports object: ModuleExports {
+  modulePath: '/Users/nouo/github/jsbin/compiler/core/types.js',
+  default: null,
+  named: Map(12) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker',
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName',
+    'TypeError' => '_class__mod_types_69_TypeError_19618'
+  },
+  functions: Map(7) {
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName'
+  },
+  variables: Map(3) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker'
+  },
+  classes: Map(2) {
+    'TypeChecker' => {
+      constructorLabel: '_class__mod_types_69_TypeChecker_19617',
+      classInfoLabel: '_class_info__mod_types_69_TypeChecker',
+      labelId: 19617
+    },
+    'TypeError' => {
+      constructorLabel: '_class__mod_types_69_TypeError_19618',
+      classInfoLabel: '_class_info__mod_types_69_TypeError',
+      labelId: 19618
+    }
+  },
+  initLabel: '_mod_types_69_init'
+}
+[DEBUG IMPORT] moduleExports.functions: Map(7) {
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName'
+}
+[DEBUG IMPORT] moduleExports.named: Map(12) {
+  'Type' => '_global__mod_types_69_Type',
+  'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+  'typeChecker' => '_global__mod_types_69_typeChecker',
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName',
+  'TypeError' => '_class__mod_types_69_TypeError_19618'
+}
+[DEBUG IMPORT] Same as this.currentModuleExports? false
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/expressions/assignments.js: Importing 'Type' as 'Type', label: _global__mod_types_69_Type
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/expressions/assignments.js initLabel: _mod_assignments_76_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/expressions/members.js initLabel: _mod_members_77_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/async/async.js initLabel: _mod_async_79_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/async/index.js initLabel: _mod_index_78_init
+[DEBUG IMPORT] From /Users/nouo/github/jsbin/compiler/expressions/expressions.js importing from /Users/nouo/github/jsbin/compiler/core/types.js
+[DEBUG IMPORT] moduleExports object: ModuleExports {
+  modulePath: '/Users/nouo/github/jsbin/compiler/core/types.js',
+  default: null,
+  named: Map(12) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker',
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName',
+    'TypeError' => '_class__mod_types_69_TypeError_19618'
+  },
+  functions: Map(7) {
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName'
+  },
+  variables: Map(3) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker'
+  },
+  classes: Map(2) {
+    'TypeChecker' => {
+      constructorLabel: '_class__mod_types_69_TypeChecker_19617',
+      classInfoLabel: '_class_info__mod_types_69_TypeChecker',
+      labelId: 19617
+    },
+    'TypeError' => {
+      constructorLabel: '_class__mod_types_69_TypeError_19618',
+      classInfoLabel: '_class_info__mod_types_69_TypeError',
+      labelId: 19618
+    }
+  },
+  initLabel: '_mod_types_69_init'
+}
+[DEBUG IMPORT] moduleExports.functions: Map(7) {
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName'
+}
+[DEBUG IMPORT] moduleExports.named: Map(12) {
+  'Type' => '_global__mod_types_69_Type',
+  'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+  'typeChecker' => '_global__mod_types_69_typeChecker',
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName',
+  'TypeError' => '_class__mod_types_69_TypeError_19618'
+}
+[DEBUG IMPORT] Same as this.currentModuleExports? false
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/expressions/expressions.js: Importing 'Type' as 'Type', label: _global__mod_types_69_Type
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/expressions/expressions.js: Importing 'inferType' as 'inferType', label: _user__mod_types_69_inferType
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/expressions/expressions.js initLabel: _mod_expressions_73_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/functions/builtin_methods.js initLabel: _mod_builtin_methods_81_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/functions/data_structures.js initLabel: _mod_data_structures_82_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/functions/closures.js initLabel: _mod_closures_83_init
+[DEBUG IMPORT] From /Users/nouo/github/jsbin/compiler/functions/functions.js importing from /Users/nouo/github/jsbin/compiler/core/types.js
+[DEBUG IMPORT] moduleExports object: ModuleExports {
+  modulePath: '/Users/nouo/github/jsbin/compiler/core/types.js',
+  default: null,
+  named: Map(12) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker',
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName',
+    'TypeError' => '_class__mod_types_69_TypeError_19618'
+  },
+  functions: Map(7) {
+    'sizeOf' => '_user__mod_types_69_sizeOf',
+    'isSigned' => '_user__mod_types_69_isSigned',
+    'isFloatType' => '_user__mod_types_69_isFloatType',
+    'isIntType' => '_user__mod_types_69_isIntType',
+    'isCompatible' => '_user__mod_types_69_isCompatible',
+    'inferType' => '_user__mod_types_69_inferType',
+    'typeName' => '_user__mod_types_69_typeName'
+  },
+  variables: Map(3) {
+    'Type' => '_global__mod_types_69_Type',
+    'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+    'typeChecker' => '_global__mod_types_69_typeChecker'
+  },
+  classes: Map(2) {
+    'TypeChecker' => {
+      constructorLabel: '_class__mod_types_69_TypeChecker_19617',
+      classInfoLabel: '_class_info__mod_types_69_TypeChecker',
+      labelId: 19617
+    },
+    'TypeError' => {
+      constructorLabel: '_class__mod_types_69_TypeError_19618',
+      classInfoLabel: '_class_info__mod_types_69_TypeError',
+      labelId: 19618
+    }
+  },
+  initLabel: '_mod_types_69_init'
+}
+[DEBUG IMPORT] moduleExports.functions: Map(7) {
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName'
+}
+[DEBUG IMPORT] moduleExports.named: Map(12) {
+  'Type' => '_global__mod_types_69_Type',
+  'NumberSubtype' => '_global__mod_types_69_NumberSubtype',
+  'typeChecker' => '_global__mod_types_69_typeChecker',
+  'sizeOf' => '_user__mod_types_69_sizeOf',
+  'isSigned' => '_user__mod_types_69_isSigned',
+  'isFloatType' => '_user__mod_types_69_isFloatType',
+  'isIntType' => '_user__mod_types_69_isIntType',
+  'TypeChecker' => '_class__mod_types_69_TypeChecker_19617',
+  'isCompatible' => '_user__mod_types_69_isCompatible',
+  'inferType' => '_user__mod_types_69_inferType',
+  'typeName' => '_user__mod_types_69_typeName',
+  'TypeError' => '_class__mod_types_69_TypeError_19618'
+}
+[DEBUG IMPORT] Same as this.currentModuleExports? false
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/functions/functions.js: Importing 'Type' as 'Type', label: _global__mod_types_69_Type
+[DEBUG IMPORT SPEC] /Users/nouo/github/jsbin/compiler/functions/functions.js: Importing 'inferType' as 'inferType', label: _user__mod_types_69_inferType
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/functions/functions.js initLabel: _mod_functions_80_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/output/library.js initLabel: _mod_library_84_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/output/wrapper.js initLabel: _mod_wrapper_85_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/elf.js initLabel: _mod_elf_87_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/elf_arm64.js initLabel: _mod_elf_arm64_88_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/elf_dynamic.js initLabel: _mod_elf_dynamic_89_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/macho_arm64.js initLabel: _mod_macho_arm64_90_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/macho_x64.js initLabel: _mod_macho_x64_91_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/binary_format.js initLabel: _mod_binary_format_93_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/macho_dylib.js initLabel: _mod_macho_dylib_92_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/macho_object.js initLabel: _mod_macho_object_94_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/elf_object.js initLabel: _mod_elf_object_95_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/coff_object.js initLabel: _mod_coff_object_96_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/pe.js initLabel: _mod_pe_97_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/pe_dll.js initLabel: _mod_pe_dll_98_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/output/generator.js initLabel: _mod_generator_86_init
+BinaryExpression missing operand: left: Identifier { type: 'Identifier', name: 'vlq' } right: null op: >>>
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/output/sourcemap.js initLabel: _mod_sourcemap_99_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/optimize/inline.js initLabel: _mod_inline_100_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/optimize/ic.js initLabel: _mod_ic_101_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/optimize/generational_gc.js initLabel: _mod_generational_gc_102_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/binary/static_linker.js initLabel: _mod_static_linker_103_init
+[COMPILE_MODULE] Ending compile for /Users/nouo/github/jsbin/compiler/index.js initLabel: _mod_index_1_init
+[compile] Program compiled
+[compile] Generating entry
+[ENTRY] Compiled modules count: 103
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/lexer/token.js initLabel: _mod_token_4_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/lexer/index.js initLabel: _mod_index_3_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/parser/ast.js initLabel: _mod_ast_6_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/parser/precedence.js initLabel: _mod_precedence_7_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/parser/statements.js initLabel: _mod_statements_8_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/parser/expressions.js initLabel: _mod_expressions_9_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/parser/classes.js initLabel: _mod_classes_10_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/parser/modules.js initLabel: _mod_modules_11_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/parser/index.js initLabel: _mod_index_5_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/analysis/closure.js initLabel: _mod_closure_12_init
+[ENTRY] Module: /Users/nouo/github/jsbin/lang/index.js initLabel: _mod_index_2_init
+[ENTRY] Module: /Users/nouo/github/jsbin/vm/registers.js initLabel: _mod_registers_14_init
+[ENTRY] Module: /Users/nouo/github/jsbin/vm/instructions.js initLabel: _mod_instructions_15_init
+[ENTRY] Module: /Users/nouo/github/jsbin/backend/base.js initLabel: _mod_base_17_init
+[ENTRY] Module: /Users/nouo/github/jsbin/backend/arm64.js initLabel: _mod_arm64_16_init
+[ENTRY] Module: /Users/nouo/github/jsbin/backend/x64.js initLabel: _mod_x64_18_init
+[ENTRY] Module: /Users/nouo/github/jsbin/vm/index.js initLabel: _mod_index_13_init
+[ENTRY] Module: /Users/nouo/github/jsbin/asm/arm64.js initLabel: _mod_arm64_19_init
+[ENTRY] Module: /Users/nouo/github/jsbin/asm/x64.js initLabel: _mod_x64_20_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/core/strings.js initLabel: _mod_strings_24_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/number/types.js initLabel: _mod_types_25_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/number/print.js initLabel: _mod_print_23_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/number/integers.js initLabel: _mod_integers_26_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/number/uintegers.js initLabel: _mod_uintegers_27_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/number/floats.js initLabel: _mod_floats_28_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/core/jsvalue.js initLabel: _mod_jsvalue_31_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/core/syscall.js initLabel: _mod_syscall_32_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/core/allocator.js initLabel: _mod_allocator_30_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/number/parse.js initLabel: _mod_parse_29_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/number/index.js initLabel: _mod_index_22_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/math/index.js initLabel: _mod_index_33_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/core/types.js initLabel: _mod_types_35_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/json/index.js initLabel: _mod_index_34_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/string/methods.js initLabel: _mod_methods_37_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/string/index.js initLabel: _mod_index_36_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/array/flat.js initLabel: _mod_flat_39_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/array/mutate.js initLabel: _mod_mutate_40_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/array/index.js initLabel: _mod_index_38_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/typedarray/index.js initLabel: _mod_index_41_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/object/index.js initLabel: _mod_index_42_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/map/index.js initLabel: _mod_index_43_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/set/index.js initLabel: _mod_index_44_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/date/index.js initLabel: _mod_index_45_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/regexp/engine.js initLabel: _mod_engine_47_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/regexp/index.js initLabel: _mod_index_46_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/symbol/index.js initLabel: _mod_index_48_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/iterator/index.js initLabel: _mod_index_49_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/generator/index.js initLabel: _mod_index_50_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/generator/async.js initLabel: _mod_async_51_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/private/index.js initLabel: _mod_index_52_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/error/index.js initLabel: _mod_index_53_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/core/print.js initLabel: _mod_print_54_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/core/subscript.js initLabel: _mod_subscript_55_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/operators/typeof.js initLabel: _mod_typeof_56_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/operators/equality.js initLabel: _mod_equality_57_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/async/coroutine.js initLabel: _mod_coroutine_59_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/async/promise.js initLabel: _mod_promise_60_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/async/index.js initLabel: _mod_index_58_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/core/coercion.js initLabel: _mod_coercion_61_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/fs/index.js initLabel: _mod_index_62_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/path/index.js initLabel: _mod_index_63_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/process/index.js initLabel: _mod_index_64_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/os/index.js initLabel: _mod_index_65_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/child_process/index.js initLabel: _mod_index_66_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/types/buffer/index.js initLabel: _mod_index_67_init
+[ENTRY] Module: /Users/nouo/github/jsbin/runtime/index.js initLabel: _mod_index_21_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/core/types.js initLabel: _mod_types_69_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/core/context.js initLabel: _mod_context_68_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/core/platform.js initLabel: _mod_platform_70_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/core/modules.js initLabel: _mod_modules_71_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/functions/statements.js initLabel: _mod_statements_72_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/expressions/literals.js initLabel: _mod_literals_74_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/expressions/operators.js initLabel: _mod_operators_75_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/expressions/assignments.js initLabel: _mod_assignments_76_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/expressions/members.js initLabel: _mod_members_77_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/async/async.js initLabel: _mod_async_79_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/async/index.js initLabel: _mod_index_78_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/expressions/expressions.js initLabel: _mod_expressions_73_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/functions/builtin_methods.js initLabel: _mod_builtin_methods_81_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/functions/data_structures.js initLabel: _mod_data_structures_82_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/functions/closures.js initLabel: _mod_closures_83_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/functions/functions.js initLabel: _mod_functions_80_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/output/library.js initLabel: _mod_library_84_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/output/wrapper.js initLabel: _mod_wrapper_85_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/elf.js initLabel: _mod_elf_87_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/elf_arm64.js initLabel: _mod_elf_arm64_88_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/elf_dynamic.js initLabel: _mod_elf_dynamic_89_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/macho_arm64.js initLabel: _mod_macho_arm64_90_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/macho_x64.js initLabel: _mod_macho_x64_91_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/binary_format.js initLabel: _mod_binary_format_93_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/macho_dylib.js initLabel: _mod_macho_dylib_92_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/macho_object.js initLabel: _mod_macho_object_94_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/elf_object.js initLabel: _mod_elf_object_95_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/coff_object.js initLabel: _mod_coff_object_96_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/pe.js initLabel: _mod_pe_97_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/pe_dll.js initLabel: _mod_pe_dll_98_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/output/generator.js initLabel: _mod_generator_86_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/output/sourcemap.js initLabel: _mod_sourcemap_99_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/optimize/inline.js initLabel: _mod_inline_100_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/optimize/ic.js initLabel: _mod_ic_101_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/optimize/generational_gc.js initLabel: _mod_generational_gc_102_init
+[ENTRY] Module: /Users/nouo/github/jsbin/binary/static_linker.js initLabel: _mod_static_linker_103_init
+[ENTRY] Module: /Users/nouo/github/jsbin/compiler/index.js initLabel: _mod_index_1_init
+[compile] Entry generated
+[compile] Generating IC slots
+[compile] IC slots generated
+[compile] Generating executable
+[compileFile] Compile done
+Successfully compiled: /Users/nouo/github/jsbin/cli-macos-arm64

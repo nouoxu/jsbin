@@ -20,6 +20,7 @@ export const Type = {
     BUFFER: "Buffer", // Buffer (内部使用 Uint8Array)
     VOID: "void", // 函数无返回值
     GENERATOR: "Generator", // Generator 对象
+    BIGINT: "bigint", // BigInt 类型
 
     // Number 子类型
     INT8: "int8",
@@ -180,6 +181,9 @@ export function inferType(node, ctx) {
                 // 统一所有数字为 NUMBER 类型
                 // 因为我们在运行时使用 Number 对象存储所有数值
                 return Type.NUMBER;
+            }
+            if (typeof node.value === "bigint" || node.bigint) {
+                return Type.BIGINT;
             }
             if (typeof node.value === "string") return Type.STRING;
             if (typeof node.value === "boolean") return Type.BOOLEAN;
@@ -482,8 +486,12 @@ function inferBinaryType(node, ctx) {
         return Type.NUMBER;
     }
 
-    // 位运算符返回整数
+    // 位运算符
     if (["&", "|", "^", "<<", ">>", ">>>"].includes(op)) {
+        // BigInt 位运算结果仍是 BigInt
+        if (leftType === Type.BIGINT || rightType === Type.BIGINT) {
+            return Type.BIGINT;
+        }
         return Type.INT64;
     }
 

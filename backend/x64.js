@@ -1183,16 +1183,14 @@ export class X64Backend extends Backend {
 
     // ========== 类型转换 ==========
 
-    // Float to Int: 从 Number 对象中提取整数值
-    // src 是指向 Number 对象的指针，dest 接收整数值
+    // Float bits to Int: 从 float64 位模式转换为整数
+    // src 是包含 float64 位模式的整数寄存器，dest 接收整数值
     f2i(dest, src) {
         const rd = this.mapReg(dest);
         const rs = this._getReg(src, Reg.R10);
-        // Number 对象: offset 0 = type, offset 8 = float64 bits
-        // 加载 float64 位模式到 R11
-        this.asm.movLoadOffset(Reg.R11, rs, 8);
+        // src 已经包含 float64 位模式（不是指针！）
         // 将位模式移到 XMM0
-        this.asm.movqToXmm(0, Reg.R11);
+        this.asm.movqToXmm(0, rs);
         // 转换为整数 (cvttsd2si)
         this.asm.cvttsd2si(rd, 0);
     }

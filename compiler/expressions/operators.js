@@ -9,11 +9,14 @@ const TYPE_FLOAT64 = 29;
 // 运算符编译方法混入
 export const OperatorCompiler = {
     // 从 Number 对象中解包数值到寄存器
-    // 输入: reg 包含 Number 对象指针
+    // 输入: reg 包含 Number 对象指针（raw heap pointer，不是 NaN-boxed）
     // 输出: reg 包含 float64 位模式
     // 注：TYPE_NUMBER 和 TYPE_FLOAT64 的 offset 8 都是 float64 位模式
+    // 重要：Number 对象总是以 raw heap pointer 形式存储，不是 NaN-boxed，
+    //       因此不需要调用 _js_unbox，直接从 +8 偏移读取即可
     unboxNumber(reg) {
-        this.vm.load(reg, reg, 8); // 从 +8 偏移加载 float64 位模式
+        // Number 对象是 raw heap pointer，直接从 +8 偏移加载 float64 位模式
+        this.vm.load(reg, reg, 8);
     },
 
     // 将 float64 位模式包装成 Number 对象
@@ -87,9 +90,21 @@ export const OperatorCompiler = {
 
     // 编译表达式作为整数（用于 int 类型上下文）
     compileExpressionAsInt(expr) {
+        // 对于 BigInt 字面量，直接编译（已经是 int64）
+        if ((expr.type === "Literal" || expr.type === "BigIntLiteral") && (typeof expr.value === "bigint" || expr.bigint)) {
+            this.compileBigIntLiteral(expr);
+            return;
+        }
         // 对于整数字面量，直接使用整数值
         if ((expr.type === "Literal" || expr.type === "NumericLiteral") && typeof expr.value === "number") {
             this.compileIntLiteral(expr.value);
+            return;
+        }
+        // 检查表达式类型是否为 BigInt
+        const exprType = inferType(expr, this.ctx);
+        if (exprType === Type.BIGINT) {
+            // BigInt 变量存储的就是原始 int64，不需要 unbox
+            this.compileExpression(expr);
             return;
         }
         // 对于一元表达式 -num，直接编译为负整数
@@ -262,6 +277,17 @@ export const OperatorCompiler = {
                 this.compileStringConcat(expr);
                 return;
             }
+            // UNKNOWN 类型的 + 运算需要运行时类型检测
+            // 因为参数可能是字符串或数字，无法在编译时确定
+            if (leftType === Type.UNKNOWN || rightType === Type.UNKNOWN) {
+                this.compileExpression(expr.right);
+                this.vm.push(VReg.RET);
+                this.compileExpression(expr.left);
+                this.vm.pop(VReg.A1);
+                this.vm.mov(VReg.A0, VReg.RET);
+                this.vm.call("_js_add");
+                return;
+            }
         }
 
         // 相等性比较运算符（===, !==, ==, !=）可以用于任何类型
@@ -291,14 +317,14 @@ export const OperatorCompiler = {
         // 对于 +, -, *, / 运算，根据类型选择浮点或整数运算
         const isArithOp = ["+", "-", "*", "/"].includes(op);
 
-        // 位运算：直接使用原始整数值，不需要 unbox
+        // 位运算：操作数需要转换为整数
         const isBitOp = ["&", "|", "^", "<<", ">>", ">>>"].includes(op);
         if (isBitOp) {
-            // 编译右操作数
-            this.compileExpression(expr.right);
+            // 编译右操作数为整数
+            this.compileExpressionAsInt(expr.right);
             this.vm.push(VReg.RET);
-            // 编译左操作数
-            this.compileExpression(expr.left);
+            // 编译左操作数为整数
+            this.compileExpressionAsInt(expr.left);
             this.vm.pop(VReg.V1);
 
             switch (op) {
@@ -321,6 +347,16 @@ export const OperatorCompiler = {
                     this.vm.shr(VReg.RET, VReg.RET, VReg.V1);
                     break;
             }
+            // 检查操作数是否为 BigInt
+            const leftType = inferType(expr.left, this.ctx);
+            const rightType = inferType(expr.right, this.ctx);
+            const isBigIntOp = leftType === Type.BIGINT || rightType === Type.BIGINT;
+
+            if (!isBigIntOp) {
+                // 非 BigInt：位运算结果是整数，需要装箱为 Number 对象
+                this.boxIntAsNumber(VReg.RET);
+            }
+            // BigInt 结果保持为原始 int64，不装箱
             return;
         }
 
@@ -717,8 +753,11 @@ export const OperatorCompiler = {
             this.compileExpression(expr);
         } else if (type === Type.INT64 || type === Type.INT32 || isIntType(type) || type === Type.FLOAT64 || type === Type.NUMBER) {
             // 数字转字符串
-            // 注意：compileExpression 返回 Number 对象指针，需要从 offset 8 加载 float64 位
+            // 注意：compileExpression 返回 Number 对象指针（可能是 NaN-boxed），需要从 offset 8 加载 float64 位
             this.compileExpression(expr);
+            // 先 unbox 获取原始堆指针
+            this.vm.mov(VReg.A0, VReg.RET);
+            this.vm.call("_js_unbox");
             // Number 对象布局: [type:8][float64_bits:8]
             // 从 offset 8 加载 float64 位表示
             this.vm.load(VReg.V0, VReg.RET, 8);

@@ -10,22 +10,23 @@ import { VReg } from "../../../vm/index.js";
 // +24: stack (字符串指针)
 // +32: cause (可选，异常原因)
 
-const TYPE_ERROR = 31;
-const ERROR_SIZE = 40;
-
-// Error 子类型常量 (存储在 subtype 字段)
-const ERROR_TYPE_ERROR = 0; // Error
-const ERROR_TYPE_TYPEERROR = 1; // TypeError
-const ERROR_TYPE_REFERENCEERROR = 2; // ReferenceError
-const ERROR_TYPE_SYNTAXERROR = 3; // SyntaxError
-const ERROR_TYPE_RANGEERROR = 4; // RangeError
-const ERROR_TYPE_EVALERROR = 5; // EvalError
-const ERROR_TYPE_URIERROR = 6; // URIError
-
 export class ErrorGenerator {
     constructor(vm, ctx) {
         this.vm = vm;
         this.ctx = ctx;
+
+        // 常量 (移到实例属性以避免自举编译问题)
+        this.TYPE_ERROR = 31;
+        this.ERROR_SIZE = 40;
+
+        // Error 子类型常量 (存储在 subtype 字段)
+        this.ERROR_TYPE_ERROR = 0; // Error
+        this.ERROR_TYPE_TYPEERROR = 1; // TypeError
+        this.ERROR_TYPE_REFERENCEERROR = 2; // ReferenceError
+        this.ERROR_TYPE_SYNTAXERROR = 3; // SyntaxError
+        this.ERROR_TYPE_RANGEERROR = 4; // RangeError
+        this.ERROR_TYPE_EVALERROR = 5; // EvalError
+        this.ERROR_TYPE_URIERROR = 6; // URIError
     }
 
     generate() {
@@ -328,12 +329,12 @@ export class ErrorGenerator {
         vm.mov(VReg.S0, VReg.A0); // S0 = message
 
         // 分配 Error 对象
-        vm.movImm(VReg.A0, ERROR_SIZE);
+        vm.movImm(VReg.A0, this.ERROR_SIZE);
         vm.call("_alloc");
         vm.mov(VReg.S1, VReg.RET); // S1 = Error 对象
 
         // 设置类型
-        vm.movImm(VReg.V0, TYPE_ERROR);
+        vm.movImm(VReg.V0, this.TYPE_ERROR);
         vm.store(VReg.S1, 0, VReg.V0);
 
         // 设置 message
@@ -407,12 +408,12 @@ export class ErrorGenerator {
         vm.mov(VReg.S2, VReg.A1); // S2 = name_ptr
 
         // 分配 Error 对象
-        vm.movImm(VReg.A0, ERROR_SIZE);
+        vm.movImm(VReg.A0, this.ERROR_SIZE);
         vm.call("_alloc");
         vm.mov(VReg.S1, VReg.RET); // S1 = Error 对象
 
         // 设置类型
-        vm.movImm(VReg.V0, TYPE_ERROR);
+        vm.movImm(VReg.V0, this.TYPE_ERROR);
         vm.store(VReg.S1, 0, VReg.V0);
 
         // 设置 message
@@ -445,12 +446,12 @@ export class ErrorGenerator {
         vm.mov(VReg.S2, VReg.A1); // S2 = cause
 
         // 分配 Error 对象
-        vm.movImm(VReg.A0, ERROR_SIZE);
+        vm.movImm(VReg.A0, this.ERROR_SIZE);
         vm.call("_alloc");
         vm.mov(VReg.S1, VReg.RET); // S1 = Error 对象
 
         // 设置类型
-        vm.movImm(VReg.V0, TYPE_ERROR);
+        vm.movImm(VReg.V0, this.TYPE_ERROR);
         vm.store(VReg.S1, 0, VReg.V0);
 
         // 设置 message

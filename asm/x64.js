@@ -1304,6 +1304,9 @@ export class X64Assembler {
     }
 
     addString(str) {
+        if (typeof str !== "string") {
+            str = String(str);
+        }
         if (this.strings[str] !== undefined) {
             return this.strings[str];
         }

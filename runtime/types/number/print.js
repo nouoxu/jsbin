@@ -561,51 +561,73 @@ export class NumberPrintGenerator {
     }
 
     // 生成 Number 对象打印函数
-    // 输入: A0 = Number 对象指针
+    // 输入: A0 = Number 对象指针 或 原始 float64 位模式（如 Infinity/-Infinity/NaN）
     // 根据类型标记自动选择正确的打印方式
     generatePrintNumber() {
         const vm = this.vm;
 
         vm.label("_print_number");
-        vm.prologue(32, [VReg.S0, VReg.S1]);
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
         vm.mov(VReg.S0, VReg.A0);
 
-        // 加载类型标记到 S1（避免被 A0 覆盖）
-        vm.load(VReg.S1, VReg.S0, 0);
+        const isRawFloatLabel = "_print_number_raw_float";
+        const isHeapFloatLabel = "_print_number_heap_float";
+        const isIntLabel = "_print_number_int";
+        const doneLabel = "_print_number_done";
 
-        // 加载数值到 A0
-        vm.load(VReg.A0, VReg.S0, 8);
+        // 首先检测输入是否是有效的堆指针
+        // 如果 A0 在堆范围内 [_heap_base, _heap_ptr)，则是堆对象
+        // 否则可能是原始 float64 值（如 Infinity/-Infinity/NaN）
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jlt(isRawFloatLabel); // < heap_base，不是堆指针，按 float64 打印
+
+        vm.lea(VReg.V0, "_heap_ptr");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jge(isRawFloatLabel); // >= heap_ptr，不是堆指针，按 float64 打印
+
+        // 是有效的堆指针，加载类型和值
+        // 加载类型标记到 S1
+        vm.load(VReg.S1, VReg.S0, 0);
+        // 加载数值到 S2
+        vm.load(VReg.S2, VReg.S0, 8);
 
         // 类型判断逻辑:
         // - TYPE_NUMBER = 13 → 浮点路径（内部存储为 float64）
         // - TYPE_INT8-INT64, UINT8-UINT64 (20-27) → 整数路径
         // - TYPE_FLOAT32-FLOAT64 (28-29) → 浮点路径
 
-        const isFloatLabel = "_print_number_float";
-        const isIntLabel = "_print_number_int";
-        const doneLabel = "_print_number_done";
-
         // 检查是否为 TYPE_NUMBER = 13（通用数字类型，存储 float64）
         vm.cmpImm(VReg.S1, 13);
-        vm.jeq(isFloatLabel);
+        vm.jeq(isHeapFloatLabel);
 
         // 检查是否为整数类型 (20-27)
         vm.cmpImm(VReg.S1, TYPE_INT8); // 20
-        vm.jlt(isFloatLabel); // < 20 未知，当作浮点
+        vm.jlt(isHeapFloatLabel); // < 20 未知，当作浮点
         vm.cmpImm(VReg.S1, TYPE_FLOAT32); // 28
         vm.jlt(isIntLabel); // 20-27 是整数
 
-        // >= 28 是浮点类型
-        vm.label(isFloatLabel);
+        // >= 28 是浮点类型，走 heap float 路径
+        vm.label(isHeapFloatLabel);
+        vm.mov(VReg.A0, VReg.S2); // 堆对象的值在 S2
+        vm.call("_print_float");
+        vm.jmp(doneLabel);
+
+        // 原始 float64 值（如 Infinity/-Infinity/NaN）
+        vm.label(isRawFloatLabel);
+        vm.mov(VReg.A0, VReg.S0); // 原始值在 S0
         vm.call("_print_float");
         vm.jmp(doneLabel);
 
         vm.label(isIntLabel);
-        // 整数类型：直接打印
+        // 整数类型：直接打印（值在 S2）
+        vm.mov(VReg.A0, VReg.S2);
         vm.call("_print_int");
 
         vm.label(doneLabel);
-        vm.epilogue([VReg.S0, VReg.S1], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
     }
 
     // 生成无换行版本
@@ -616,28 +638,49 @@ export class NumberPrintGenerator {
         vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
         vm.mov(VReg.S0, VReg.A0);
 
+        // 类型判断逻辑（同 generatePrintNumber）
+        const isRawFloatLabel = "_print_number_nonl_raw_float";
+        const isHeapFloatLabel = "_print_number_nonl_heap_float";
+        const isIntLabel = "_print_number_nonl_int";
+        const doneLabel = "_print_number_nonl_done";
+
+        // 首先检测输入是否是有效的堆指针
+        // 如果 A0 在堆范围内 [_heap_base, _heap_ptr)，则是堆对象
+        // 否则可能是原始 float64 值（如 Infinity/-Infinity/NaN）
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jlt(isRawFloatLabel); // < heap_base，不是堆指针，按 float64 打印
+
+        vm.lea(VReg.V0, "_heap_ptr");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jge(isRawFloatLabel); // >= heap_ptr，不是堆指针，按 float64 打印
+
+        // 是有效的堆指针，加载类型和值
         // 加载类型到 S1，值到 S2（避免被函数调用覆盖）
         vm.load(VReg.S1, VReg.S0, 0);
         vm.load(VReg.S2, VReg.S0, 8);
 
-        // 类型判断逻辑（同 generatePrintNumber）
-        const isFloatLabel = "_print_number_nonl_float";
-        const isIntLabel = "_print_number_nonl_int";
-        const doneLabel = "_print_number_nonl_done";
-
         // 检查是否为 TYPE_NUMBER = 13（通用数字类型，存储 float64）
         vm.cmpImm(VReg.S1, 13);
-        vm.jeq(isFloatLabel);
+        vm.jeq(isHeapFloatLabel);
 
         // 检查是否为整数类型 (20-27)
         vm.cmpImm(VReg.S1, TYPE_INT8); // 20
-        vm.jlt(isFloatLabel); // < 20 未知，当作浮点
+        vm.jlt(isHeapFloatLabel); // < 20 未知，当作浮点
         vm.cmpImm(VReg.S1, TYPE_FLOAT32); // 28
         vm.jlt(isIntLabel); // 20-27 是整数
 
-        // >= 28 是浮点类型
-        vm.label(isFloatLabel);
-        vm.mov(VReg.A0, VReg.S2);
+        // >= 28 是浮点类型，走 heap float 路径
+        vm.label(isHeapFloatLabel);
+        vm.mov(VReg.A0, VReg.S2); // 堆对象的值在 S2
+        vm.call("_print_float_no_nl");
+        vm.jmp(doneLabel);
+
+        // 原始 float64 值（如 Infinity/-Infinity/NaN）
+        vm.label(isRawFloatLabel);
+        vm.mov(VReg.A0, VReg.S0); // 原始值在 S0
         vm.call("_print_float_no_nl");
         vm.jmp(doneLabel);
 
