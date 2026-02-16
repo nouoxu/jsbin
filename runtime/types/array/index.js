@@ -199,7 +199,7 @@ export class ArrayGenerator {
 
         // === 需要扩容 ===
         vm.shl(VReg.S4, VReg.S3, 1); // newCap = cap * 2
-        
+
         // Handle cap=0 -> newCap=8
         vm.cmpImm(VReg.S4, 0);
         vm.jne("_array_push_alloc");
@@ -208,7 +208,7 @@ export class ArrayGenerator {
         vm.label("_array_push_alloc");
         // Alloc Body (newCap * 8)
         vm.shl(VReg.A0, VReg.S4, 3);
-        
+
         // Save registers safe across alloc
         vm.store(VReg.SP, 0, VReg.S0);
         vm.store(VReg.SP, 8, VReg.S1);
@@ -227,14 +227,14 @@ export class ArrayGenerator {
 
         // 复制元素 (i = 0 to length)
         vm.movImm(VReg.V2, 0);
-        
+
         vm.label("_array_push_copy_loop");
         vm.cmp(VReg.V2, VReg.S2);
         vm.jge("_array_push_copy_done");
 
         // offset
         vm.shl(VReg.V3, VReg.V2, 3);
-        
+
         // src = old[offset]
         vm.add(VReg.V4, VReg.V1, VReg.V3);
         vm.load(VReg.V5, VReg.V4, 0);
@@ -247,7 +247,7 @@ export class ArrayGenerator {
         vm.jmp("_array_push_copy_loop");
 
         vm.label("_array_push_copy_done");
-        
+
         // Update Header with New Body
         vm.store(VReg.S0, 24, VReg.V0);
         vm.store(VReg.S0, 16, VReg.S4); // capacity
@@ -614,7 +614,7 @@ export class ArrayGenerator {
         vm.push(VReg.V0);
 
         // 获取 src[index] (Load Body Ptr first)
-        vm.load(VReg.V3, VReg.S2, 24); 
+        vm.load(VReg.V3, VReg.S2, 24);
         vm.shl(VReg.V1, VReg.V0, 3);
         vm.add(VReg.V2, VReg.V3, VReg.V1);
         vm.load(VReg.A1, VReg.V2, 0); // A1 = src[index]

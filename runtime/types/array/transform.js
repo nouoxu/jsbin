@@ -49,7 +49,7 @@ export const ArrayTransformMixin = {
         vm.store(VReg.S4, 24, VReg.V1);
 
         // Load Src Body
-        vm.load(VReg.S2, VReg.S0, 24); 
+        vm.load(VReg.S2, VReg.S0, 24);
 
         vm.movImm(VReg.V2, 0); // i
         vm.label("_array_slice_copy");
@@ -84,7 +84,7 @@ export const ArrayTransformMixin = {
         vm.store(VReg.S4, 8, VReg.V0);
         vm.store(VReg.S4, 16, VReg.V0); // Capacity
         vm.store(VReg.S4, 24, VReg.V0); // Body
-        
+
         vm.mov(VReg.RET, VReg.S4);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     },
@@ -274,7 +274,7 @@ export const ArrayTransformMixin = {
 
         vm.label("_array_join_add_elem");
         vm.load(VReg.V0, VReg.SP, 0);
-        
+
         vm.shl(VReg.V1, VReg.V0, 3);
         vm.add(VReg.V1, VReg.S5, VReg.V1); // Indirect
         vm.load(VReg.V1, VReg.V1, 0);
