@@ -7,6 +7,13 @@ import { Type } from "../core/types.js";
 export const AssignmentCompiler = {
     // 编译赋值表达式
     compileAssignmentExpression(expr) {
+        // 检查 expr.right 是否存在
+        if (!expr.right) {
+            console.log("[ERROR] Assignment expression has null right side");
+            console.log("  operator:", expr.operator);
+            console.log("  left:", JSON.stringify(expr.left, null, 2).slice(0, 200));
+            throw new Error("Assignment expression has null right side");
+        }
         if (expr.left.type === "Identifier") {
             const name = expr.left.name;
             const offset = this.ctx.getLocal(name);

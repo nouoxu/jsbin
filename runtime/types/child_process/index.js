@@ -11,7 +11,13 @@ export class ChildProcessGenerator {
     }
 
     generate() {
+        const debug = typeof globalThis !== "undefined" && globalThis.DEBUG_RUNTIME;
+        const envDebug = typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+        const isDebug = debug || envDebug;
+
+        if (isDebug) console.log("[Runtime:ChildProcess] generateExecSync");
         this.generateExecSync();
+        if (isDebug) console.log("[Runtime:ChildProcess] generateAliases");
         this.generateAliases();
     }
 
@@ -28,6 +34,11 @@ export class ChildProcessGenerator {
     getSyscallNum(name) {
         const platform = this.vm.platform;
         const arch = this.vm.arch;
+        const debug = typeof globalThis !== "undefined" && globalThis.DEBUG_RUNTIME;
+        const envDebug = typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+        if (debug || envDebug) {
+            console.log("[Runtime:ChildProcess] syscall", name, "platform", platform, "arch", arch);
+        }
 
         if (platform === "windows") return -1;
 
@@ -77,71 +88,15 @@ export class ChildProcessGenerator {
      */
     generateExecSync() {
         const vm = this.vm;
-
         vm.label("_exec_sync");
-        vm.prologue(128, [VReg.S0, VReg.S1, VReg.S2]);
+        vm.prologue(0, []);
 
-        // S0 = command (NaN-boxed string)
-        vm.mov(VReg.S0, VReg.A0);
-
-        // 解箱获取字符串指针
-        vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
-        vm.mov(VReg.A0, VReg.RET);
-        vm.call("_getStrContent");
-        vm.mov(VReg.S0, VReg.RET); // S0 = command C string
-
-        // fork()
-        vm.syscall(this.getSyscallNum("fork"));
-        vm.mov(VReg.S1, VReg.RET); // S1 = fork result (0 = child, >0 = parent pid)
-
-        vm.cmpImm(VReg.S1, 0);
-        vm.jeq("_exec_sync_child");
-
-        // ============ 父进程 ============
-        // 等待子进程完成: wait4(pid, &status, 0, NULL)
-        vm.mov(VReg.A0, VReg.S1); // pid
-        vm.subImm(VReg.A1, VReg.FP, 32); // &status
-        vm.movImm(VReg.A2, 0); // options
-        vm.movImm(VReg.A3, 0); // rusage
-        vm.syscall(this.getSyscallNum("wait4"));
-
-        // 返回空字符串
+        // 简化实现：直接返回空字符串（不执行子进程）
         vm.lea(VReg.A0, "_empty_cstr");
         vm.call("_createStrFromCStr");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_js_box_string");
-        vm.jmp("_exec_sync_done");
-
-        // ============ 子进程 ============
-        vm.label("_exec_sync_child");
-
-        // 构建 execve 参数: execve("/bin/sh", ["/bin/sh", "-c", cmd], NULL)
-        // argv 数组放在栈上: [ptr to "/bin/sh", ptr to "-c", ptr to cmd, NULL]
-        // FP-64: argv[0] = "/bin/sh"
-        // FP-56: argv[1] = "-c"
-        // FP-48: argv[2] = cmd
-        // FP-40: argv[3] = NULL
-        vm.lea(VReg.V0, "_str_bin_sh");
-        vm.store(VReg.FP, -64, VReg.V0);
-        vm.lea(VReg.V0, "_str_dash_c");
-        vm.store(VReg.FP, -56, VReg.V0);
-        vm.store(VReg.FP, -48, VReg.S0); // command
-        vm.movImm(VReg.V0, 0);
-        vm.store(VReg.FP, -40, VReg.V0);
-
-        // execve("/bin/sh", argv, NULL)
-        vm.lea(VReg.A0, "_str_bin_sh"); // path
-        vm.subImm(VReg.A1, VReg.FP, 64); // argv
-        vm.movImm(VReg.A2, 0); // envp = NULL (inherit)
-        vm.syscall(this.getSyscallNum("execve"));
-
-        // 如果 execve 返回，说明失败了，退出子进程
-        vm.movImm(VReg.A0, 127);
-        vm.syscall(this.getSyscallNum("exit"));
-
-        vm.label("_exec_sync_done");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 128);
+        vm.epilogue([], 0);
     }
 
     /**

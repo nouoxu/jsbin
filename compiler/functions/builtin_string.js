@@ -229,16 +229,31 @@ export const StringMethodCompiler = {
 
             case "padStart":
                 // str.padStart(targetLen, padString)
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容
+
                 if (args.length >= 2) {
+                    // 2. 编译 targetLen 并 unbox
                     this.compileExpression(args[0]);
+                    this.vm.shlImm(VReg.RET, VReg.RET, 32);
+                    this.vm.sarImm(VReg.RET, VReg.RET, 32);
                     this.vm.push(VReg.RET);
+
+                    // 3. 编译并获取 padString 内容指针
                     this.compileExpression(args[1]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
                     this.vm.mov(VReg.A2, VReg.RET);
-                    this.vm.pop(VReg.A1);
-                    this.vm.pop(VReg.A0);
+                    this.vm.pop(VReg.A1); // targetLen
+                    this.vm.pop(VReg.A0); // str
                     this.vm.call("_str_padStart");
                 } else if (args.length === 1) {
+                    // 2. 编译 targetLen 并 unbox
                     this.compileExpression(args[0]);
+                    this.vm.shlImm(VReg.RET, VReg.RET, 32);
+                    this.vm.sarImm(VReg.RET, VReg.RET, 32);
                     this.vm.mov(VReg.A1, VReg.RET);
                     this.vm.lea(VReg.A2, "_str_space");
                     this.vm.pop(VReg.A0);
@@ -250,16 +265,31 @@ export const StringMethodCompiler = {
 
             case "padEnd":
                 // str.padEnd(targetLen, padString)
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容
+
                 if (args.length >= 2) {
+                    // 2. 编译 targetLen 并 unbox
                     this.compileExpression(args[0]);
+                    this.vm.shlImm(VReg.RET, VReg.RET, 32);
+                    this.vm.sarImm(VReg.RET, VReg.RET, 32);
                     this.vm.push(VReg.RET);
+
+                    // 3. 编译并获取 padString 内容指针
                     this.compileExpression(args[1]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
                     this.vm.mov(VReg.A2, VReg.RET);
-                    this.vm.pop(VReg.A1);
-                    this.vm.pop(VReg.A0);
+                    this.vm.pop(VReg.A1); // targetLen
+                    this.vm.pop(VReg.A0); // str
                     this.vm.call("_str_padEnd");
                 } else if (args.length === 1) {
+                    // 2. 编译 targetLen 并 unbox
                     this.compileExpression(args[0]);
+                    this.vm.shlImm(VReg.RET, VReg.RET, 32);
+                    this.vm.sarImm(VReg.RET, VReg.RET, 32);
                     this.vm.mov(VReg.A1, VReg.RET);
                     this.vm.lea(VReg.A2, "_str_space");
                     this.vm.pop(VReg.A0);

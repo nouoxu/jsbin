@@ -18,6 +18,10 @@ export class FSGenerator {
         this.generateFSWrite();
         this.generateFSReadFileSync();
         this.generateFSWriteFileSync();
+        this.generateFSOpenSync();
+        this.generateFSCloseSync();
+        this.generateFSReadSync();
+        this.generateFSWriteSync();
         this.generateFSExistsSync();
         this.generateFSUnlinkSync();
         this.generateFSStatSync();
@@ -131,6 +135,79 @@ export class FSGenerator {
 
         // A0: fd
         // A1: buffer
+        // A2: length
+        vm.syscall(this.getSyscallNum("write"));
+        // RET = bytes written
+
+        vm.epilogue([], 0);
+    }
+
+    // fs.openSync(path, flags, mode) -> fd
+    generateFSOpenSync() {
+        const vm = this.vm;
+        vm.label("_fs_open_sync");
+        vm.prologue(16, [VReg.S0, VReg.S1]);
+
+        // A0: path (NaN-boxed string)
+        // A1: flags (int, optional)
+        // A2: mode (int, optional)
+        
+        vm.mov(VReg.S0, VReg.A0); // path
+        vm.mov(VReg.S1, VReg.A1); // flags
+
+        // Get string content pointer
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_js_unbox");
+        vm.mov(VReg.A0, VReg.RET);
+        vm.call("_get_string_content");
+        
+        // If flags is undefined/null, default to O_RDWR | O_CREAT = 0x602
+        // For now, assume flags is provided or use default
+        vm.mov(VReg.A1, VReg.S1); // flags
+        vm.movImm(VReg.A2, 0o644); // mode
+
+        // open(path, flags, mode)
+        vm.syscall(this.getSyscallNum("open"));
+        // RET = fd
+
+        vm.epilogue([VReg.S0, VReg.S1], 16);
+    }
+
+    // fs.closeSync(fd)
+    generateFSCloseSync() {
+        const vm = this.vm;
+        vm.label("_fs_close_sync");
+        vm.prologue(0, []);
+
+        // A0: fd
+        vm.syscall(this.getSyscallNum("close"));
+
+        vm.epilogue([], 0);
+    }
+
+    // fs.readSync(fd, buffer, offset, length) -> bytes read
+    generateFSReadSync() {
+        const vm = this.vm;
+        vm.label("_fs_read_sync");
+        vm.prologue(0, []);
+
+        // A0: fd
+        // A1: buffer (pointer)
+        // A2: length
+        vm.syscall(this.getSyscallNum("read"));
+        // RET = bytes read
+
+        vm.epilogue([], 0);
+    }
+
+    // fs.writeSync(fd, string/buffer, offset, length) -> bytes written
+    generateFSWriteSync() {
+        const vm = this.vm;
+        vm.label("_fs_write_sync");
+        vm.prologue(0, []);
+
+        // A0: fd
+        // A1: buffer (pointer)
         // A2: length
         vm.syscall(this.getSyscallNum("write"));
         // RET = bytes written

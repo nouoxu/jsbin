@@ -576,7 +576,9 @@ export class ARM64Backend extends Backend {
 
     // 单精度转双精度
     fcvts2d(fpDest, fpSrc) {
+        console.log("[ARM64 Backend] fcvts2d called, fpDest=", fpDest, "fpSrc=", fpSrc);
         this.asm.fcvt(fpDest, fpSrc, "s", "d");
+        console.log("[ARM64 Backend] fcvts2d done");
     }
 
     // 将单精度浮点寄存器的位模式移到整数寄存器 (32位)

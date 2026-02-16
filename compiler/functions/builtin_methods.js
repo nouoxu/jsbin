@@ -2065,6 +2065,80 @@ export const BuiltinMethodCompiler = {
                 // 返回整数，需要装箱为 Number
                 this.boxIntAsNumber(VReg.RET);
                 return true;
+
+            case "padStart":
+                // str.padStart(targetLen, padString)
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容
+
+                if (args.length >= 2) {
+                    // 2. 编译 targetLen 并 unbox
+                    this.compileExpression(args[0]);
+                    this.unboxNumber(VReg.RET);
+                    this.vm.fmovToFloat(0, VReg.RET);
+                    this.vm.fcvtzs(VReg.V0, 0);
+                    this.vm.push(VReg.V0);
+
+                    // 3. 编译并获取 padString 内容指针
+                    this.compileExpression(args[1]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
+                    this.vm.mov(VReg.A2, VReg.RET);
+                    this.vm.pop(VReg.A1); // targetLen
+                    this.vm.pop(VReg.A0); // str
+                    this.vm.call("_str_padStart");
+                } else if (args.length === 1) {
+                    // 2. 编译 targetLen 并 unbox
+                    this.compileExpression(args[0]);
+                    this.unboxNumber(VReg.RET);
+                    this.vm.fmovToFloat(0, VReg.RET);
+                    this.vm.fcvtzs(VReg.A1, 0);
+                    this.vm.lea(VReg.A2, "_str_space");
+                    this.vm.pop(VReg.A0);
+                    this.vm.call("_str_padStart");
+                } else {
+                    this.vm.pop(VReg.RET);
+                }
+                return true;
+
+            case "padEnd":
+                // str.padEnd(targetLen, padString)
+                // 1. 获取原字符串内容指针
+                this.vm.pop(VReg.A0); // 原字符串
+                this.vm.call("_getStrContent");
+                this.vm.push(VReg.RET); // 保存 str 内容
+
+                if (args.length >= 2) {
+                    // 2. 编译 targetLen 并 unbox
+                    this.compileExpression(args[0]);
+                    this.unboxNumber(VReg.RET);
+                    this.vm.fmovToFloat(0, VReg.RET);
+                    this.vm.fcvtzs(VReg.V0, 0);
+                    this.vm.push(VReg.V0);
+
+                    // 3. 编译并获取 padString 内容指针
+                    this.compileExpression(args[1]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_getStrContent");
+                    this.vm.mov(VReg.A2, VReg.RET);
+                    this.vm.pop(VReg.A1); // targetLen
+                    this.vm.pop(VReg.A0); // str
+                    this.vm.call("_str_padEnd");
+                } else if (args.length === 1) {
+                    // 2. 编译 targetLen 并 unbox
+                    this.compileExpression(args[0]);
+                    this.unboxNumber(VReg.RET);
+                    this.vm.fmovToFloat(0, VReg.RET);
+                    this.vm.fcvtzs(VReg.A1, 0);
+                    this.vm.lea(VReg.A2, "_str_space");
+                    this.vm.pop(VReg.A0);
+                    this.vm.call("_str_padEnd");
+                } else {
+                    this.vm.pop(VReg.RET);
+                }
+                return true;
         }
 
         // 未处理的方法，弹出栈
@@ -2195,7 +2269,8 @@ export const BuiltinMethodCompiler = {
                         this.vm.movImm(VReg.V0, Math.trunc(args[0].value));
                     } else {
                         this.compileExpression(args[0]);
-                        this.unboxNumber(VReg.RET);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_to_number");
                         this.vm.fmovToFloat(0, VReg.RET);
                         this.vm.fcvtzs(VReg.V0, 0);
                     }
@@ -2211,7 +2286,8 @@ export const BuiltinMethodCompiler = {
                         this.vm.movImm(VReg.A2, Math.trunc(args[1].value));
                     } else {
                         this.compileExpression(args[1]);
-                        this.unboxNumber(VReg.RET);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_to_number");
                         this.vm.fmovToFloat(0, VReg.RET);
                         this.vm.fcvtzs(VReg.A2, 0);
                     }
@@ -2364,6 +2440,162 @@ export const BuiltinMethodCompiler = {
                 this.vm.movImm(VReg.A1, radix); // radix
                 this.vm.call("_bigint_toString");
                 return true;
+
+            default:
+                return false;
+        }
+    },
+
+    // 编译 Function 实例方法调用
+    // func.apply(thisArg, argsArray)
+    // func.call(thisArg, ...args)
+    // func.bind(thisArg, ...args)
+    compileFunctionMethod(funcExpr, method, args) {
+        const vm = this.vm;
+
+        switch (method) {
+            case "apply": {
+                // func.apply(thisArg, argsArray)
+                // 第一个参数是 this 上下文
+                // 第二个参数是参数数组
+
+                // 使用预分配的栈槽来保存临时值，避免与 compileExpression 内部的栈操作冲突
+                const funcOffset = this.ctx.allocLocal(`__apply_func_${this.nextLabelId()}`);
+                const thisArgOffset = this.ctx.allocLocal(`__apply_thisArg_${this.nextLabelId()}`);
+                const argsOffset = this.ctx.allocLocal(`__apply_args_${this.nextLabelId()}`);
+
+                // 先编译函数引用
+                this.compileExpression(funcExpr);
+                vm.store(VReg.FP, funcOffset, VReg.RET); // 保存函数
+
+                // 编译 thisArg
+                if (args.length > 0) {
+                    this.compileExpression(args[0]);
+                } else {
+                    vm.movImm64(VReg.RET, "0x7ffb000000000000"); // undefined
+                }
+                vm.store(VReg.FP, thisArgOffset, VReg.RET); // 保存 thisArg
+
+                // 编译 argsArray
+                if (args.length > 1) {
+                    this.compileExpression(args[1]);
+                    vm.store(VReg.FP, argsOffset, VReg.RET); // 保存 argsArray
+                } else {
+                    vm.movImm64(VReg.RET, "0x7ffa000000000000"); // null
+                    vm.store(VReg.FP, argsOffset, VReg.RET);
+                }
+
+                // 从栈槽加载参数
+                vm.load(VReg.A0, VReg.FP, funcOffset);
+                vm.load(VReg.A1, VReg.FP, thisArgOffset);
+                vm.load(VReg.A2, VReg.FP, argsOffset);
+                vm.call("_function_apply");
+                return true;
+            }
+
+            case "call": {
+                // func.call(thisArg, arg1, arg2, ...)
+                // 第一个参数是 this 上下文
+                // 后续参数直接传给目标函数
+
+                // 使用预分配的栈槽来保存临时值
+                const funcOffset = this.ctx.allocLocal(`__call_func_${this.nextLabelId()}`);
+                const thisArgOffset = this.ctx.allocLocal(`__call_thisArg_${this.nextLabelId()}`);
+                const argsOffset = this.ctx.allocLocal(`__call_args_${this.nextLabelId()}`);
+                const tempValueOffset = this.ctx.allocLocal(`__call_temp_${this.nextLabelId()}`);
+
+                // 先编译函数引用
+                this.compileExpression(funcExpr);
+                vm.store(VReg.FP, funcOffset, VReg.RET); // 保存函数
+
+                // 编译 thisArg
+                if (args.length > 0) {
+                    this.compileExpression(args[0]);
+                } else {
+                    vm.movImm64(VReg.RET, "0x7ffb000000000000"); // undefined
+                }
+                vm.store(VReg.FP, thisArgOffset, VReg.RET); // 保存 thisArg
+
+                // 将剩余参数收集到临时数组
+                const restArgs = args.slice(1);
+                if (restArgs.length > 0) {
+                    // 创建数组并添加参数
+                    vm.movImm(VReg.A0, restArgs.length);
+                    vm.call("_array_new_with_size");
+                    vm.store(VReg.FP, argsOffset, VReg.RET); // 保存数组
+
+                    for (let i = 0; i < restArgs.length; i++) {
+                        this.compileExpression(restArgs[i]);
+                        // 注意：RET 和 A0 是同一个寄存器 (X0)
+                        // 使用 _array_set 直接设置元素（与数组字面量编译相同）
+                        vm.store(VReg.FP, tempValueOffset, VReg.RET); // 保存值
+                        vm.load(VReg.A0, VReg.FP, argsOffset); // 加载数组
+                        vm.movImm(VReg.A1, i); // 索引
+                        vm.load(VReg.A2, VReg.FP, tempValueOffset); // 加载值
+                        vm.call("_array_set");
+                    }
+
+                    vm.load(VReg.A2, VReg.FP, argsOffset); // argsArray
+                } else {
+                    vm.movImm64(VReg.A2, "0x7ffa000000000000"); // null
+                }
+
+                vm.load(VReg.A1, VReg.FP, thisArgOffset);
+                vm.load(VReg.A0, VReg.FP, funcOffset);
+                vm.call("_function_apply"); // call 和 apply 内部处理相同
+                return true;
+            }
+
+            case "bind": {
+                // func.bind(thisArg, ...args)
+                // 返回一个新函数，绑定了 this 和部分参数
+
+                // 使用预分配的栈槽来保存临时值
+                const funcOffset = this.ctx.allocLocal(`__bind_func_${this.nextLabelId()}`);
+                const thisArgOffset = this.ctx.allocLocal(`__bind_thisArg_${this.nextLabelId()}`);
+                const argsOffset = this.ctx.allocLocal(`__bind_args_${this.nextLabelId()}`);
+                const tempValueOffset = this.ctx.allocLocal(`__bind_temp_${this.nextLabelId()}`);
+
+                // 编译函数引用
+                this.compileExpression(funcExpr);
+                vm.store(VReg.FP, funcOffset, VReg.RET); // 保存函数
+
+                // 编译 thisArg
+                if (args.length > 0) {
+                    this.compileExpression(args[0]);
+                } else {
+                    vm.movImm64(VReg.RET, "0x7ffb000000000000"); // undefined
+                }
+                vm.store(VReg.FP, thisArgOffset, VReg.RET); // 保存 thisArg
+
+                // 收集绑定的参数到数组
+                const boundArgs = args.slice(1);
+                if (boundArgs.length > 0) {
+                    vm.movImm(VReg.A0, boundArgs.length);
+                    vm.call("_array_new_with_size");
+                    vm.store(VReg.FP, argsOffset, VReg.RET);
+
+                    for (let i = 0; i < boundArgs.length; i++) {
+                        this.compileExpression(boundArgs[i]);
+                        // 注意：RET 和 A0 是同一个寄存器 (X0)
+                        // 使用 _array_set 直接设置元素
+                        vm.store(VReg.FP, tempValueOffset, VReg.RET); // 保存值
+                        vm.load(VReg.A0, VReg.FP, argsOffset);
+                        vm.movImm(VReg.A1, i); // 索引
+                        vm.load(VReg.A2, VReg.FP, tempValueOffset);
+                        vm.call("_array_set");
+                    }
+
+                    vm.load(VReg.A2, VReg.FP, argsOffset); // boundArgs array
+                } else {
+                    vm.movImm64(VReg.A2, "0x7ffa000000000000"); // null
+                }
+
+                vm.load(VReg.A1, VReg.FP, thisArgOffset);
+                vm.load(VReg.A0, VReg.FP, funcOffset);
+                vm.call("_function_bind");
+                return true;
+            }
 
             default:
                 return false;

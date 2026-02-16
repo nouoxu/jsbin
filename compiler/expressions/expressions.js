@@ -71,6 +71,13 @@ export const ExpressionCompiler = {
 
     // 编译表达式
     compileExpression(expr) {
+        // null 检查
+        if (!expr) {
+            console.log("[ERROR] compileExpression called with null/undefined expr");
+            console.log("Current source:", this.currentSource || "unknown");
+            console.log("Stack:", new Error().stack);
+            throw new Error("compileExpression called with null/undefined expr");
+        }
         // 记录 Source Map 映射
         if (this.recordSourceMapping) {
             this.recordSourceMapping(expr);

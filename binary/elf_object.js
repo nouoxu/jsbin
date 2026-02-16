@@ -124,7 +124,16 @@ export class ELFObjectGenerator {
     }
 
     generate(codeBytes, dataBytes, labels) {
-        labels = labels || {};
+        if (!labels || !(labels instanceof Map)) {
+            const m = new Map();
+            if (labels) {
+                const keys = Object.keys(labels);
+                for (let i = 0; i < keys.length; i++) {
+                    m.set(keys[i], labels[keys[i]]);
+                }
+            }
+            labels = m;
+        }
 
         // ELF header: 64 字节
         // Section headers 放在末尾
@@ -361,15 +370,15 @@ export class ELFObjectGenerator {
         for (const name of this.exports) {
             // 首先尝试查找 _user_xxx 形式的内部函数
             const userSymName = "_user_" + name;
-            if (labels[userSymName] !== undefined && !addedSymbols.has(userSymName)) {
-                globalSymbols.push({ name: userSymName, offset: labels[userSymName], type: STT_FUNC });
+            if (labels.get(userSymName) !== undefined && !addedSymbols.has(userSymName)) {
+                globalSymbols.push({ name: userSymName, offset: labels.get(userSymName), type: STT_FUNC });
                 addedSymbols.add(userSymName);
             }
 
             // 然后尝试查找 _xxx 形式的 wrapper 函数
             const symName = "_" + name;
-            if (labels[symName] !== undefined && !addedSymbols.has(symName)) {
-                globalSymbols.push({ name: symName, offset: labels[symName], type: STT_FUNC });
+            if (labels.get(symName) !== undefined && !addedSymbols.has(symName)) {
+                globalSymbols.push({ name: symName, offset: labels.get(symName), type: STT_FUNC });
                 addedSymbols.add(symName);
             }
         }

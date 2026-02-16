@@ -287,11 +287,14 @@ export class Lexer {
 
     // 获取下一个 Token
     nextToken() {
+        if (isLexerDebug()) console.log("[Lexer.nextToken] start", "ch=", this.ch);
         let tok;
 
         this.skipWhitespace();
         this.skipComment();
         this.skipWhitespace();
+
+        if (isLexerDebug()) console.log("[Lexer.nextToken] after skip", "ch=", this.ch);
 
         let startLine = this.line;
         let startColumn = this.column;
@@ -589,6 +592,13 @@ export class Lexer {
         tok.flags = flags;
         return tok;
     }
+}
+
+function isLexerDebug() {
+    if (typeof globalThis !== "undefined" && globalThis.DEBUG_LEXER) {
+        return true;
+    }
+    return typeof process !== "undefined" && process.env && process.env.DEBUG_LEXER;
 }
 
 // 创建词法分析器

@@ -234,18 +234,19 @@ export class BufferGenerator {
         vm.shlImm(VReg.V1, VReg.V0, 3); // i * 8
         vm.addImm(VReg.V2, VReg.S0, 24);
         vm.add(VReg.V2, VReg.V2, VReg.V1);
-        vm.load(VReg.V1, VReg.V2, 0); // V1 = arr[i] (Number 对象指针)
+        vm.load(VReg.A0, VReg.V2, 0); // A0 = arr[i]
 
-        // 转换为整数:
-        // 1. 从 Number 对象偏移 8 读取 float64 位模式
-        // 2. 使用 fmovToFloat + fcvtzs 转换为整数
+        // 使用 _to_number 转换为数字（处理 NaN-boxed 值和 Number 对象）
+        vm.call("_to_number");
+        vm.mov(VReg.V1, VReg.RET); // V1 = number
+
+        // 转换为整数并存储
         vm.push(VReg.V0);
         vm.push(VReg.S0);
         vm.push(VReg.S1);
         vm.push(VReg.S2);
-        vm.load(VReg.V1, VReg.V1, 8); // V1 = float64 bits
         vm.fmovToFloat(0, VReg.V1);
-        vm.fcvtzs(VReg.V1, 0);
+        vm.fcvtzs(VReg.V1, 0); // V1 = integer value
         vm.pop(VReg.S2);
         vm.pop(VReg.S1);
         vm.pop(VReg.S0);

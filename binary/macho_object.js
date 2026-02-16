@@ -177,6 +177,16 @@ export class MachOObjectGenerator {
 
     // 生成目标文件
     generate(codeBytes, dataBytes, labels) {
+        if (!labels || !(labels instanceof Map)) {
+            const m = new Map();
+            if (labels) {
+                const keys = Object.keys(labels);
+                for (let i = 0; i < keys.length; i++) {
+                    m.set(keys[i], labels[keys[i]]);
+                }
+            }
+            labels = m;
+        }
         const codeSize = codeBytes.length;
         const dataSize = dataBytes.length;
 
@@ -205,21 +215,21 @@ export class MachOObjectGenerator {
 
         // 为导出的函数添加符号
         for (const name of this.exports) {
-            if (labels["_user_" + name] !== undefined && !addedSymbols.has("_user_" + name)) {
+            if (labels.get("_user_" + name) !== undefined && !addedSymbols.has("_user_" + name)) {
                 // 内部函数
-                this.addSymbol("_user_" + name, 1, labels["_user_" + name], true);
+                this.addSymbol("_user_" + name, 1, labels.get("_user_" + name), true);
                 addedSymbols.add("_user_" + name);
             }
-            if (labels["_" + name] !== undefined && !addedSymbols.has("_" + name)) {
+            if (labels.get("_" + name) !== undefined && !addedSymbols.has("_" + name)) {
                 // 导出的 wrapper 函数
-                this.addSymbol("_" + name, 1, labels["_" + name], true);
+                this.addSymbol("_" + name, 1, labels.get("_" + name), true);
                 addedSymbols.add("_" + name);
             }
         }
 
         // 添加 _main 入口点（如果存在且未添加）
-        if (labels["_main"] !== undefined && !addedSymbols.has("_main")) {
-            this.addSymbol("_main", 1, labels["_main"], true);
+        if (labels.get("_main") !== undefined && !addedSymbols.has("_main")) {
+            this.addSymbol("_main", 1, labels.get("_main"), true);
             addedSymbols.add("_main");
         }
 

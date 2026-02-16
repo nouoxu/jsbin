@@ -2,6 +2,7 @@
 // 提供 + 运算符的实现，支持字符串连接和数值加法
 
 import { VReg } from "../../vm/registers.js";
+import { TYPE_STRING } from "../core/allocator.js";
 
 export class AddGenerator {
     constructor(vm) {
@@ -45,31 +46,72 @@ export class AddGenerator {
         vm.cmp(VReg.S3, VReg.V0);
         vm.jeq("_js_add_strconcat");
 
-        // 检查 a 是否是数据段字符串（低地址指针，非 NaN-boxed）
-        // 检查 a 的高16位是否 < 0x7FF8（可能是指针）
+        // 检查 a 是否是原始值（指针或浮点数）
         vm.movImm(VReg.V0, 0x7ff8);
         vm.cmp(VReg.S2, VReg.V0);
         vm.jge("_js_add_check_b_raw"); // a 是 NaN-boxed，继续检查 b
 
-        // a 是原始值（指针或浮点数）
-        // 检查 a 是否是数据段地址（高32位是 0x00000001，即 0x1xxxxxxxx）
-        vm.shrImm(VReg.V1, VReg.S0, 32);
-        vm.cmpImm(VReg.V1, 1);
-        vm.jeq("_js_add_strconcat"); // a 是 macOS 数据段字符串指针
+        // a 是原始值：先检查是否在堆内（堆字符串）
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jlt("_js_add_check_a_data");
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jge("_js_add_check_a_data");
+
+        // 在堆内，检查类型是否为字符串
+        vm.load(VReg.V2, VReg.S0, 0);
+        vm.andImm(VReg.V2, VReg.V2, 0xff);
+        vm.cmpImm(VReg.V2, TYPE_STRING);
+        vm.jeq("_js_add_strconcat");
+        vm.jmp("_js_add_check_b_raw");
+
+        vm.label("_js_add_check_a_data");
+        // 检查是否在数据段范围内（静态字符串）
+        vm.lea(VReg.V0, "_data_start");
+        vm.cmp(VReg.S0, VReg.V0);
+        vm.jlt("_js_add_check_b_raw");
+        vm.lea(VReg.V1, "_heap_base");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S0, VReg.V1);
+        vm.jge("_js_add_check_b_raw");
+        vm.jmp("_js_add_strconcat");
 
         vm.label("_js_add_check_b_raw");
-        // 检查 b 是否是数据段字符串
+        // 检查 b 是否为原始值（指针或浮点数）
         vm.movImm(VReg.V0, 0x7ff8);
         vm.cmp(VReg.S3, VReg.V0);
         vm.jge("_js_add_float"); // b 是 NaN-boxed（但不是字符串），执行浮点加法
 
-        // b 是原始值，检查是否是数据段字符串
-        vm.shrImm(VReg.V1, VReg.S1, 32);
-        vm.cmpImm(VReg.V1, 1);
-        vm.jeq("_js_add_strconcat"); // b 是 macOS 数据段字符串指针
+        // b 是原始值：先检查是否在堆内（堆字符串）
+        vm.lea(VReg.V0, "_heap_base");
+        vm.load(VReg.V0, VReg.V0, 0);
+        vm.cmp(VReg.S1, VReg.V0);
+        vm.jlt("_js_add_check_b_data");
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S1, VReg.V1);
+        vm.jge("_js_add_check_b_data");
 
-        // 都不是字符串，执行浮点加法
+        // 在堆内，检查类型是否为字符串
+        vm.load(VReg.V2, VReg.S1, 0);
+        vm.andImm(VReg.V2, VReg.V2, 0xff);
+        vm.cmpImm(VReg.V2, TYPE_STRING);
+        vm.jeq("_js_add_strconcat");
         vm.jmp("_js_add_float");
+
+        vm.label("_js_add_check_b_data");
+        // 检查是否在数据段范围内（静态字符串）
+        vm.lea(VReg.V0, "_data_start");
+        vm.cmp(VReg.S1, VReg.V0);
+        vm.jlt("_js_add_float");
+        vm.lea(VReg.V1, "_heap_base");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S1, VReg.V1);
+        vm.jge("_js_add_float");
+        vm.jmp("_js_add_strconcat");
 
         // 字符串连接分支
         vm.label("_js_add_strconcat");
@@ -93,11 +135,20 @@ export class AddGenerator {
 
         // 浮点加法分支
         vm.label("_js_add_float");
+        // 将操作数转换为 float64 位模式（支持 Number 对象等）
+        // 注意: _to_number 不保证保留 S1，因此先保存 b
+        vm.mov(VReg.S2, VReg.S1);
+        vm.mov(VReg.A0, VReg.S0);
+        vm.call("_to_number");
+        vm.mov(VReg.S0, VReg.RET);
+        vm.mov(VReg.A0, VReg.S2);
+        vm.call("_to_number");
+        vm.mov(VReg.S1, VReg.RET);
         // 重新解释为浮点数并相加
-        vm.fmov(VReg.F0, VReg.S0); // F0 = a 作为 double
-        vm.fmov(VReg.F1, VReg.S1); // F1 = b 作为 double
-        vm.fadd(VReg.F0, VReg.F0, VReg.F1); // F0 = a + b
-        vm.fmov(VReg.RET, VReg.F0); // 返回结果
+        vm.fmovToFloat(0, VReg.S0); // FP0 = a (float64 bits)
+        vm.fmovToFloat(1, VReg.S1); // FP1 = b (float64 bits)
+        vm.fadd(0, 0, 1); // FP0 = a + b
+        vm.fmovToInt(VReg.RET, 0); // 返回 float64 位模式
 
         vm.label("_js_add_done");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);

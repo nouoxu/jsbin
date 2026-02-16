@@ -10,7 +10,7 @@ import { JS_UNDEFINED } from "../../core/jsvalue.js";
 //   offset 16: capacity (8 bytes) - 最大容量
 //   offset 24: elements[0]
 //   ...
-const ARRAY_HEADER_SIZE = 24;
+const ARRAY_HEADER_SIZE = 32;
 const ARRAY_MIN_CAPACITY = 8;
 
 // 数组基础操作 Mixin (unused - see index.js for actual implementation)

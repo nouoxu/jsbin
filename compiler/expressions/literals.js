@@ -128,8 +128,10 @@ export const LiteralCompiler = {
     compileStringValue(str) {
         const label = this.asm.addString(str);
         this.vm.lea(VReg.RET, label);
-        // Box 成 NaN-boxed 字符串：添加 0x7FFC 标签
+        // Box 成 NaN-boxed 字符串：先屏蔽高位，再添加 0x7FFC 标签
         // 注意：使用 V1 而不是 V0，因为 V0 和 RET 都映射到同一个物理寄存器
+        this.vm.movImm64(VReg.V1, "0x0000ffffffffffff");
+        this.vm.and(VReg.RET, VReg.RET, VReg.V1);
         this.vm.movImm64(VReg.V1, "0x7ffc000000000000");
         this.vm.or(VReg.RET, VReg.RET, VReg.V1);
     },

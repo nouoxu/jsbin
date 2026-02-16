@@ -174,6 +174,7 @@ export class CompileContext {
 
     // 注册函数声明
     registerFunction(name, node) {
+        console.log("DEBUG: registerFunction name=" + name + " node.type=" + (node ? node.type : "null"));
         this.functions[name] = node;
     }
 

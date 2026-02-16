@@ -1,32 +1,9 @@
 // JSBin 命令行编译工具
-console.log("[TOP] cli.js starting");
 
 import * as fs from "fs";
 import * as path from "path";
-// import { fileURLToPath } from "url";
-
-console.log("[TOP] After fs/path imports");
-
-import { Compiler } from "./compiler/index.js";
 import { detectPlatform, resolveTarget, listTargets } from "./compiler/core/platform.js";
-
-console.log("[TOP] After all imports");
-
-if (process.env && process.env.DEBUG_ARGV) {
-    // 打印 argv 并提前退出，便于自举二进制调试
-    try {
-        console.log("[DEBUG_ARGV] len=", process.argv.length);
-        for (let i = 0; i < process.argv.length; i++) {
-            console.log(`[argv ${i}]`, String(process.argv[i]));
-        }
-    } catch (e) {
-        console.log("[DEBUG_ARGV] error", e && e.message);
-    }
-    process.exit(0);
-}
-
-// const __filename = fileURLToPath(import.meta.url);
-// const __dirname = path.dirname(__filename);
+import * as compilerModule from "./compiler/index.js";
 
 function printUsage() {
     console.log(`
@@ -141,12 +118,8 @@ function parseArgs(args) {
     return result;
 }
 
-console.log("[M1] start");
 const args = process.argv.slice(2);
-console.log("[M2] after slice");
 const opts = parseArgs(args);
-console.log("[M3] after parseArgs");
-console.log("[M4] opts.input =", opts.input);
 
 if (opts.help) {
     printUsage();
@@ -161,78 +134,57 @@ if (opts.listTargets) {
     process.exit(0);
 }
 
-console.log("[M5] before input check");
 if (!opts.input) {
     console.error("Error: No input file specified");
     printUsage();
     process.exit(1);
 }
-console.log("[M6] after input check");
 
 // 解析输入文件路径（支持相对路径）
-console.log("[DEBUG] Before path.resolve");
 const inputFile = path.resolve(process.cwd(), opts.input);
-console.log("[DEBUG] After path.resolve, before log");
-console.log("[DEBUG] inputFile =", inputFile);
-console.log("[DEBUG] After log 1");
-console.log("[A1]");
 
 if (!fs.existsSync(inputFile)) {
     console.error("Error: Input file not found");
     process.exit(1);
 }
-console.log("[A2]");
 
 // 确定目标平台
 let target;
-console.log("[A2.1] opts.target =", opts.target);
-console.log("[A2.2] opts.os =", opts.os);
-console.log("[A2.3] opts.arch =", opts.arch);
 if (opts.target) {
     target = opts.target;
-    console.log("[A3a] using opts.target");
 } else if (opts.os && opts.arch) {
-    // target = `${opts.os}-${opts.arch}`;
     target = opts.os + "-" + opts.arch;
-    console.log("[A3b] using os-arch concat");
 } else if (opts.os || opts.arch) {
-    console.log("[A3c-1] calling detectPlatform");
     const detected = detectPlatform();
-    console.log("[A3c-2] detected =", detected);
-    console.log("[A3c-3] before split");
     const parts = detected.split("-");
-    console.log("[A3c-4] after split");
     const detectedOs = parts[0];
     const detectedArch = parts[1];
-    console.log("[A3c-5] detectedOs =", detectedOs);
-    console.log("[A3c-6] detectedArch =", detectedArch);
-    // target = `${opts.os || detectedOs}-${opts.arch || detectedArch}`;
     target = (opts.os || detectedOs) + "-" + (opts.arch || detectedArch);
-    console.log("[A3c] using partial detect");
 } else {
     target = detectPlatform();
-    console.log("[A3d] using full detect");
 }
-console.log("[A4] target =", target);
 
 // 验证目标
-try {
-    resolveTarget(target);
-} catch (e) {
+let validTargets = ["macos-arm64", "macos-x64", "linux-arm64", "linux-x64", "windows-arm64", "windows-x64"];
+let isValid = false;
+for (let i = 0; i < validTargets.length; i++) {
+    if (validTargets[i] === target) {
+        isValid = true;
+        break;
+    }
+}
+if (!isValid) {
     console.error("Error: invalid target");
     console.log("Use --list-targets to see supported targets");
     process.exit(1);
 }
-console.log("[A5]");
 
 // 确定输出文件名
 let output = opts.output;
 if (!output) {
-    // 默认输出文件名：去掉 .js 后缀，使用输入文件的目录
     const inputDir = path.dirname(inputFile);
     const inputBase = path.basename(inputFile, ".js");
 
-    // 根据输出类型添加适当的后缀
     if (opts.shared) {
         const ext = target.startsWith("macos") ? ".dylib" : target.startsWith("windows") ? ".dll" : ".so";
         output = path.join(inputDir, `lib${inputBase}${ext}`);
@@ -243,11 +195,10 @@ if (!output) {
         output = path.join(inputDir, `${inputBase}-${target}`);
     }
 } else {
-    // 解析输出路径
     output = path.resolve(process.cwd(), output);
 }
 
-// 添加 Windows 的 .exe 后缀（仅可执行文件）
+// 添加 Windows 的 .exe 后缀
 if (!opts.shared && !opts.static && target.includes("windows") && !output.endsWith(".exe")) {
     output += ".exe";
 }
@@ -257,35 +208,17 @@ let outputTypeDesc = "executable";
 if (opts.shared) outputTypeDesc = "shared library";
 if (opts.static) outputTypeDesc = "static library";
 
-console.log("[DEBUG] Before template inputFile");
-console.log("[DEBUG] inputFile =", inputFile);
-console.log("[DEBUG] 1");
-console.log("[DEBUG] Before template, output =", output);
-console.log("[DEBUG] 2");
-console.log("[DEBUG] target =", target);
-console.log("[DEBUG] 3");
-console.log("[DEBUG] outputTypeDesc =", outputTypeDesc);
-console.log("[DEBUG] 4");
-// 临时禁用字符串连接
 console.log("Compiling...");
-console.log("[DEBUG] 5");
 console.log("  input:", inputFile);
-console.log("[DEBUG] 6");
 console.log("  output:", output);
-console.log("[DEBUG] 7");
 console.log("  target:", target);
-console.log("[DEBUG] 8");
 console.log("  type:", outputTypeDesc);
-console.log("[DEBUG] 9");
 
 try {
-    console.log("[DEBUG] 9.1] Creating compiler");
-    const compiler = new Compiler(target);
-    console.log("[DEBUG] 9.2] Compiler created");
+    const compiler = compilerModule.createCompiler(target);
 
-    // 设置源文件路径（用于解析相对路径的 jslib）
+    // 设置源文件路径
     compiler.setSourcePath(inputFile);
-    console.log("[DEBUG] 9.3] Source path set");
 
     // 设置编译选项
     if (opts.shared) {
@@ -294,44 +227,34 @@ try {
         compiler.setOutputType("static");
     }
 
-    // 设置 jslib 生成选项
     if (opts.noJslib) {
         compiler.setOption("noJslib", true);
     }
 
-    // 设置 dump-asm 选项
     if (opts.dumpAsm) {
         compiler.setOption("dumpAsm", true);
     }
 
-    // 设置 source-map 选项
     if (opts.sourceMap) {
         compiler.setOption("sourceMap", true);
     }
 
-    // 设置分代 GC 选项
     if (opts.gc) {
         compiler.setOption("gc", true);
     }
 
-    // 添加导出符号
     for (const exp of opts.exports) {
         compiler.addExport(exp);
     }
 
-    // 添加库链接
     for (const lib of opts.libs) {
         compiler.addLibrary(lib);
     }
 
-    // 添加库搜索路径
     for (const libPath of opts.libPaths) {
         compiler.addLibraryPath(libPath);
     }
 
-    console.log("[DEBUG] 9.4] Calling compileFile");
-    console.log("[DEBUG] inputFile =", inputFile);
-    console.log("[DEBUG] output =", output);
     compiler.compileFile(inputFile, output);
     console.log(`Successfully compiled: ${output}`);
 } catch (e) {

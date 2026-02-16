@@ -12,20 +12,38 @@ import { ClassParser } from "./classes.js";
 import { ModuleParser } from "./modules.js";
 
 // 解析器类
+function isParserDebug() {
+    if (typeof globalThis !== "undefined" && globalThis.DEBUG_PARSER) {
+        return true;
+    }
+    return typeof process !== "undefined" && process.env && process.env.DEBUG_PARSER;
+}
+
 export class Parser {
     constructor(lexer) {
+        console.log("[Parser] ctor start");
+        if (isParserDebug()) console.log("[Parser] constructor start");
         this.lexer = lexer;
+        if (isParserDebug()) console.log("[Parser] lexer set");
         this.curToken = null;
         this.peekToken = null;
         this.errors = [];
+        if (isParserDebug()) console.log("[Parser] basic fields set");
 
         this.prefixParseFns = {};
         this.infixParseFns = {};
+        if (isParserDebug()) console.log("[Parser] parseFns objects created");
 
         this.registerParseFns();
+        console.log("[Parser] registerParseFns done");
+        if (isParserDebug()) console.log("[Parser] registerParseFns done");
 
         this.nextToken();
+        console.log("[Parser] first nextToken done");
+        if (isParserDebug()) console.log("[Parser] first nextToken done");
         this.nextToken();
+        console.log("[Parser] second nextToken done");
+        if (isParserDebug()) console.log("[Parser] second nextToken done");
     }
 
     registerParseFns() {
@@ -117,8 +135,12 @@ export class Parser {
     }
 
     nextToken() {
+        if (isParserDebug()) console.log("[Parser.nextToken] start");
         this.curToken = this.peekToken;
+        if (isParserDebug()) console.log("[Parser.nextToken] curToken set");
+        if (isParserDebug()) console.log("[Parser.nextToken] this.lexer =", this.lexer);
         this.peekToken = this.lexer.nextToken();
+        if (isParserDebug()) console.log("[Parser.nextToken] peekToken set");
     }
 
     curTokenIs(t) {

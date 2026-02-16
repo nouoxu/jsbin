@@ -173,9 +173,10 @@ export class ProcessGenerator {
         const vm = this.vm;
         const TYPE_ARRAY = 1;
         const TYPE_STRING = 6;
+        const ARRAY_HEADER_SIZE = 32;
 
         vm.label("_process_argv_init");
-        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
         vm.mov(VReg.S0, VReg.A0); // S0 = argc
         vm.mov(VReg.S1, VReg.A1); // S1 = argv (char**)
@@ -184,23 +185,30 @@ export class ProcessGenerator {
         vm.cmpImm(VReg.S0, 0);
         vm.jle("_argv_init_empty");
 
-        // 创建 JS 数组: 24 header + (argc + 1) * 8
-        // 需要 argc + 1 个元素（多一个 dummy 作为 script path）
-        // [type:8][length:8][capacity:8][elements...]
-        vm.mov(VReg.A0, VReg.S0);
-        vm.addImm(VReg.A0, VReg.A0, 1); // argc + 1
-        vm.shlImm(VReg.A0, VReg.A0, 3); // (argc + 1) * 8
-        vm.addImm(VReg.A0, VReg.A0, 24); // + header
+        // === 使用间接布局 ===
+        // 1. 创建 Header (32 bytes)
+        vm.movImm(VReg.A0, ARRAY_HEADER_SIZE);
         vm.call("_alloc");
-        vm.mov(VReg.S2, VReg.RET); // S2 = array object
+        vm.mov(VReg.S2, VReg.RET); // S2 = array header
 
-        // 设置数组头部: length = argc + 1, capacity = argc + 1
-        vm.movImm(VReg.V0, TYPE_ARRAY);
-        vm.store(VReg.S2, 0, VReg.V0); // type
+        // 2. 设置数组长度 (argc + 1)
         vm.mov(VReg.V0, VReg.S0);
-        vm.addImm(VReg.V0, VReg.V0, 1);
-        vm.store(VReg.S2, 8, VReg.V0); // length = argc + 1
-        vm.store(VReg.S2, 16, VReg.V0); // capacity = argc + 1
+        vm.addImm(VReg.V0, VReg.V0, 1); // argc + 1
+        vm.mov(VReg.S3, VReg.V0); // S3 = 元素数量
+
+        // 设置 Header
+        vm.movImm(VReg.V1, TYPE_ARRAY);
+        vm.store(VReg.S2, 0, VReg.V1); // type
+        vm.store(VReg.S2, 8, VReg.S3); // length = argc + 1
+        vm.store(VReg.S2, 16, VReg.S3); // capacity = argc + 1
+
+        // 3. 分配 Body (元素数量 * 8)
+        vm.shl(VReg.A0, VReg.S3, 3); // (argc + 1) * 8
+        vm.call("_alloc");
+        vm.mov(VReg.S5, VReg.RET); // S5 = body pointer
+
+        // 4. 链接 Body 到 Header
+        vm.store(VReg.S2, 24, VReg.S5);
 
         // === 首先处理 argv[0]（程序名），放入 JS argv[0] 和 argv[1] ===
         // 获取 argv[0] 指针
@@ -213,13 +221,13 @@ export class ProcessGenerator {
         vm.call("_js_box_string");
         vm.mov(VReg.V2, VReg.RET); // V2 = boxed argv[0]
 
-        // 存入 JS array[0]: array[24 + 0*8] = boxed string
-        vm.store(VReg.S2, 24, VReg.V2);
+        // 存入 Body[0]: body[0*8] = boxed string
+        vm.store(VReg.S5, 0, VReg.V2);
 
-        // 存入 JS array[1]: array[24 + 1*8] = boxed string (同样的 argv[0] 作为 dummy)
-        vm.store(VReg.S2, 32, VReg.V2);
+        // 存入 Body[1]: body[1*8] = boxed string (同样的 argv[0] 作为 dummy)
+        vm.store(VReg.S5, 8, VReg.V2);
 
-        // === 遍历剩余的 argv[1..n]，存入 JS array[2..n+1] ===
+        // === 遍历剩余的 argv[1..n]，存入 Body[2..n+1] ===
         vm.movImm(VReg.S3, 1); // S3 = i = 1 (从 C argv[1] 开始)
 
         vm.label("_argv_init_loop");
@@ -245,13 +253,12 @@ export class ProcessGenerator {
         // 保存 boxed string 到 V2（避免与 V0/RET 冲突）
         vm.mov(VReg.V2, VReg.RET);
 
-        // 存入数组: array[24 + (i+1)*8] = boxed string
+        // 存入 Body: body[(i+1)*8] = boxed string
         // 因为我们在索引 1 插入了 dummy，所以 C argv[i] 对应 JS array[i+1]
         vm.mov(VReg.V1, VReg.S3);
         vm.addImm(VReg.V1, VReg.V1, 1); // i + 1
         vm.shlImm(VReg.V1, VReg.V1, 3); // (i + 1) * 8
-        vm.addImm(VReg.V1, VReg.V1, 24); // + header offset
-        vm.add(VReg.V1, VReg.S2, VReg.V1);
+        vm.add(VReg.V1, VReg.S5, VReg.V1); // Body + offset
         vm.store(VReg.V1, 0, VReg.V2);
 
         // i++
@@ -259,8 +266,8 @@ export class ProcessGenerator {
         vm.jmp("_argv_init_loop");
 
         vm.label("_argv_init_empty");
-        // 创建空数组
-        vm.movImm(VReg.A0, 24);
+        // 创建空数组 (间接布局)
+        vm.movImm(VReg.A0, ARRAY_HEADER_SIZE);
         vm.call("_alloc");
         vm.mov(VReg.S2, VReg.RET);
         vm.movImm(VReg.V0, TYPE_ARRAY);
@@ -268,6 +275,7 @@ export class ProcessGenerator {
         vm.movImm(VReg.V0, 0);
         vm.store(VReg.S2, 8, VReg.V0); // length = 0
         vm.store(VReg.S2, 16, VReg.V0); // capacity = 0
+        vm.store(VReg.S2, 24, VReg.V0); // body = 0
 
         vm.label("_argv_init_save");
         // 装箱数组并保存到全局变量
@@ -278,7 +286,7 @@ export class ProcessGenerator {
         vm.store(VReg.V0, 0, VReg.V1);
 
         vm.label("_argv_init_done");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 64);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
     }
 
     /**
@@ -347,13 +355,25 @@ export class ProcessGenerator {
     }
 
     generateDataSection(asm) {
+        const align8 = () => {
+            const misalign = asm.data.length & 7;
+            if (misalign !== 0) {
+                const pad = 8 - misalign;
+                for (let i = 0; i < pad; i++) asm.addDataByte(0);
+            }
+        };
+        const addZeroQword = () => {
+            align8();
+            for (let i = 0; i < 8; i++) asm.addDataByte(0);
+        };
+
         // 全局变量存储 argv 数组指针
         asm.addDataLabel("_process_argv_array");
-        asm.addDataQword(0);
+        addZeroQword();
 
         // 全局变量存储 envp 指针
         asm.addDataLabel("_process_envp_ptr");
-        asm.addDataQword(0);
+        addZeroQword();
 
         // PWD 环境变量名
         asm.addDataLabel("_pwd_env_name");

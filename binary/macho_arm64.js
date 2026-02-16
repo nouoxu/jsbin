@@ -90,7 +90,7 @@ export class MachOARM64Generator {
 
     write64(value) {
         let low = value & 4294967295;
-        let high = Math.floor(value / 4294967296) & 4294967295;
+        let high = (value / 4294967296) | 0;
         this.write32(low);
         this.write32(high);
     }
@@ -179,7 +179,11 @@ export class MachOARM64Generator {
     }
 
     generate(codeBytes, dataBytes, labels) {
-        labels = labels || {};
+        if (labels && !(labels instanceof Map)) {
+            // Convert plain object to Map if needed (legacy support)
+            labels = new Map(Object.entries(labels));
+        }
+        labels = labels || new Map();
         let MACH_HEADER_SIZE = 32;
         let LC_SEGMENT_64_SIZE = 72;
         let LC_SECTION_64_SIZE = 80;
@@ -264,7 +268,7 @@ export class MachOARM64Generator {
         let bindInfoFileOffset = linkeditFileOffset;
 
         // 使用 _start 标签作为入口点，如果没有则使用代码开头
-        let startOffset = labels._start !== undefined ? labels._start : 0;
+        let startOffset = labels.get("_start") !== undefined ? labels.get("_start") : 0;
         let entryOffset = codeOffset + startOffset; // 相对于 __TEXT 段开始的偏移
 
         // ===== Mach-O Header =====
@@ -496,15 +500,15 @@ export class MachOARM64Generator {
         let LC_DYSYMTAB_SIZE = 80;
 
         let dylinkerPath = "/usr/lib/dyld";
-        let dylinkerCmdSize = Math.ceil((12 + dylinkerPath.length + 1) / 8) * 8;
+        let dylinkerCmdSize = (12 + dylinkerPath.length + 1 + 7) & -8;
         let dylibPath = "/usr/lib/libSystem.B.dylib";
-        let dylibCmdSize = Math.ceil((24 + dylibPath.length + 1) / 8) * 8;
+        let dylibCmdSize = (24 + dylibPath.length + 1 + 7) & -8;
 
         // 计算额外动态库大小
         let totalExtraDylibSize = 0;
         for (let i = 0; i < this.externalDylibs.length; i++) {
             let path = this.externalDylibs[i];
-            let size = Math.ceil((24 + path.length + 1) / 8) * 8;
+            let size = (24 + path.length + 1 + 7) & -8;
             totalExtraDylibSize += size;
         }
 
@@ -514,20 +518,20 @@ export class MachOARM64Generator {
         let loadCommandsSize = LC_SEGMENT_64_SIZE + (LC_SEGMENT_64_SIZE + LC_SECTION_64_SIZE) + (LC_SEGMENT_64_SIZE + LC_SECTION_64_SIZE * numDataSections) + LC_SEGMENT_64_SIZE + LC_DYLD_INFO_SIZE + LC_SYMTAB_SIZE + LC_DYSYMTAB_SIZE + dylinkerCmdSize + dylibCmdSize + totalExtraDylibSize + LC_MAIN_SIZE;
 
         let headerAndCmdsSize = MACH_HEADER_SIZE + loadCommandsSize;
-        let codeOffset = Math.ceil(headerAndCmdsSize / 16) * 16;
+        let codeOffset = (headerAndCmdsSize + 15) & -16;
         return this.baseAddr + codeOffset;
     }
 
     getDataVAddr(codeSize) {
         let codeVAddr = this.getCodeVAddr();
         let codeOffset = codeVAddr - this.baseAddr;
-        let textSegmentFileSize = Math.ceil((codeOffset + codeSize) / this.pageSize) * this.pageSize;
+        let textSegmentFileSize = (codeOffset + codeSize + this.pageSize - 1) & -this.pageSize;
         return this.baseAddr + textSegmentFileSize;
     }
 
     // 获取 GOT 在数据段的偏移（8 字节对齐）
     getGotOffset(dataSize) {
         // GOT 必须 8 字节对齐
-        return Math.ceil(dataSize / 8) * 8;
+        return (dataSize + 7) & -8;
     }
 }

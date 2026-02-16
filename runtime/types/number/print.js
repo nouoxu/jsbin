@@ -137,28 +137,46 @@ export class NumberPrintGenerator {
     generatePrintFloat() {
         const vm = this.vm;
         const arch = this.arch;
+        const debug = typeof globalThis !== "undefined" && globalThis.DEBUG_RUNTIME;
+        const envDebug = typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+        const isDebug = debug || envDebug;
+
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float start");
 
         vm.label("_print_float");
         vm.prologue(128, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after prologue");
+
         // S0 = 原始值（位表示）
         vm.mov(VReg.S0, VReg.A0);
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after mov S0");
 
         // ===== 检查 Infinity 和 NaN (exponent = 0x7FF) =====
         // 提取高 12 位来检查 exponent
         vm.mov(VReg.V0, VReg.S0);
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after mov V0");
         vm.shrImm(VReg.V0, VReg.V0, 52); // 右移 52 位得到 sign + exponent (12 位)
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after shrImm");
         vm.andImm(VReg.V0, VReg.V0, 0x7ff); // 屏蔽 sign 位，得到纯 exponent
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after andImm");
         vm.movImm(VReg.V1, 0x7ff);
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after movImm");
         vm.cmp(VReg.V0, VReg.V1);
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after cmp");
         vm.jne("_print_float_normal");
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after jne");
 
         // exponent = 0x7FF，是 Infinity 或 NaN
         // 检查 mantissa 是否为 0 (Infinity) 还是非 0 (NaN)
         vm.mov(VReg.V0, VReg.S0);
-        vm.movImm64(VReg.V1, "0x000fffffffffffff"); // 52-bit mantissa mask
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float mantissa mov");
+        vm.movImm64(VReg.V1, 4503599627370495); // 52-bit mantissa mask (2^52 - 1)
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float mantissa mask");
         vm.and(VReg.V0, VReg.V0, VReg.V1);
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float mantissa and");
         vm.cmpImm(VReg.V0, 0);
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float mantissa cmp");
         vm.jne("_print_float_nan");
 
         // mantissa = 0，是 Infinity
@@ -186,8 +204,12 @@ export class NumberPrintGenerator {
         // ===== 正常浮点数处理 =====
         vm.label("_print_float_normal");
 
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float normal path");
+
         // 将位表示移动到浮点寄存器
         vm.fmovToFloat(0, VReg.S0);
+
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after fmovToFloat");
 
         // 检查是否为负数
         vm.movImm(VReg.S1, 0);
@@ -203,6 +225,8 @@ export class NumberPrintGenerator {
         // 检查是否为整数
         vm.ftrunc(1, 0);
         vm.fcmp(0, 1);
+
+        if (isDebug) console.log("[Runtime:NumberPrint] _print_float after ftrunc/fcmp");
 
         const hasDecimalLabel = "_print_float_has_decimal";
         vm.jne(hasDecimalLabel);
@@ -694,19 +718,42 @@ export class NumberPrintGenerator {
 
     // 生成所有打印函数
     generate() {
-        this.generatePrintInt();
-        this.generatePrintIntNoNL();
-        this.generatePrintFloat();
-        this.generatePrintFloatNoNL();
-        this.generatePrintFloat32NoNL();
-        this.generatePrintNumber();
-        this.generatePrintNumberNoNL();
+        try {
+            console.log("[Runtime:NumberPrint] generatePrintInt");
+            this.generatePrintInt();
+            console.log("[Runtime:NumberPrint] generatePrintIntNoNL");
+            this.generatePrintIntNoNL();
+            console.log("[Runtime:NumberPrint] generatePrintFloat");
+            this.generatePrintFloat();
+            console.log("[Runtime:NumberPrint] generatePrintFloatNoNL");
+            this.generatePrintFloatNoNL();
+            console.log("[Runtime:NumberPrint] generatePrintFloat32NoNL");
+            this.generatePrintFloat32NoNL();
+            console.log("[Runtime:NumberPrint] generatePrintNumber");
+            this.generatePrintNumber();
+            console.log("[Runtime:NumberPrint] generatePrintNumberNoNL");
+            this.generatePrintNumberNoNL();
+            console.log("[Runtime:NumberPrint] done");
+        } catch (e) {
+            console.log("[Runtime:NumberPrint] ERROR:", e);
+            if (e && e.message) console.log("[Runtime:NumberPrint] ERROR MSG:", e.message);
+            if (e && e.stack) console.log("[Runtime:NumberPrint] ERROR STACK:", e.stack);
+            throw e;
+        }
     }
 
     // 生成数据段
     generateDataSection(asm) {
+        if (GlobalDebug()) console.log("[NumberPrint] generateDataSection start");
         const strGen = new StringConstantsGenerator(asm);
-        strGen.generatePrintBuffer();
+        if (GlobalDebug()) console.log("[NumberPrint] StringConstantsGenerator created");
+        strGen.generatePrintBuffer(24);
+        if (GlobalDebug()) console.log("[NumberPrint] PrintBuffer generated");
         strGen.generateAll();
+        if (GlobalDebug()) console.log("[NumberPrint] generateAll done");
     }
+}
+
+function GlobalDebug() {
+    return (typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME) || (typeof globalThis !== "undefined" && globalThis.DEBUG_RUNTIME);
 }

@@ -125,17 +125,107 @@ export class StringConstantsGenerator {
 
     // 生成所有运行时字符串常量
     generateAll() {
-        for (const key in RUNTIME_STRINGS) {
+        const debug = typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+        const keys = [
+            "object",
+            "undefined",
+            "null",
+            "true",
+            "false",
+            "function",
+            "array",
+            "unknown",
+            "empty",
+            "infinity",
+            "negInfinity",
+            "nan",
+            "promisePending",
+            "promiseFulfilledFull",
+            "promiseRejectedFull",
+            "lbracket",
+            "rbracket",
+            "comma",
+            "quote",
+            "number",
+            "string",
+            "boolean",
+            "functionType",
+            "objectType",
+            "Number",
+            "String",
+            "Array",
+            "Object",
+            "Function",
+            "ArrayBuffer",
+            "Int8Array",
+            "Int16Array",
+            "Int32Array",
+            "BigInt64Array",
+            "Uint8Array",
+            "Uint16Array",
+            "Uint32Array",
+            "BigUint64Array",
+            "Uint8ClampedArray",
+            "Float32Array",
+            "Float64Array",
+            "arraybufferOpen",
+            "arraybufferClose",
+            "typedarrayAbbrev",
+            "debugInput",
+            "debugUnboxed",
+            "debugLen",
+            "debugElem",
+            "debugBox",
+            "debugBoxed2",
+            "debugIdx",
+            "debugColon",
+            "debugNumObj",
+            "debugFlt",
+            "debugVnl",
+            "debugHeapBase",
+            "debugHeapPtr",
+            "debugType",
+            "newline",
+            "debugResume",
+            "debugResumeYield",
+            "debugGenNext",
+            "debugGenResume",
+            "debugGenResumeState",
+            "debugFuncPtr",
+            "debugAfterCall",
+            "debugCalling",
+            "debugGenReturn",
+            "debugGenS0",
+            "debugRetval",
+            "debugRetval2",
+            "getterPrefix",
+            "setterPrefix",
+            "lengthProp",
+        ];
+
+        let count = 0;
+        for (let i = 0; i < keys.length; i++) {
+            const key = keys[i];
             const str = RUNTIME_STRINGS[key];
-            this.generateString(str.label, str.value);
+            if (str && str.label) {
+                this.generateString(str.label, str.value);
+                count++;
+            }
         }
+        if (debug) console.log("[Strings] generateAll done, count=" + count);
     }
 
     // 生成打印缓冲区
-    generatePrintBuffer(size = 24) {
+    generatePrintBuffer(size) {
+        if (size === undefined) size = 24;
+        const debug = typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+        if (debug) console.log("[Strings] generatePrintBuffer start, size=" + size);
         this.asm.addDataLabel("_print_buf");
+        if (debug) console.log("[Strings] generatePrintBuffer label added");
         for (let i = 0; i < size; i++) {
+            if (debug && i === 0) console.log("[Strings] Loop start");
             this.asm.addDataByte(0);
         }
+        if (debug) console.log("[Strings] generatePrintBuffer done");
     }
 }

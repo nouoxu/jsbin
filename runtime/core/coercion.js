@@ -167,7 +167,7 @@ export class CoercionGenerator {
         vm.shrImm(VReg.V0, VReg.S0, 48);
         vm.movImm(VReg.V1, 0x7ff8);
         vm.cmp(VReg.V0, VReg.V1);
-        vm.jlt("_to_number_is_float"); // 小于 0x7FF8 说明是正常 float64
+        vm.jlt("_to_number_check_heap"); // 小于 0x7FF8，可能是 float64 或堆对象
 
         // 检查 Int32 (0x7FF8)
         vm.movImm(VReg.V1, 0x7ff8);
@@ -197,6 +197,39 @@ export class CoercionGenerator {
         // 其他情况 (对象等) -> NaN
         vm.jmp("_to_number_nan");
 
+        // 高位 < 0x7FF8，可能是纯 float64 或 Number 对象指针
+        vm.label("_to_number_check_heap");
+        // 检查高 16 位是否很小（指示堆指针）
+        // 堆指针：高 16 位通常是 0x0000 到 0x000F 之间（用户空间地址）
+        // 纯 float64：高 16 位对于大多数正常数来说 >= 0x3FF0 (1.0) 或更大
+        // 使用阈值 0x0010 来区分
+        vm.shrImm(VReg.V0, VReg.S0, 48);
+        vm.movImm(VReg.V1, 0x0010);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jlt("_to_number_likely_heap"); // 高 16 位 < 0x10，可能是堆指针
+
+        // 高 16 位 >= 0x10，当作纯 float64
+        vm.jmp("_to_number_is_float");
+
+        // 可能是堆指针，检查类型字段
+        vm.label("_to_number_likely_heap");
+        // 检查是否为 null (0)
+        vm.cmpImm(VReg.S0, 0);
+        vm.jeq("_to_number_zero");
+
+        // 非 null，检查类型字段
+        vm.load(VReg.V0, VReg.S0, 0); // 加载类型字段
+        vm.movImm(VReg.V1, 0x1d); // TYPE_FLOAT64 = 29
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_to_number_from_number_obj");
+        // 类型不匹配，可能是其他对象，返回 NaN
+        vm.jmp("_to_number_nan");
+
+        // 从 Number 对象读取 float64 值
+        vm.label("_to_number_from_number_obj");
+        vm.load(VReg.RET, VReg.S0, 8); // 读取偏移 8 的 float64 值
+        vm.epilogue([VReg.S0], 0);
+
         // 已经是 float64
         vm.label("_to_number_is_float");
         vm.mov(VReg.RET, VReg.S0);
@@ -207,14 +240,16 @@ export class CoercionGenerator {
         // 提取低 32 位并符号扩展
         vm.shlImm(VReg.V0, VReg.S0, 32);
         vm.sarImm(VReg.V0, VReg.V0, 32);
-        // 转换为 float64
-        vm.scvtf(VReg.RET, VReg.V0);
+        // 转换为 float64 位模式
+        vm.scvtf(0, VReg.V0); // D0 = (double)V0
+        vm.fmovToInt(VReg.RET, 0); // RET = float64 位模式
         vm.epilogue([VReg.S0], 0);
 
         // boolean -> 0 或 1
         vm.label("_to_number_from_bool");
         vm.andImm(VReg.V0, VReg.S0, 1); // 提取最低位
-        vm.scvtf(VReg.RET, VReg.V0);
+        vm.scvtf(0, VReg.V0); // D0 = (double)V0
+        vm.fmovToInt(VReg.RET, 0); // RET = float64 位模式
         vm.epilogue([VReg.S0], 0);
 
         // 返回 0

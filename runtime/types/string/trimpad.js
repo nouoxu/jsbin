@@ -268,26 +268,45 @@ export const StringTrimPadGenerator = {
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 48);
     },
 
-    // _str_padStart(str, targetLen, padStr) -> 填充后的新字符串
+    // _str_padStart(str, targetLen, padStr) -> 填充后的新字符串（String 对象，需装箱）
+    // str 和 padStr 是 char* 指针
     generatePadStart() {
         const vm = this.vm;
+        const TYPE_STRING = 6;
 
         vm.label("_str_padStart");
         vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
-        vm.mov(VReg.S0, VReg.A0); // str
+        vm.mov(VReg.S0, VReg.A0); // str (char*)
         vm.mov(VReg.S1, VReg.A1); // targetLen
-        vm.mov(VReg.S2, VReg.A2); // padStr
+        vm.mov(VReg.S2, VReg.A2); // padStr (char*)
 
         // 获取 str 长度
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_strlen");
         vm.mov(VReg.S3, VReg.RET); // S3 = str 长度
 
-        // 如果 str 长度 >= targetLen，返回原字符串
+        // 如果 str 长度 >= targetLen，复制原字符串为 String 对象
         vm.cmp(VReg.S3, VReg.S1);
         vm.jlt("_padStart_pad");
-        vm.mov(VReg.RET, VReg.S0);
+        // 分配 String 对象：16 字节头 + len + 1
+        vm.addImm(VReg.A0, VReg.S3, 17);
+        vm.call("_alloc");
+        vm.mov(VReg.S4, VReg.RET); // S4 = 新 String 对象
+        vm.movImm(VReg.V0, TYPE_STRING);
+        vm.store(VReg.S4, 0, VReg.V0); // 类型标记
+        vm.store(VReg.S4, 8, VReg.S3); // 长度
+        // 复制内容
+        vm.addImm(VReg.A0, VReg.S4, 16); // dst
+        vm.mov(VReg.A1, VReg.S0); // src
+        vm.mov(VReg.A2, VReg.S3); // len
+        vm.call("_memcpy");
+        // null 终止符
+        vm.add(VReg.V0, VReg.S4, VReg.S3);
+        vm.addImm(VReg.V0, VReg.V0, 16);
+        vm.movImm(VReg.V1, 0);
+        vm.storeByte(VReg.V0, 0, VReg.V1);
+        vm.mov(VReg.RET, VReg.S4);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
 
         vm.label("_padStart_pad");
@@ -296,24 +315,45 @@ export const StringTrimPadGenerator = {
         vm.call("_strlen");
         vm.mov(VReg.S4, VReg.RET); // S4 = padStr 长度
 
-        // 如果 padStr 为空，使用空格（简化：直接返回原字符串）
+        // 如果 padStr 为空，返回原字符串的 String 对象
         vm.cmpImm(VReg.S4, 0);
         vm.jne("_padStart_haspad");
-        vm.mov(VReg.RET, VReg.S0);
+        // 分配 String 对象
+        vm.addImm(VReg.A0, VReg.S3, 17);
+        vm.call("_alloc");
+        vm.mov(VReg.S5, VReg.RET);
+        vm.movImm(VReg.V0, TYPE_STRING);
+        vm.store(VReg.S5, 0, VReg.V0);
+        vm.store(VReg.S5, 8, VReg.S3);
+        vm.addImm(VReg.A0, VReg.S5, 16);
+        vm.mov(VReg.A1, VReg.S0);
+        vm.mov(VReg.A2, VReg.S3);
+        vm.call("_memcpy");
+        vm.add(VReg.V0, VReg.S5, VReg.S3);
+        vm.addImm(VReg.V0, VReg.V0, 16);
+        vm.movImm(VReg.V1, 0);
+        vm.storeByte(VReg.V0, 0, VReg.V1);
+        vm.mov(VReg.RET, VReg.S5);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
 
         vm.label("_padStart_haspad");
         // 计算需要填充的长度
         vm.sub(VReg.S5, VReg.S1, VReg.S3); // S5 = padLen
 
-        // 分配新字符串（纯 char*，无头部）
-        vm.mov(VReg.A0, VReg.S1);
-        vm.addImm(VReg.A0, VReg.A0, 1); // +1 null terminator
+        // 分配新 String 对象（16 字节头 + targetLen + 1）
+        vm.addImm(VReg.A0, VReg.S1, 17);
         vm.call("_alloc");
-        vm.store(VReg.FP, -8, VReg.RET); // 保存新字符串
+        vm.store(VReg.FP, -8, VReg.RET); // 保存新 String 对象
 
-        // 填充 padStr（纯 char* 格式）
+        // 写入类型和长度
+        vm.movImm(VReg.V0, TYPE_STRING);
+        vm.load(VReg.V1, VReg.FP, -8);
+        vm.store(VReg.V1, 0, VReg.V0); // 类型标记
+        vm.store(VReg.V1, 8, VReg.S1); // 长度 = targetLen
+
+        // 填充 padStr，从偏移 16 开始
         vm.load(VReg.V2, VReg.FP, -8);
+        vm.addImm(VReg.V2, VReg.V2, 16); // V2 = 内容起始位置
         vm.mov(VReg.V3, VReg.S2); // padStr 内容
         vm.movImm(VReg.V4, 0); // 已填充字符数
         vm.movImm(VReg.V5, 0); // padStr 索引
@@ -334,7 +374,7 @@ export const StringTrimPadGenerator = {
         vm.jmp("_padStart_fill");
 
         vm.label("_padStart_copy");
-        // 复制原字符串（纯 char* 格式）
+        // 复制原字符串
         vm.mov(VReg.V3, VReg.S0);
         vm.movImm(VReg.V4, 0);
 

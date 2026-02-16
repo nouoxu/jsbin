@@ -220,7 +220,17 @@ export class ModuleManager {
         const source = fs.readFileSync(modulePath, "utf-8");
         const lexer = new Lexer(source);
         const parser = new Parser(lexer);
-        return parser.parseProgram();
+        const ast = parser.parseProgram();
+
+        // 检查解析错误
+        if (parser.errors && parser.errors.length > 0) {
+            console.warn(`[PARSER WARN] Errors in ${modulePath}:`);
+            for (const err of parser.errors) {
+                console.warn(`  - ${err}`);
+            }
+        }
+
+        return ast;
     }
 
     /**

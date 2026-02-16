@@ -104,7 +104,16 @@ export class COFFObjectGenerator {
     }
 
     generate(codeBytes, dataBytes, labels) {
-        labels = labels || {};
+        if (!labels || !(labels instanceof Map)) {
+            const m = new Map();
+            if (labels) {
+                const keys = Object.keys(labels);
+                for (let i = 0; i < keys.length; i++) {
+                    m.set(keys[i], labels[keys[i]]);
+                }
+            }
+            labels = m;
+        }
 
         // COFF Header: 20 字节
         const COFF_HEADER_SIZE = 20;
@@ -286,11 +295,11 @@ export class COFFObjectGenerator {
         for (const name of this.exports) {
             // 内部函数 _user_xxx
             const userLabel = "_user_" + name;
-            if (labels[userLabel] !== undefined && !addedSymbols.has(userLabel)) {
+            if (labels.get(userLabel) !== undefined && !addedSymbols.has(userLabel)) {
                 const symName = userLabel;
                 const sym = {
                     name: symName,
-                    value: labels[userLabel],
+                    value: labels.get(userLabel),
                     sectionNumber: 1, // .text
                     type: IMAGE_SYM_DTYPE_FUNCTION,
                     storageClass: IMAGE_SYM_CLASS_EXTERNAL,
@@ -304,11 +313,11 @@ export class COFFObjectGenerator {
 
             // 导出 wrapper _xxx
             const wrapperLabel = "_" + name;
-            if (labels[wrapperLabel] !== undefined && !addedSymbols.has(wrapperLabel)) {
+            if (labels.get(wrapperLabel) !== undefined && !addedSymbols.has(wrapperLabel)) {
                 const symName = wrapperLabel;
                 const sym = {
                     name: symName,
-                    value: labels[wrapperLabel],
+                    value: labels.get(wrapperLabel),
                     sectionNumber: 1,
                     type: IMAGE_SYM_DTYPE_FUNCTION,
                     storageClass: IMAGE_SYM_CLASS_EXTERNAL,

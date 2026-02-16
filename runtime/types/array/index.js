@@ -17,7 +17,7 @@ import { ArrayFlatMixin } from "./flat.js";
 import { ArrayMutateMixin } from "./mutate.js";
 import { JS_UNDEFINED } from "../../core/jsvalue.js";
 
-const ARRAY_HEADER_SIZE = 24;
+const ARRAY_HEADER_SIZE = 32;
 const ARRAY_MIN_CAPACITY = 8;
 
 export class ArrayGenerator {
@@ -99,17 +99,19 @@ export class ArrayGenerator {
         vm.cmp(VReg.V1, VReg.S2);
         vm.jge("_array_splice_copy_removed_done");
 
+        // Preload Body Ptrs
+        vm.load(VReg.V5, VReg.S0, 24); // Arr Body
+        vm.load(VReg.V6, VReg.S5, 24); // Removed Arr Body
+
         // srcIndex = start + i
         vm.add(VReg.V2, VReg.S1, VReg.V1);
         vm.shl(VReg.V3, VReg.V2, 3);
-        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V3, VReg.S0, VReg.V3);
+        vm.add(VReg.V3, VReg.V5, VReg.V3);
         vm.load(VReg.V4, VReg.V3, 0);
 
         // removed[i] = value
         vm.shl(VReg.V3, VReg.V1, 3);
-        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V3, VReg.S5, VReg.V3);
+        vm.add(VReg.V3, VReg.V6, VReg.V3);
         vm.store(VReg.V3, 0, VReg.V4);
 
         vm.addImm(VReg.V1, VReg.V1, 1);
@@ -129,18 +131,19 @@ export class ArrayGenerator {
         vm.cmp(VReg.V1, VReg.V0);
         vm.jge("_array_splice_shift_done");
 
+        // Preload Arr Body Ptr
+        vm.load(VReg.V5, VReg.S0, 24);
+
         // srcIndex = i + deleteCount
         vm.add(VReg.V2, VReg.V1, VReg.S2);
         // load arr[srcIndex]
         vm.shl(VReg.V3, VReg.V2, 3);
-        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V3, VReg.S0, VReg.V3);
+        vm.add(VReg.V3, VReg.V5, VReg.V3);
         vm.load(VReg.V4, VReg.V3, 0);
 
         // store to arr[i]
         vm.shl(VReg.V3, VReg.V1, 3);
-        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V3, VReg.S0, VReg.V3);
+        vm.add(VReg.V3, VReg.V5, VReg.V3);
         vm.store(VReg.V3, 0, VReg.V4);
 
         vm.addImm(VReg.V1, VReg.V1, 1);
@@ -154,9 +157,9 @@ export class ArrayGenerator {
         vm.cmp(VReg.V1, VReg.S3);
         vm.jge("_array_splice_clear_tail_done");
 
+        vm.load(VReg.V5, VReg.S0, 24); // Load Body Ptr
         vm.shl(VReg.V3, VReg.V1, 3);
-        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V3, VReg.S0, VReg.V3);
+        vm.add(VReg.V3, VReg.V5, VReg.V3);
         vm.movImm(VReg.V4, 0);
         vm.store(VReg.V3, 0, VReg.V4);
 
@@ -184,7 +187,7 @@ export class ArrayGenerator {
 
         // unbox 数组
         vm.call("_js_unbox");
-        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
+        vm.mov(VReg.S0, VReg.RET); // arr (Header Ptr)
 
         // 获取当前长度和容量
         vm.load(VReg.S2, VReg.S0, 8); // length
@@ -195,63 +198,74 @@ export class ArrayGenerator {
         vm.jlt("_array_push_no_grow");
 
         // === 需要扩容 ===
-        // 新容量 = 旧容量 * 2
         vm.shl(VReg.S4, VReg.S3, 1); // newCap = cap * 2
+        
+        // Handle cap=0 -> newCap=8
+        vm.cmpImm(VReg.S4, 0);
+        vm.jne("_array_push_alloc");
+        vm.movImm(VReg.S4, 8); // MIN_CAPACITY
 
-        // 分配新数组: 24 (header) + newCap * 8
+        vm.label("_array_push_alloc");
+        // Alloc Body (newCap * 8)
         vm.shl(VReg.A0, VReg.S4, 3);
-        vm.addImm(VReg.A0, VReg.A0, ARRAY_HEADER_SIZE);
+        
+        // Save registers safe across alloc
+        vm.store(VReg.SP, 0, VReg.S0);
+        vm.store(VReg.SP, 8, VReg.S1);
+        vm.store(VReg.SP, 16, VReg.S2);
+
         vm.call("_alloc");
+        vm.mov(VReg.V0, VReg.RET); // V0 = New Body Ptr
 
-        // V0 = 新数组指针
-        vm.mov(VReg.V0, VReg.RET);
+        // Restore
+        vm.load(VReg.S0, VReg.SP, 0);
+        vm.load(VReg.S1, VReg.SP, 8);
+        vm.load(VReg.S2, VReg.SP, 16);
 
-        // 设置新数组头
-        vm.movImm(VReg.V1, 1); // TYPE_ARRAY
-        vm.store(VReg.V0, 0, VReg.V1);
-        vm.store(VReg.V0, 8, VReg.S2); // length (保持不变)
-        vm.store(VReg.V0, 16, VReg.S4); // newCapacity
+        // Load Old Body Ptr
+        vm.load(VReg.V1, VReg.S0, 24);
 
         // 复制元素 (i = 0 to length)
-        vm.movImm(VReg.V2, 0); // i = 0
-
+        vm.movImm(VReg.V2, 0);
+        
         vm.label("_array_push_copy_loop");
         vm.cmp(VReg.V2, VReg.S2);
         vm.jge("_array_push_copy_done");
 
-        // src = old[24 + i * 8]
+        // offset
         vm.shl(VReg.V3, VReg.V2, 3);
-        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V3, VReg.S0, VReg.V3);
-        vm.load(VReg.V4, VReg.V3, 0);
+        
+        // src = old[offset]
+        vm.add(VReg.V4, VReg.V1, VReg.V3);
+        vm.load(VReg.V5, VReg.V4, 0);
 
-        // dst = new[24 + i * 8]
-        vm.shl(VReg.V3, VReg.V2, 3);
-        vm.addImm(VReg.V3, VReg.V3, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V3, VReg.V0, VReg.V3);
-        vm.store(VReg.V3, 0, VReg.V4);
+        // dst = new[offset]
+        vm.add(VReg.V4, VReg.V0, VReg.V3);
+        vm.store(VReg.V4, 0, VReg.V5);
 
         vm.addImm(VReg.V2, VReg.V2, 1);
         vm.jmp("_array_push_copy_loop");
 
         vm.label("_array_push_copy_done");
-        // 使用新数组
-        vm.mov(VReg.S0, VReg.V0);
+        
+        // Update Header with New Body
+        vm.store(VReg.S0, 24, VReg.V0);
+        vm.store(VReg.S0, 16, VReg.S4); // capacity
 
         vm.label("_array_push_no_grow");
-        // 计算元素偏移: 24 + length * 8
-        vm.shl(VReg.V0, VReg.S2, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        // Load Body Ptr
+        vm.load(VReg.V1, VReg.S0, 24);
 
-        // 存储值
+        // Store value at Body + Length*8
+        vm.shl(VReg.V0, VReg.S2, 3);
+        vm.add(VReg.V0, VReg.V1, VReg.V0);
         vm.store(VReg.V0, 0, VReg.S1);
 
         // 更新长度
         vm.addImm(VReg.S2, VReg.S2, 1);
         vm.store(VReg.S0, 8, VReg.S2);
 
-        // 返回 boxed 数组 JSValue（需要 box，因为扩容可能返回新指针）
+        // 返回 boxed 数组
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
@@ -280,10 +294,10 @@ export class ArrayGenerator {
         vm.subImm(VReg.S1, VReg.S1, 1);
         vm.store(VReg.S0, 8, VReg.S1);
 
-        // 获取最后一个元素: 24 + (length-1) * 8
+        // 获取最后一个元素: Body + (length-1) * 8
+        vm.load(VReg.V1, VReg.S0, 24); // Load Body Ptr
         vm.shl(VReg.V0, VReg.S1, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.add(VReg.V0, VReg.V1, VReg.V0);
         vm.load(VReg.RET, VReg.V0, 0);
         vm.epilogue([VReg.S0, VReg.S1], 16);
 
@@ -307,9 +321,9 @@ export class ArrayGenerator {
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 计算偏移: 24 + index * 8
+        vm.load(VReg.V1, VReg.S0, 24); // Load Body Ptr
         vm.shl(VReg.V0, VReg.S1, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.add(VReg.V0, VReg.V1, VReg.V0);
         vm.load(VReg.RET, VReg.V0, 0);
 
         vm.epilogue([VReg.S0, VReg.S1], 0);
@@ -331,9 +345,9 @@ export class ArrayGenerator {
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 计算偏移: 24 + index * 8
+        vm.load(VReg.V1, VReg.S0, 24); // Load Body Ptr
         vm.shl(VReg.V0, VReg.S1, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.add(VReg.V0, VReg.V1, VReg.V0);
         vm.store(VReg.V0, 0, VReg.S2);
 
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 0);
@@ -441,14 +455,16 @@ export class ArrayGenerator {
         // 是 Number，加载其数值
         vm.load(VReg.S4, VReg.S1, 8);
 
+        // Preload Body Ptr
+        vm.load(VReg.V5, VReg.S0, 24);
+
         vm.label("_array_indexOf_loop");
         vm.cmp(VReg.S2, VReg.S3);
         vm.jge("_array_indexOf_notfound");
 
         // 计算偏移: 24 + i * 8
         vm.shl(VReg.V0, VReg.S2, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.add(VReg.V0, VReg.V5, VReg.V0);
         vm.load(VReg.V1, VReg.V0, 0); // V1 = arr[i]
 
         // 第一步：直接指针比较
@@ -526,6 +542,7 @@ export class ArrayGenerator {
         vm.cmpImm(VReg.V0, TYPE_FLOAT64);
         vm.jgt("_array_includes_loop");
         vm.load(VReg.S4, VReg.S1, 8);
+        vm.load(VReg.V5, VReg.S0, 24); // Body Ptr
 
         vm.label("_array_includes_loop");
         vm.cmp(VReg.S2, VReg.S3);
@@ -533,8 +550,7 @@ export class ArrayGenerator {
 
         // 计算偏移: 24 + i * 8
         vm.shl(VReg.V0, VReg.S2, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.add(VReg.V0, VReg.V5, VReg.V0);
         vm.load(VReg.V1, VReg.V0, 0);
 
         // 直接指针比较
@@ -597,10 +613,10 @@ export class ArrayGenerator {
         // 保存 index
         vm.push(VReg.V0);
 
-        // 获取 src[index] - offset = 24 + index * 8
+        // 获取 src[index] (Load Body Ptr first)
+        vm.load(VReg.V3, VReg.S2, 24); 
         vm.shl(VReg.V1, VReg.V0, 3);
-        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V2, VReg.S2, VReg.V1);
+        vm.add(VReg.V2, VReg.V3, VReg.V1);
         vm.load(VReg.A1, VReg.V2, 0); // A1 = src[index]
 
         // dest.push(value)
@@ -652,19 +668,28 @@ export class ArrayGenerator {
         vm.cmpImm(VReg.S3, 0);
         vm.jle("_array_slice_empty");
 
-        // 分配新数组: 24 + newLen * 8
-        vm.shl(VReg.A0, VReg.S3, 3);
-        vm.addImm(VReg.A0, VReg.A0, ARRAY_HEADER_SIZE);
+        // 1. 分配 Header (32)
+        vm.movImm(VReg.A0, ARRAY_HEADER_SIZE);
         vm.call("_alloc");
+        vm.mov(VReg.S4, VReg.RET); // S4 = Header
 
-        // 保存新数组指针到 S4 (S2 不再需要，但重用可能有问题)
-        vm.mov(VReg.S4, VReg.RET);
+        // 2. 分配 Body (newLen * 8)
+        vm.store(VReg.SP, 0, VReg.S4);
+        vm.shl(VReg.A0, VReg.S3, 3);
+        vm.call("_alloc");
+        vm.mov(VReg.V1, VReg.RET); // V1 = Body
+        vm.load(VReg.S4, VReg.SP, 0);
 
         // 设置新数组头
         vm.movImm(VReg.V0, 1); // TYPE_ARRAY
         vm.store(VReg.S4, 0, VReg.V0);
         vm.store(VReg.S4, 8, VReg.S3); // length
         vm.store(VReg.S4, 16, VReg.S3); // capacity = length
+        vm.store(VReg.S4, 24, VReg.V1); // body ptr
+
+        // Preload Bodies
+        vm.load(VReg.V5, VReg.S0, 24); // Src
+        vm.load(VReg.V6, VReg.S4, 24); // Dst
 
         // 复制元素，用 S2 作为循环变量 (原 end 不再需要)
         vm.movImm(VReg.S2, 0); // i = 0
@@ -672,17 +697,15 @@ export class ArrayGenerator {
         vm.cmp(VReg.S2, VReg.S3);
         vm.jge("_array_slice_done");
 
-        // src offset: 24 + (start + i) * 8
+        // src offset: Body + (start + i) * 8
         vm.add(VReg.V0, VReg.S1, VReg.S2);
         vm.shl(VReg.V0, VReg.V0, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        vm.add(VReg.V0, VReg.V5, VReg.V0);
         vm.load(VReg.V1, VReg.V0, 0); // V1 = src element
 
-        // dst offset: 24 + i * 8
+        // dst offset: Body + i * 8
         vm.shl(VReg.V0, VReg.S2, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S4, VReg.V0);
+        vm.add(VReg.V0, VReg.V6, VReg.V0);
         vm.store(VReg.V0, 0, VReg.V1);
 
         vm.addImm(VReg.S2, VReg.S2, 1);
@@ -696,15 +719,28 @@ export class ArrayGenerator {
 
         // 空数组
         vm.label("_array_slice_empty");
+        // Header
         vm.movImm(VReg.A0, ARRAY_HEADER_SIZE);
         vm.call("_alloc");
-        vm.movImm(VReg.V1, 1); // TYPE_ARRAY (用 V1 避免与 RET 冲突)
-        vm.store(VReg.RET, 0, VReg.V1);
-        vm.movImm(VReg.V1, 0);
-        vm.store(VReg.RET, 8, VReg.V1); // length = 0
-        vm.store(VReg.RET, 16, VReg.V1); // capacity = 0
-        // 装箱返回空数组
-        vm.mov(VReg.A0, VReg.RET);
+        vm.mov(VReg.S4, VReg.RET);
+
+        // Body (Cap 8)
+        vm.store(VReg.SP, 0, VReg.S4);
+        vm.movImm(VReg.A0, 64);
+        vm.call("_alloc");
+        vm.mov(VReg.V1, VReg.RET);
+        vm.load(VReg.S4, VReg.SP, 0);
+
+        // Link
+        vm.movImm(VReg.V0, 1);
+        vm.store(VReg.S4, 0, VReg.V0);
+        vm.movImm(VReg.V0, 0);
+        vm.store(VReg.S4, 8, VReg.V0);
+        vm.movImm(VReg.V0, 8);
+        vm.store(VReg.S4, 16, VReg.V0); // Cap 8
+        vm.store(VReg.S4, 24, VReg.V1); // Body Ptr
+
+        vm.mov(VReg.A0, VReg.S4);
         vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     }
@@ -731,36 +767,42 @@ export class ArrayGenerator {
         vm.mov(VReg.S3, VReg.S0); // capacity = size
 
         vm.label("_array_new_alloc");
-        // 计算需要分配的大小: 24 (header) + capacity * 8
-        vm.shl(VReg.A0, VReg.S3, 3);
-        vm.addImm(VReg.A0, VReg.A0, ARRAY_HEADER_SIZE);
+        // 1. 分配 Header (32 bytes)
+        vm.movImm(VReg.A0, ARRAY_HEADER_SIZE);
         vm.call("_alloc");
+        vm.mov(VReg.S1, VReg.RET); // S1 = Header
 
-        vm.mov(VReg.S1, VReg.RET); // 保存数组指针
+        // 保存 Header 到栈 (防止 Body Alloc GC 导致寄存器过时)
+        vm.store(VReg.SP, 0, VReg.S1);
 
-        // 设置类型为 ARRAY (1)
+        // 2. 分配 Body (capacity * 8)
+        vm.shl(VReg.A0, VReg.S3, 3);
+        vm.call("_alloc");
+        vm.mov(VReg.V1, VReg.RET); // V1 = Body Ptr
+
+        // 恢复 Header
+        vm.load(VReg.S1, VReg.SP, 0);
+
+        // 3. 设置 Header
         vm.movImm(VReg.V0, 1);
-        vm.store(VReg.S1, 0, VReg.V0);
-
-        // 设置长度
-        vm.store(VReg.S1, 8, VReg.S0);
-
-        // 设置容量
-        vm.store(VReg.S1, 16, VReg.S3);
+        vm.store(VReg.S1, 0, VReg.V0); // type
+        vm.store(VReg.S1, 8, VReg.S0); // length
+        vm.store(VReg.S1, 16, VReg.S3); // capacity
+        vm.store(VReg.S1, 24, VReg.V1); // body ptr
 
         // 初始化所有元素为 JS_UNDEFINED
         vm.movImm(VReg.S2, 0); // counter
-        vm.movImm64(VReg.V2, "0x7ffb000000000000"); // 使用 V2 存储 undefined 值
+        vm.lea(VReg.V2, "_js_undefined");
+        vm.load(VReg.V2, VReg.V2, 0); // 使用 V2 存储 undefined 值
 
         vm.label("_array_new_init_loop");
         vm.cmp(VReg.S2, VReg.S3);
         vm.jge("_array_new_init_done");
 
-        // 计算元素偏移: 24 + counter * 8
+        // 计算元素偏移: counter * 8
         vm.shl(VReg.V0, VReg.S2, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V1, VReg.S1, VReg.V0);
-        vm.store(VReg.V1, 0, VReg.V2); // 存储 JS_UNDEFINED
+        vm.add(VReg.V3, VReg.V1, VReg.V0); // V1 is Body Ptr
+        vm.store(VReg.V3, 0, VReg.V2); // 存储 JS_UNDEFINED
 
         vm.addImm(VReg.S2, VReg.S2, 1);
         vm.jmp("_array_new_init_loop");
@@ -773,22 +815,41 @@ export class ArrayGenerator {
     }
 
     generate() {
+        const debug = typeof globalThis !== "undefined" && globalThis.DEBUG_RUNTIME;
+        const envDebug = typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+        const isDebug = debug || envDebug;
+
+        if (isDebug) console.log("[Runtime:Array] generateArrayPush");
         this.generateArrayPush();
+        if (isDebug) console.log("[Runtime:Array] generateArrayPop");
         this.generateArrayPop();
+        if (isDebug) console.log("[Runtime:Array] generateArrayGet");
         this.generateArrayGet();
+        if (isDebug) console.log("[Runtime:Array] generateArraySet");
         this.generateArraySet();
+        if (isDebug) console.log("[Runtime:Array] generateArrayLength");
         this.generateArrayLength();
+        if (isDebug) console.log("[Runtime:Array] generateArrayAt");
         this.generateArrayAt();
+        if (isDebug) console.log("[Runtime:Array] generateArrayIndexOf");
         this.generateArrayIndexOf();
+        if (isDebug) console.log("[Runtime:Array] generateArrayIncludes");
         this.generateArrayIncludes();
+        if (isDebug) console.log("[Runtime:Array] generateArrayConcatInto");
         this.generateArrayConcatInto();
+        if (isDebug) console.log("[Runtime:Array] generateArraySlice");
         this.generateArraySlice();
+        if (isDebug) console.log("[Runtime:Array] generateArraySplice");
         this.generateArraySplice();
+        if (isDebug) console.log("[Runtime:Array] generateArrayNewWithSize");
         this.generateArrayNewWithSize();
         // flat 相关方法
+        if (isDebug) console.log("[Runtime:Array] generateFlatMethods");
         this.generateFlatMethods();
         // 原地修改方法
+        if (isDebug) console.log("[Runtime:Array] generateArraySort");
         this.generateArraySort();
+        if (isDebug) console.log("[Runtime:Array] generateArrayReverse");
         this.generateArrayReverse();
     }
 }

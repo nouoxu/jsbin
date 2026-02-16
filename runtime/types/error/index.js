@@ -30,41 +30,71 @@ export class ErrorGenerator {
     }
 
     generate() {
+        const debug = typeof globalThis !== "undefined" && globalThis.DEBUG_RUNTIME;
+        const envDebug = typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+        const isDebug = debug || envDebug;
+
         // 类信息初始化（必须在程序启动时调用）
+        if (isDebug) console.log("[Runtime:Error] generateInitErrorClassInfo");
         this.generateInitErrorClassInfo();
 
         // 类构造函数入口（供 new Error(...) 调用）
+        if (isDebug) console.log("[Runtime:Error] generateClassError");
         this.generateClassError();
+        if (isDebug) console.log("[Runtime:Error] generateClassTypeError");
         this.generateClassTypeError();
+        if (isDebug) console.log("[Runtime:Error] generateClassReferenceError");
         this.generateClassReferenceError();
+        if (isDebug) console.log("[Runtime:Error] generateClassSyntaxError");
         this.generateClassSyntaxError();
+        if (isDebug) console.log("[Runtime:Error] generateClassRangeError");
         this.generateClassRangeError();
 
+        if (isDebug) console.log("[Runtime:Error] generateErrorNew");
         this.generateErrorNew();
+        if (isDebug) console.log("[Runtime:Error] generateErrorNewWithType");
         this.generateErrorNewWithType();
+        if (isDebug) console.log("[Runtime:Error] generateErrorGetMessage");
         this.generateErrorGetMessage();
+        if (isDebug) console.log("[Runtime:Error] generateErrorGetName");
         this.generateErrorGetName();
+        if (isDebug) console.log("[Runtime:Error] generateErrorGetCause");
         this.generateErrorGetCause();
+        if (isDebug) console.log("[Runtime:Error] generateErrorSetCause");
         this.generateErrorSetCause();
+        if (isDebug) console.log("[Runtime:Error] generateErrorToString");
         this.generateErrorToString();
+        if (isDebug) console.log("[Runtime:Error] generateErrorNewWithCause");
         this.generateErrorNewWithCause();
 
         // 生成各种 Error 类型的工厂函数
+        if (isDebug) console.log("[Runtime:Error] generateTypeErrorNew");
         this.generateTypeErrorNew();
+        if (isDebug) console.log("[Runtime:Error] generateReferenceErrorNew");
         this.generateReferenceErrorNew();
+        if (isDebug) console.log("[Runtime:Error] generateSyntaxErrorNew");
         this.generateSyntaxErrorNew();
+        if (isDebug) console.log("[Runtime:Error] generateRangeErrorNew");
         this.generateRangeErrorNew();
+        if (isDebug) console.log("[Runtime:Error] generateEvalErrorNew");
         this.generateEvalErrorNew();
+        if (isDebug) console.log("[Runtime:Error] generateURIErrorNew");
         this.generateURIErrorNew();
 
         // 调用栈管理
+        if (isDebug) console.log("[Runtime:Error] generateStackPush");
         this.generateStackPush();
+        if (isDebug) console.log("[Runtime:Error] generateStackPop");
         this.generateStackPop();
+        if (isDebug) console.log("[Runtime:Error] generateStackCapture");
         this.generateStackCapture();
 
         // 异常处理
+        if (isDebug) console.log("[Runtime:Error] generateExceptionPush");
         this.generateExceptionPush();
+        if (isDebug) console.log("[Runtime:Error] generateExceptionPop");
         this.generateExceptionPop();
+        if (isDebug) console.log("[Runtime:Error] generateExceptionThrow");
         this.generateExceptionThrow();
     }
 
@@ -547,44 +577,47 @@ export class ErrorGenerator {
     // _error_to_string(err) -> "Error: message" 字符串
     generateErrorToString() {
         const vm = this.vm;
+        const debug = typeof globalThis !== "undefined" && globalThis.DEBUG_RUNTIME;
+        const envDebug = typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+        const isDebug = debug || envDebug;
 
+        if (isDebug) console.log("[Runtime:Error] _error_to_string start");
         vm.label("_error_to_string");
-        vm.prologue(16, [VReg.S0]);
+        vm.prologue(16, [VReg.S0, VReg.S1, VReg.S2]);
 
         vm.mov(VReg.S0, VReg.A0); // S0 = Error 对象
 
-        // 获取 name
-        vm.load(VReg.A0, VReg.S0, 16);
-        vm.push(VReg.A0);
-
-        // 获取 message
-        vm.load(VReg.A1, VReg.S0, 8);
+        // 获取 name 和 message
+        vm.load(VReg.S1, VReg.S0, 16); // name
+        vm.load(VReg.S2, VReg.S0, 8); // message
 
         // 检查 message 是否为 undefined
+        if (isDebug) console.log("[Runtime:Error] _error_to_string check message");
         vm.lea(VReg.V0, "_js_undefined");
-        vm.cmp(VReg.A1, VReg.V0);
+        vm.cmp(VReg.S2, VReg.V0);
         vm.jeq("_error_to_string_no_msg");
 
         // 有 message: 返回 "name: message"
-        vm.pop(VReg.A0); // name
-        vm.push(VReg.A1); // 保存 message
+        vm.mov(VReg.A0, VReg.S1); // name
 
         // 连接 name + ": "
+        if (isDebug) console.log("[Runtime:Error] _error_to_string concat name");
         vm.lea(VReg.A1, "_str_colon_space");
         vm.call("_strconcat");
 
         // 连接结果 + message
+        if (isDebug) console.log("[Runtime:Error] _error_to_string concat message");
         vm.mov(VReg.A0, VReg.RET);
-        vm.pop(VReg.A1);
+        vm.mov(VReg.A1, VReg.S2);
         vm.call("_strconcat");
         vm.jmp("_error_to_string_done");
 
         vm.label("_error_to_string_no_msg");
         // 无 message: 只返回 name
-        vm.pop(VReg.RET);
+        vm.mov(VReg.RET, VReg.S1);
 
         vm.label("_error_to_string_done");
-        vm.epilogue([VReg.S0], 16);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 16);
     }
 
     // _exception_push(catch_addr, sp, fp) -> void
@@ -715,38 +748,48 @@ export class ErrorGenerator {
     // 生成数据段
     generateDataSection(asm) {
         // 辅助函数：添加静态字符串（纯 char* 格式，无头部）
-        const addStaticString = (label, str) => {
+        // REFACTOR: Use loop to avoid closure capture issues in self-hosted compiler
+        const errorStrings = [
+            ["_str_Error", "Error"],
+            ["_str_TypeError", "TypeError"],
+            ["_str_ReferenceError", "ReferenceError"],
+            ["_str_SyntaxError", "SyntaxError"],
+            ["_str_RangeError", "RangeError"],
+            ["_str_EvalError", "EvalError"],
+            ["_str_URIError", "URIError"],
+            ["_str_colon_space", ": "],
+            ["_str_at", "    at "],
+            ["_str_newline", "\n"],
+            ["_str_anonymous", "<anonymous>"],
+            ["_str_message", "message"],
+            ["_str_name", "name"],
+            ["_str_stack", "stack"],
+            ["_str_cause", "cause"],
+            ["_str_uncaught", "Uncaught "],
+        ];
+
+        for (let i = 0; i < errorStrings.length; i++) {
+            const entry = errorStrings[i];
+            const label = entry[0];
+            const str = entry[1];
             asm.addDataLabel(label);
-            const bytes = Buffer.from(str, "utf8");
-            // 直接写入字符串内容
-            for (let j = 0; j < bytes.length; j++) {
-                asm.addDataByte(bytes[j]);
+            for (let j = 0; j < str.length; j++) {
+                asm.addDataByte(str.charCodeAt(j));
             }
-            asm.addDataByte(0); // null terminator
-        };
+            asm.addDataByte(0);
+        }
 
         // Error 类型名称字符串
-        addStaticString("_str_Error", "Error");
-        addStaticString("_str_TypeError", "TypeError");
-        addStaticString("_str_ReferenceError", "ReferenceError");
-        addStaticString("_str_SyntaxError", "SyntaxError");
-        addStaticString("_str_RangeError", "RangeError");
-        addStaticString("_str_EvalError", "EvalError");
-        addStaticString("_str_URIError", "URIError");
+        // (Moved to errorStrings array)
 
         // ": " 分隔符
-        addStaticString("_str_colon_space", ": ");
+        // (Moved to errorStrings array)
 
         // 堆栈相关字符串
-        addStaticString("_str_at", "    at ");
-        addStaticString("_str_newline", "\n");
-        addStaticString("_str_anonymous", "<anonymous>");
+        // (Moved to errorStrings array)
 
         // Error 属性名字符串 (用于 _object_get 访问 Error 属性)
-        addStaticString("_str_message", "message");
-        addStaticString("_str_name", "name");
-        addStaticString("_str_stack", "stack");
-        addStaticString("_str_cause", "cause");
+        // (Moved to errorStrings array)
 
         // 调用栈数据结构
         // _call_stack_top: 当前栈顶索引 (8 字节)
@@ -782,11 +825,19 @@ export class ErrorGenerator {
         }
 
         // "Uncaught " 字符串
-        addStaticString("_str_uncaught", "Uncaught ");
+        // (Moved to errorStrings array)
 
         // Error 类信息对象的全局槽位
         // 在 _init_error_class_info 中初始化
         asm.addDataLabel("_class_info_Error");
-        asm.addDataQword(0); // 占位，运行时会被填充
+        // aligned 8
+        {
+            const misalign = asm.data.length & 7;
+            if (misalign !== 0) {
+                const pad = 8 - misalign;
+                for (let i = 0; i < pad; i++) asm.addDataByte(0);
+            }
+        }
+        for (let i = 0; i < 8; i++) asm.addDataByte(0);
     }
 }

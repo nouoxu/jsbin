@@ -890,28 +890,76 @@ export class AllocatorGenerator {
 
     // 生成数据段定义
     generateDataSection(asm) {
+        const align8 = () => {
+            const misalign = asm.data.length & 7;
+            if (misalign !== 0) {
+                const pad = 8 - misalign;
+                for (let i = 0; i < pad; i++) asm.addDataByte(0);
+            }
+        };
+        const addZeroQword = () => {
+            align8();
+            for (let i = 0; i < 8; i++) asm.addDataByte(0);
+        };
+
         asm.addDataLabel("_heap_meta");
         for (let i = 0; i < META_SIZE / 8; i++) {
-            asm.addDataQword(0);
+            addZeroQword();
         }
 
         asm.addDataLabel("_heap_ptr");
-        asm.addDataQword(0);
+        addZeroQword();
 
         asm.addDataLabel("_heap_base");
-        asm.addDataQword(0);
+        addZeroQword();
 
         // NaN-boxing 单例值
         asm.addDataLabel("_js_true");
-        asm.addDataQword(JS_TRUE);
+        align8();
+        // 0x7FF9000000000001 -> 01 00 00 00 00 00 F9 7F
+        asm.addDataByte(1);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0xf9);
+        asm.addDataByte(0x7f);
 
         asm.addDataLabel("_js_false");
-        asm.addDataQword(JS_FALSE);
+        align8();
+        // 0x7FF9000000000000 -> 00 00 00 00 00 00 F9 7F
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0xf9);
+        asm.addDataByte(0x7f);
 
         asm.addDataLabel("_js_null");
-        asm.addDataQword(JS_NULL);
+        align8();
+        // 0x7FFA000000000000 -> 00 00 00 00 00 00 FA 7F
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0xfa);
+        asm.addDataByte(0x7f);
 
         asm.addDataLabel("_js_undefined");
-        asm.addDataQword(JS_UNDEFINED);
+        align8();
+        // 0x7FFB000000000000 -> 00 00 00 00 00 00 FB 7F
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0);
+        asm.addDataByte(0xfb);
+        asm.addDataByte(0x7f);
     }
 }

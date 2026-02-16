@@ -44,11 +44,17 @@ export class NumberGenerator {
 
     // 生成所有数字类型相关函数
     generate() {
+        console.log("[NumberGen] printGen");
         this.printGen.generate();
+        console.log("[NumberGen] signedIntGen");
         this.signedIntGen.generate();
+        console.log("[NumberGen] unsignedIntGen");
         this.unsignedIntGen.generate();
+        console.log("[NumberGen] floatGen");
         this.floatGen.generate();
+        console.log("[NumberGen] parseGen");
         this.parseGen.generate();
+        console.log("[NumberGen] done");
     }
 
     // 生成数据段（打印缓冲区等）

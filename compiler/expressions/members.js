@@ -10,7 +10,15 @@ export const MemberCompiler = {
         // this 存储在 __this 局部变量中
         const offset = this.ctx.getLocal("__this");
         if (offset !== undefined) {
-            this.vm.load(VReg.RET, VReg.FP, offset);
+            // 检查 __this 是否是装箱变量（在闭包中捕获的情况）
+            const isBoxed = this.ctx.boxedVars && this.ctx.boxedVars.has("__this");
+            if (isBoxed) {
+                // 装箱变量：先加载 box 指针，再解引用获取值
+                this.vm.load(VReg.RET, VReg.FP, offset); // 加载 box 指针
+                this.vm.load(VReg.RET, VReg.RET, 0); // 解引用获取值
+            } else {
+                this.vm.load(VReg.RET, VReg.FP, offset);
+            }
         } else {
             // 如果没有 __this，返回 undefined (0)
             this.vm.movImm(VReg.RET, 0);

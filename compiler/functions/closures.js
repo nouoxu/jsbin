@@ -45,6 +45,7 @@ export const ClosureCompiler = {
 
         this.vm.movImm(VReg.A0, closureSize);
         this.vm.call("_alloc");
+        // 闭包对象在 RET 中，保存到栈上
         this.vm.push(VReg.RET);
 
         // 写入 magic 标记（区分普通函数和 async 函数）
@@ -60,17 +61,32 @@ export const ClosureCompiler = {
             const varName = captured[i];
             const offset = outerLocals[varName];
             if (offset !== undefined) {
-                // 加载变量 - 如果外部变量是装箱的，则加载 box 指针
+                // 加载变量
                 if (outerBoxedVars.has(varName)) {
                     // 外部变量是装箱的：直接复制 box 指针（引用捕获）
                     this.vm.load(VReg.V1, VReg.FP, offset);
+                    // 弹出闭包指针，存储，再压回
+                    this.vm.pop(VReg.V2);
+                    this.vm.store(VReg.V2, 16 + i * 8, VReg.V1);
+                    this.vm.push(VReg.V2);
                 } else {
-                    // 外部变量不是装箱的：直接复制值
-                    this.vm.load(VReg.V1, VReg.FP, offset);
+                    // 外部变量不是装箱的：需要创建一个 box 来包装值
+                    // 这确保闭包内部可以统一通过 box 访问捕获变量
+                    this.vm.load(VReg.V1, VReg.FP, offset); // 加载值
+                    this.vm.push(VReg.V1); // 保存值到栈
+
+                    // 分配 box
+                    this.vm.movImm(VReg.A0, 8);
+                    this.vm.call("_alloc");
+                    // RET = box 指针
+                    this.vm.pop(VReg.V1); // 恢复值
+                    this.vm.store(VReg.RET, 0, VReg.V1); // 存值到 box
+
+                    // 弹出闭包指针，存储 box 指针，再压回
+                    this.vm.pop(VReg.V2); // 弹出闭包指针
+                    this.vm.store(VReg.V2, 16 + i * 8, VReg.RET); // 存储 box 指针
+                    this.vm.push(VReg.V2); // 压回闭包指针
                 }
-                this.vm.pop(VReg.V2);
-                this.vm.push(VReg.V2);
-                this.vm.store(VReg.V2, 16 + i * 8, VReg.V1);
             }
         }
 

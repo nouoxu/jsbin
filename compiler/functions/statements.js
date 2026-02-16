@@ -762,15 +762,21 @@ export const StatementCompiler = {
         for (let i = 0; i < cases.length; i++) {
             const c = cases[i];
             if (c.test !== null) {
-                // 对于数字字面量的 case，直接使用整数比较
-                // 因为 discriminant 存储的是原始整数值
-                if (c.test.type === "Literal" && typeof c.test.value === "number") {
-                    this.vm.movImm(VReg.V1, Math.trunc(c.test.value));
-                } else {
-                    this.compileExpression(c.test);
-                    this.vm.mov(VReg.V1, VReg.RET);
-                }
-                this.vm.cmp(VReg.S0, VReg.V1);
+                this.compileExpression(c.test);
+                this.vm.mov(VReg.A1, VReg.RET);
+
+                this.vm.mov(VReg.A0, VReg.S0);
+
+                this.vm.call("_js_strict_eq");
+
+                // Check if true (0x7FF9000000000001)
+                // Construct JS_TRUE manually to avoid BigInt issues in assembler
+
+                this.vm.movImm(VReg.V1, 0x7ff9);
+                this.vm.shlImm(VReg.V1, VReg.V1, 48);
+                this.vm.addImm(VReg.V1, VReg.V1, 1);
+
+                this.vm.cmp(VReg.RET, VReg.V1);
                 this.vm.jeq(caseLabels[i]);
             }
         }
@@ -1267,7 +1273,16 @@ export const StatementCompiler = {
         // 将类信息对象地址存储到全局数据段（供方法内的 new 使用）
         // 使用预注册的 classInfoLabel（包含模块前缀）或默认标签
         this.asm.addDataLabel(classInfoLabel);
-        this.asm.addDataQword(0); // 占位，运行时会被填充
+        // this.asm.addDataQword(0); // 占位，运行时会被填充
+        {
+            // Manual Qword(0)
+            const misalign = this.asm.data.length & 7;
+            if (misalign !== 0) {
+                const pad = 8 - misalign;
+                for (let k = 0; k < pad; k++) this.asm.data.push(0);
+            }
+            for (let k = 0; k < 8; k++) this.asm.addDataByte(0);
+        }
         this.vm.lea(VReg.V0, classInfoLabel);
         this.vm.store(VReg.V0, 0, VReg.S0);
     },

@@ -420,6 +420,7 @@ export const FunctionCompiler = {
     // 编译函数参数 - 先全部压栈，再统一弹出到参数寄存器
     // 前 6 个参数通过寄存器 A0-A5 传递
     // 超过 6 个的参数通过栈传递（在调用指令前压栈）
+    // V7 寄存器传递实际参数个数（用于 rest 参数支持）
     // 返回栈传递的参数数量，调用者需要在调用后清理栈
     compileCallArguments(args) {
         const regArgCount = Math.min(args.length, 6); // 寄存器传递的参数数量
@@ -454,6 +455,9 @@ export const FunctionCompiler = {
         for (let i = 0; i < regArgCount; i++) {
             this.vm.pop(this.vm.getArgReg(i));
         }
+
+        // 设置参数个数到 V7（最后设置，避免被参数编译期间的函数调用破坏）
+        this.vm.movImm(VReg.V7, args.length);
 
         // 栈上的参数保持在栈上，被调用函数会通过 FP 偏移访问
         // 返回栈参数数量，调用者负责在调用后清理
@@ -1103,8 +1107,37 @@ export const FunctionCompiler = {
 
         // 处理成员调用 (obj.method())
         if (callee.type === "MemberExpression") {
+            if (callee.computed) {
+                // 计算属性调用：obj[key]()
+                this.compileExpression(callee.object);
+                const objTempName = `__call_obj_${this.nextLabelId()}`;
+                const objOffset = this.ctx.allocLocal(objTempName);
+                this.vm.store(VReg.FP, objOffset, VReg.RET);
+
+                this.compileExpression(callee.property);
+                const keyTempName = `__call_key_${this.nextLabelId()}`;
+                const keyOffset = this.ctx.allocLocal(keyTempName);
+                this.vm.store(VReg.FP, keyOffset, VReg.RET);
+
+                this.vm.load(VReg.A0, VReg.FP, objOffset);
+                this.vm.load(VReg.A1, VReg.FP, keyOffset);
+                this.vm.call("_dynamic_subscript_get");
+
+                this.vm.mov(VReg.V6, VReg.RET); // 方法指针/闭包
+                this.vm.load(VReg.V5, VReg.FP, objOffset); // this
+                this.compileMethodCall(VReg.V6, VReg.V5, expr.arguments);
+                return;
+            }
+
             const obj = callee.object;
             const prop = callee.property;
+
+            // Debug: catch null object
+            if (obj === null || obj === undefined) {
+                console.log("ERROR: callee.object is null/undefined");
+                console.log("callee:", JSON.stringify(callee, null, 2));
+                throw new Error("callee.object is null");
+            }
 
             // console.log
             if (obj.type === "Identifier" && obj.name === "console") {
@@ -1690,7 +1723,7 @@ export const FunctionCompiler = {
 
             // 根据对象类型推断，调用正确的方法
             const objType = this.inferObjectType(obj);
-            console.log("[DEBUG] objType =", objType, "prop.name =", prop.name);
+            // console.log("[DEBUG] objType =", objType, "prop.name =", prop.name);
 
             // Generator 方法
             if (objType === "Generator" || objType === "unknown") {
@@ -1705,7 +1738,7 @@ export const FunctionCompiler = {
             // String 方法 - 优先检查，因为 slice/indexOf 在字符串和数组中都有
             // 对于 unknown 类型，也检查这些共享方法（通过运行时类型检测处理）
             if (objType === "String" || objType === "unknown") {
-                const stringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "slice", "substring", "indexOf", "lastIndexOf", "includes", "startsWith", "endsWith", "concat", "split", "replace", "replaceAll", "repeat", "at", "match", "matchAll", "search"];
+                const stringMethods = ["toUpperCase", "toLowerCase", "charAt", "charCodeAt", "trim", "slice", "substring", "indexOf", "lastIndexOf", "includes", "startsWith", "endsWith", "concat", "split", "replace", "replaceAll", "repeat", "at", "match", "matchAll", "search", "padStart", "padEnd", "trimStart", "trimEnd"];
                 if (stringMethods.includes(prop.name)) {
                     if (this.compileStringMethodWithTypeCheck(obj, prop.name, expr.arguments, objType === "unknown")) {
                         return;
@@ -1723,9 +1756,12 @@ export const FunctionCompiler = {
             }
 
             // Map 方法
-            if (objType === "Map") {
+            // 对 unknown 类型也尝试 Map 方法，以支持 this.labels.set() 等情况
+            if (objType === "Map" || objType === "unknown") {
                 const mapMethods = ["set", "get", "has", "delete", "size", "clear", "keys", "values", "entries"];
                 if (mapMethods.includes(prop.name)) {
+                    // 对于 unknown 类型，如果是 generic 的方法名（如 set/get），需要谨慎
+                    // 但为了修复 self-hosted 编译器中 Map 的使用，我们需要允许它
                     if (this.compileMapMethod(obj, prop.name, expr.arguments)) {
                         return;
                     }
@@ -1766,12 +1802,9 @@ export const FunctionCompiler = {
             if (objType === "BigInt") {
                 const bigintMethods = ["toString"];
                 if (bigintMethods.includes(prop.name)) {
-                    console.log("[DEBUG] Calling compileBigIntMethod for", prop.name);
                     if (this.compileBigIntMethod(obj, prop.name, expr.arguments)) {
-                        console.log("[DEBUG] compileBigIntMethod returned true");
                         return;
                     }
-                    console.log("[DEBUG] compileBigIntMethod returned false");
                 }
             }
 
@@ -1806,6 +1839,12 @@ export const FunctionCompiler = {
                     if (this.compileDateMethod(obj, prop.name, expr.arguments)) {
                         return;
                     }
+                }
+
+                // Function 方法 - apply, call, bind
+                if (prop.name === "apply" || prop.name === "call" || prop.name === "bind") {
+                    this.compileFunctionMethod(obj, prop.name, expr.arguments);
+                    return;
                 }
             }
 

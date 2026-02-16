@@ -13,11 +13,11 @@ export const ArrayTransformMixin = {
         vm.label("_array_slice");
         vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
 
-        vm.mov(VReg.S0, VReg.A0);
-        vm.mov(VReg.S1, VReg.A1);
-        vm.mov(VReg.S2, VReg.A2);
+        vm.mov(VReg.S0, VReg.A0); // arr
+        vm.mov(VReg.S1, VReg.A1); // start
+        vm.mov(VReg.S2, VReg.A2); // end
 
-        vm.load(VReg.V0, VReg.S0, 0);
+        vm.load(VReg.V0, VReg.S0, 8); // length
 
         vm.cmpImm(VReg.S2, -1);
         vm.jne("_array_slice_calc");
@@ -29,32 +29,45 @@ export const ArrayTransformMixin = {
         vm.cmpImm(VReg.S3, 0);
         vm.jle("_array_slice_empty");
 
-        vm.shl(VReg.A0, VReg.S3, 3);
-        vm.addImm(VReg.A0, VReg.A0, ARRAY_HEADER_SIZE);
+        // Alloc Header
+        vm.movImm(VReg.A0, ARRAY_HEADER_SIZE);
         vm.call("_alloc");
-
         vm.mov(VReg.S4, VReg.RET);
 
-        vm.store(VReg.S4, 0, VReg.S3);
-        vm.store(VReg.S4, 8, VReg.S3);
+        // Init Header
+        vm.movImm(VReg.V0, 1); // Type
+        vm.store(VReg.S4, 0, VReg.V0);
+        vm.store(VReg.S4, 8, VReg.S3); // Length
+        vm.store(VReg.S4, 16, VReg.S3); // Capacity
 
-        vm.movImm(VReg.S2, 0);
+        // Alloc Body
+        vm.shl(VReg.A0, VReg.S3, 3);
+        vm.call("_alloc");
+        vm.mov(VReg.V1, VReg.RET); // Body Ptr
+
+        // Link Body
+        vm.store(VReg.S4, 24, VReg.V1);
+
+        // Load Src Body
+        vm.load(VReg.S2, VReg.S0, 24); 
+
+        vm.movImm(VReg.V2, 0); // i
         vm.label("_array_slice_copy");
-        vm.cmp(VReg.S2, VReg.S3);
+        vm.cmp(VReg.V2, VReg.S3);
         vm.jge("_array_slice_done");
 
-        vm.add(VReg.V0, VReg.S1, VReg.S2);
-        vm.shl(VReg.V0, VReg.V0, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
-        vm.load(VReg.V1, VReg.V0, 0);
+        // Load Src[start + i]
+        vm.add(VReg.V3, VReg.S1, VReg.V2);
+        vm.shl(VReg.V3, VReg.V3, 3);
+        vm.add(VReg.V4, VReg.S2, VReg.V3);
+        vm.load(VReg.V0, VReg.V4, 0);
 
-        vm.shl(VReg.V0, VReg.S2, 3);
-        vm.addImm(VReg.V0, VReg.V0, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V0, VReg.S4, VReg.V0);
-        vm.store(VReg.V0, 0, VReg.V1);
+        // Store Dest[i]
+        vm.shl(VReg.V3, VReg.V2, 3);
+        vm.add(VReg.V4, VReg.V1, VReg.V3); // V1 is Dest Body Ptr
+        vm.store(VReg.V4, 0, VReg.V0);
 
-        vm.addImm(VReg.S2, VReg.S2, 1);
+        vm.addImm(VReg.V2, VReg.V2, 1);
         vm.jmp("_array_slice_copy");
 
         vm.label("_array_slice_done");
@@ -64,9 +77,15 @@ export const ArrayTransformMixin = {
         vm.label("_array_slice_empty");
         vm.movImm(VReg.A0, ARRAY_HEADER_SIZE);
         vm.call("_alloc");
-        vm.movImm(VReg.V1, 0);
-        vm.store(VReg.RET, 0, VReg.V1);
-        vm.store(VReg.RET, 8, VReg.V1);
+        vm.mov(VReg.S4, VReg.RET);
+        vm.movImm(VReg.V0, 1);
+        vm.store(VReg.S4, 0, VReg.V0);
+        vm.movImm(VReg.V0, 0); // Length
+        vm.store(VReg.S4, 8, VReg.V0);
+        vm.store(VReg.S4, 16, VReg.V0); // Capacity
+        vm.store(VReg.S4, 24, VReg.V0); // Body
+        
+        vm.mov(VReg.RET, VReg.S4);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     },
 
@@ -80,54 +99,61 @@ export const ArrayTransformMixin = {
         vm.mov(VReg.S0, VReg.A0);
         vm.mov(VReg.S1, VReg.A1);
 
-        vm.load(VReg.S2, VReg.S0, 0);
-        vm.load(VReg.S3, VReg.S1, 0);
+        vm.load(VReg.S2, VReg.S0, 8); // Len1
+        vm.load(VReg.S3, VReg.S1, 8); // Len2
 
-        vm.add(VReg.S4, VReg.S2, VReg.S3);
+        vm.add(VReg.S4, VReg.S2, VReg.S3); // Total Len
 
-        vm.shl(VReg.A0, VReg.S4, 3);
-        vm.addImm(VReg.A0, VReg.A0, ARRAY_HEADER_SIZE);
+        // Alloc Header
+        vm.movImm(VReg.A0, ARRAY_HEADER_SIZE);
         vm.call("_alloc");
-
         vm.mov(VReg.S5, VReg.RET);
 
-        vm.store(VReg.S5, 0, VReg.S4);
-        vm.store(VReg.S5, 8, VReg.S4);
+        vm.movImm(VReg.V0, 1);
+        vm.store(VReg.S5, 0, VReg.V0); // Type
+        vm.store(VReg.S5, 8, VReg.S4); // Length
+        vm.store(VReg.S5, 16, VReg.S4); // Capacity
 
-        // 复制 arr1
-        vm.movImm(VReg.V0, 0);
+        // Alloc Body
+        vm.shl(VReg.A0, VReg.S4, 3);
+        vm.call("_alloc");
+        vm.mov(VReg.V4, VReg.RET); // New Body
+
+        vm.store(VReg.S5, 24, VReg.V4);
+
+        // Copy 1
+        vm.load(VReg.V1, VReg.S0, 24); // Body1
+        vm.movImm(VReg.V0, 0); // i
         vm.label("_array_concat_copy1");
         vm.cmp(VReg.V0, VReg.S2);
         vm.jge("_array_concat_copy2_start");
 
-        vm.shl(VReg.V1, VReg.V0, 3);
-        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V2, VReg.S0, VReg.V1);
-        vm.load(VReg.V3, VReg.V2, 0);
+        vm.shl(VReg.V2, VReg.V0, 3);
+        vm.add(VReg.V3, VReg.V1, VReg.V2);
+        vm.load(VReg.V5, VReg.V3, 0);
 
-        vm.add(VReg.V2, VReg.S5, VReg.V1);
-        vm.store(VReg.V2, 0, VReg.V3);
+        vm.add(VReg.V3, VReg.V4, VReg.V2);
+        vm.store(VReg.V3, 0, VReg.V5);
 
         vm.addImm(VReg.V0, VReg.V0, 1);
         vm.jmp("_array_concat_copy1");
 
         vm.label("_array_concat_copy2_start");
-        // 复制 arr2
+        // Copy 2
+        vm.load(VReg.V1, VReg.S1, 24); // Body2
         vm.movImm(VReg.V0, 0);
         vm.label("_array_concat_copy2");
         vm.cmp(VReg.V0, VReg.S3);
         vm.jge("_array_concat_done");
 
-        vm.shl(VReg.V1, VReg.V0, 3);
-        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V2, VReg.S1, VReg.V1);
-        vm.load(VReg.V3, VReg.V2, 0);
+        vm.shl(VReg.V2, VReg.V0, 3);
+        vm.add(VReg.V3, VReg.V1, VReg.V2);
+        vm.load(VReg.V5, VReg.V3, 0);
 
-        vm.add(VReg.V1, VReg.S2, VReg.V0);
-        vm.shl(VReg.V1, VReg.V1, 3);
-        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V2, VReg.S5, VReg.V1);
-        vm.store(VReg.V2, 0, VReg.V3);
+        vm.add(VReg.V2, VReg.S2, VReg.V0);
+        vm.shl(VReg.V2, VReg.V2, 3);
+        vm.add(VReg.V3, VReg.V4, VReg.V2);
+        vm.store(VReg.V3, 0, VReg.V5);
 
         vm.addImm(VReg.V0, VReg.V0, 1);
         vm.jmp("_array_concat_copy2");
@@ -155,7 +181,10 @@ export const ArrayTransformMixin = {
         vm.and(VReg.S2, VReg.S1, VReg.V0); // S2 = src raw pointer
 
         // 获取 src 数组长度
-        vm.load(VReg.S3, VReg.S2, 0); // S3 = src.length
+        vm.load(VReg.S3, VReg.S2, 8); // S3 = src.length
+
+        // Load Src Body Ptr
+        vm.load(VReg.V4, VReg.S2, 24); // V4 = Src Body Ptr
 
         // 循环：逐个元素 push 到 dest
         vm.movImm(VReg.V0, 0); // V0 = index
@@ -165,11 +194,11 @@ export const ArrayTransformMixin = {
 
         // 保存 index
         vm.push(VReg.V0);
+        vm.push(VReg.V4);
 
         // 获取 src[index]
         vm.shl(VReg.V1, VReg.V0, 3);
-        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V2, VReg.S2, VReg.V1);
+        vm.add(VReg.V2, VReg.V4, VReg.V1);
         vm.load(VReg.A1, VReg.V2, 0); // A1 = src[index]
 
         // dest.push(value)
@@ -179,6 +208,7 @@ export const ArrayTransformMixin = {
         vm.mov(VReg.S0, VReg.RET);
 
         // 恢复 index 并递增
+        vm.pop(VReg.V4);
         vm.pop(VReg.V0);
         vm.addImm(VReg.V0, VReg.V0, 1);
         vm.jmp("_array_concat_into_loop");
@@ -193,15 +223,17 @@ export const ArrayTransformMixin = {
         const vm = this.vm;
 
         vm.label("_array_join");
-        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4]);
+        vm.prologue(64, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
         vm.mov(VReg.S0, VReg.A0);
         vm.mov(VReg.S1, VReg.A1);
 
-        vm.load(VReg.S2, VReg.S0, 0);
+        vm.load(VReg.S2, VReg.S0, 8);
 
         vm.cmpImm(VReg.S2, 0);
         vm.jeq("_array_join_empty");
+
+        vm.load(VReg.S5, VReg.S0, 24); // Body Ptr
 
         // 预估结果大小
         vm.shl(VReg.A0, VReg.S2, 6);
@@ -242,9 +274,9 @@ export const ArrayTransformMixin = {
 
         vm.label("_array_join_add_elem");
         vm.load(VReg.V0, VReg.SP, 0);
+        
         vm.shl(VReg.V1, VReg.V0, 3);
-        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V1, VReg.S0, VReg.V1);
+        vm.add(VReg.V1, VReg.S5, VReg.V1); // Indirect
         vm.load(VReg.V1, VReg.V1, 0);
 
         vm.cmpImm(VReg.V1, 0);
@@ -284,10 +316,10 @@ export const ArrayTransformMixin = {
         vm.storeByte(VReg.V0, 8, VReg.V1);
 
         vm.mov(VReg.RET, VReg.S3);
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
 
         vm.label("_array_join_empty");
         vm.lea(VReg.RET, "_str_empty");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 64);
     },
 };

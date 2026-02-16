@@ -3,7 +3,7 @@
 
 import { VReg } from "../../../vm/registers.js";
 
-const ARRAY_HEADER_SIZE = 24;
+const ARRAY_HEADER_SIZE = 32;
 
 // 数组原地修改方法 Mixin
 export const ArrayMutateMixin = {

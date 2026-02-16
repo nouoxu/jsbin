@@ -19,7 +19,7 @@ function encodeVLQ(value) {
 
     do {
         let digit = vlq & 0x1f; // 取低5位
-        vlq >>>= 5;
+        vlq = vlq >> 5; // Use signed shift as logical shift (for positive numbers) or until >>> support is fixed
         if (vlq > 0) {
             digit |= 0x20; // 设置继续位
         }

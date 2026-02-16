@@ -516,8 +516,11 @@ export class VirtualMachine {
 
     // 单精度转双精度: fpDest = (double)fpSrc
     fcvts2d(fpDest, fpSrc) {
+        console.log("[VM] fcvts2d called, fpDest=", fpDest, "fpSrc=", fpSrc);
         this._emit(OpCode.FCVT_S2D, [fpDest, fpSrc]);
+        console.log("[VM] fcvts2d after emit");
         this.backend.fcvts2d(fpDest, fpSrc);
+        console.log("[VM] fcvts2d done");
     }
 
     // 将单精度浮点寄存器的位模式移到整数寄存器 (32位)

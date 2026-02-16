@@ -7,6 +7,7 @@ export * from "./core/allocator.js";
 export { PrintGenerator } from "./core/print.js";
 export { RUNTIME_STRINGS, StringConstantsGenerator } from "./core/strings.js";
 export { CoercionGenerator } from "./core/coercion.js";
+export { FunctionMethodsGenerator } from "./core/function.js";
 
 // 类型运行时 - Number (包含所有数值子类型)
 export { NumberGenerator } from "./types/number/index.js";
@@ -96,6 +97,14 @@ import { ProcessGenerator } from "./types/process/index.js";
 import { OSGenerator } from "./types/os/index.js";
 import { ChildProcessGenerator } from "./types/child_process/index.js";
 import { BufferGenerator } from "./types/buffer/index.js";
+import { FunctionMethodsGenerator } from "./core/function.js";
+
+function isRuntimeDebug() {
+    if (typeof globalThis !== "undefined" && globalThis.DEBUG_RUNTIME) {
+        return true;
+    }
+    return typeof process !== "undefined" && process.env && process.env.DEBUG_RUNTIME;
+}
 
 export class RuntimeGenerator {
     constructor(vm, ctx) {
@@ -129,7 +138,7 @@ export class RuntimeGenerator {
         // Error 生成器
         this.errorGen = new ErrorGenerator(vm, ctx);
         // 核心生成器
-        this.jsValueGen = new JSValueGenerator(vm);
+        this.jsValueGen = new JSValueGenerator(vm, ctx);
         this.printGen = new PrintGenerator(vm);
         this.subscriptGen = new SubscriptGenerator(vm, ctx);
         this.typeofGen = new TypeofGenerator(vm);
@@ -154,63 +163,106 @@ export class RuntimeGenerator {
 
         // Buffer
         this.bufferGen = new BufferGenerator(vm, ctx);
+
+        // Function methods
+        this.functionMethodsGen = new FunctionMethodsGenerator(vm, ctx);
     }
 
     // 生成所有运行时函数
     generate() {
         // 类型
+        console.log("[Runtime] NumberGenerator");
         this.numberGen.generate();
+        console.log("[Runtime] MathGenerator");
         this.mathGen.generate();
+        console.log("[Runtime] JSONGenerator");
         this.jsonGen.generate();
+        console.log("[Runtime] StringGenerator");
         this.stringGen.generate();
+        console.log("[Runtime] ArrayGenerator");
         this.arrayGen.generate();
+        console.log("[Runtime] TypedArrayGenerator");
         this.typedArrayGen.generate();
+        console.log("[Runtime] ArrayBufferGenerator");
         this.arrayBufferGen.generate();
+        console.log("[Runtime] DataViewGenerator");
         this.dataViewGen.generate();
+        console.log("[Runtime] ObjectGenerator");
         this.objectGen.generate();
+        console.log("[Runtime] MapGenerator");
         this.mapGen.generate();
+        console.log("[Runtime] SetGenerator");
         this.setGen.generate();
+        console.log("[Runtime] DateGenerator");
         this.dateGen.generate();
+        console.log("[Runtime] RegExpGenerator");
         this.regexpGen.generate();
+        console.log("[Runtime] SymbolGenerator");
         this.symbolGen.generate();
+        console.log("[Runtime] WellKnownSymbolsGenerator");
         this.wellKnownSymbolsGen.generate();
         // 迭代器
+        console.log("[Runtime] IteratorGenerator");
         this.iteratorGen.generate();
+        console.log("[Runtime] ArrayIteratorMethodsGenerator");
         this.arrayIteratorMethodsGen.generate();
+        console.log("[Runtime] MapSetIteratorMethodsGenerator");
         this.mapSetIteratorMethodsGen.generate();
         // Generator
+        console.log("[Runtime] GeneratorGenerator");
         this.generatorGen.generate();
+        console.log("[Runtime] AsyncGeneratorGenerator");
         this.asyncGeneratorGen.generate();
         // 私有字段
+        console.log("[Runtime] PrivateFieldGenerator");
         this.privateFieldGen.generate();
         // Error
+        console.log("[Runtime] ErrorGenerator");
         this.errorGen.generate();
         // 核心
+        console.log("[Runtime] JSValueGenerator");
         this.jsValueGen.generate();
+        console.log("[Runtime] PrintGenerator");
         this.printGen.generate();
+        console.log("[Runtime] SubscriptGenerator");
         this.subscriptGen.generate();
+        console.log("[Runtime] TypeofGenerator");
         this.typeofGen.generate();
+        console.log("[Runtime] EqualityGenerator");
         this.equalityGen.generate();
+        console.log("[Runtime] AddGenerator");
         this.addGen.generate();
+        console.log("[Runtime] CoercionGenerator");
         this.coercionGen.generate();
         // 异步
+        console.log("[Runtime] AsyncGenerator");
         this.asyncGen.generate();
 
         // Path must be generated before FS (FS uses _get_string_content from path)
+        console.log("[Runtime] PathGenerator");
         this.pathGen.generate();
+        console.log("[Runtime] FSGenerator");
         this.fsGen.generate();
 
         // Process
+        console.log("[Runtime] ProcessGenerator");
         this.processGen.generate();
 
         // OS
+        console.log("[Runtime] OSGenerator");
         this.osGen.generate();
 
         // Child Process
+        console.log("[Runtime] ChildProcessGenerator");
         this.childProcessGen.generate();
 
         // Buffer
+        console.log("[Runtime] BufferGenerator");
         this.bufferGen.generate();
+
+        // Function methods (apply, call, bind)
+        console.log("[Runtime] FunctionMethodsGenerator");
+        this.functionMethodsGen.generate();
     }
 
     // 生成异步运行时数据段

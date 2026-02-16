@@ -81,9 +81,23 @@ export class MapGenerator {
         vm.jmp(doneLabel);
 
         vm.label(notFoundLabel);
+
+        // Save S0, S1, S2 to local stack frame before alloc
+        // We have 48 bytes of local stack (from prologue), unused by other logic.
+        vm.store(VReg.SP, 0, VReg.S0);
+        vm.store(VReg.SP, 8, VReg.S1);
+        vm.store(VReg.SP, 16, VReg.S2);
+
         // 创建新节点
         vm.movImm(VReg.A0, MAP_NODE_SIZE);
         vm.call("_alloc");
+
+        // Reload S0, S1, S2 from local stack frame
+        // _alloc (GC) might have moved objects, so registers are stale.
+        // Stack slots are updated by GC.
+        vm.load(VReg.S0, VReg.SP, 0);
+        vm.load(VReg.S1, VReg.SP, 8);
+        vm.load(VReg.S2, VReg.SP, 16);
 
         vm.store(VReg.RET, 0, VReg.S1); // node.key
         vm.store(VReg.RET, 8, VReg.S2); // node.value
@@ -95,7 +109,9 @@ export class MapGenerator {
 
         // 增加 size
         vm.load(VReg.V1, VReg.S0, 8);
-        vm.addImm(VReg.V1, VReg.V1, 1);
+        // Workaround: addImm might be buggy? Use register add
+        vm.movImm(VReg.A0, 1);
+        vm.add(VReg.V1, VReg.V1, VReg.A0);
         vm.store(VReg.S0, 8, VReg.V1);
 
         vm.label(doneLabel);
@@ -272,7 +288,7 @@ export class MapGenerator {
         // key1 是堆指针，检查是否是 Number 对象
         vm.load(VReg.S2, VReg.S0, 0); // key1.type
         vm.cmpImm(VReg.S2, 29); // TYPE_FLOAT64
-        vm.jne(checkRawStringLabel); // 不是 Number，尝试作为原始字符串比较
+        vm.jne("_map_cmp_try_str_obj"); // 不是 Number，尝试 String Object
 
         // key2 也必须是 Number 对象
         vm.mov(VReg.S2, VReg.S1);
@@ -288,6 +304,37 @@ export class MapGenerator {
         vm.load(VReg.S2, VReg.S0, 8); // key1.value
         vm.load(VReg.S3, VReg.S1, 8); // key2.value
         vm.cmp(VReg.S2, VReg.S3);
+        vm.jeq(equalLabel);
+        vm.jmp(notEqualLabel);
+
+        // 检查是否是 String Object (TYPE_STRING = 6)
+        vm.label("_map_cmp_try_str_obj");
+        vm.cmpImm(VReg.S2, 6); // TYPE_STRING
+        vm.jne(checkRawStringLabel); // 也不 String Object -> 尝试 Raw String
+
+        // key1 是 String Object，key2 也必须是
+        vm.mov(VReg.S3, VReg.S1); // S3 = key2
+        vm.shrImm(VReg.S3, VReg.S3, 48);
+        vm.cmpImm(VReg.S3, 0);
+        vm.jne(notEqualLabel); // key2 不是堆指针
+
+        vm.load(VReg.S3, VReg.S1, 0); // key2.type
+        vm.cmpImm(VReg.S3, 6); // TYPE_STRING
+        vm.jne(notEqualLabel); // key2 不是 String Object
+
+        // 比较长度 (offset 8)
+        vm.load(VReg.S2, VReg.S0, 8);
+        vm.load(VReg.S3, VReg.S1, 8);
+        vm.cmp(VReg.S2, VReg.S3);
+        vm.jne(notEqualLabel);
+
+        // 比较内容 (offset 16)
+        vm.mov(VReg.A0, VReg.S0);
+        vm.addImm(VReg.A0, VReg.A0, 16);
+        vm.mov(VReg.A1, VReg.S1);
+        vm.addImm(VReg.A1, VReg.A1, 16);
+        vm.call("_strcmp");
+        vm.cmpImm(VReg.RET, 0);
         vm.jeq(equalLabel);
         vm.jmp(notEqualLabel);
 

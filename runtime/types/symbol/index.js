@@ -37,13 +37,30 @@ export class SymbolGenerator {
     }
 
     generateDataSection(asm) {
+        const align8 = () => {
+            const misalign = asm.data.length & 7;
+            if (misalign !== 0) {
+                const pad = 8 - misalign;
+                for (let i = 0; i < pad; i++) asm.addDataByte(0);
+            }
+        };
+        const addQword = (val) => {
+            align8();
+            // Assume 32-bit safe integer
+            asm.addDataByte(val & 0xff);
+            asm.addDataByte((val >> 8) & 0xff);
+            asm.addDataByte((val >> 16) & 0xff);
+            asm.addDataByte((val >>> 24) & 0xff);
+            for (let i = 0; i < 4; i++) asm.addDataByte(0);
+        };
+
         // Symbol 全局计数器
         asm.addDataLabel("_symbol_counter");
-        asm.addDataQword(100); // 从 100 开始，避免与内置 Symbol 冲突
+        addQword(100); // 从 100 开始，避免与内置 Symbol 冲突
 
         // Symbol 注册表（简化实现：固定大小数组）
         asm.addDataLabel("_symbol_registry_size");
-        asm.addDataQword(0);
+        addQword(0);
 
         // Symbol 描述字符串
         asm.addDataLabel("_str_Symbol");
@@ -266,36 +283,53 @@ export class WellKnownSymbolsGenerator {
     }
 
     generateDataSection(asm) {
+        const align8 = () => {
+            const misalign = asm.data.length & 7;
+            if (misalign !== 0) {
+                const pad = 8 - misalign;
+                for (let i = 0; i < pad; i++) asm.addDataByte(0);
+            }
+        };
+        const addQword = (val) => {
+            align8();
+            // Assume 32-bit safe integer
+            asm.addDataByte(val & 0xff);
+            asm.addDataByte((val >> 8) & 0xff);
+            asm.addDataByte((val >> 16) & 0xff);
+            asm.addDataByte((val >>> 24) & 0xff);
+            for (let i = 0; i < 4; i++) asm.addDataByte(0);
+        };
+
         // 预分配 well-known Symbols（静态对象）
         // Symbol.iterator
         asm.addDataLabel("_Symbol_iterator");
-        asm.addDataQword(TYPE_SYMBOL); // type
-        asm.addDataQword(WellKnownSymbols.ITERATOR); // id
-        asm.addDataQword(0); // description (懒初始化)
+        addQword(TYPE_SYMBOL); // type
+        addQword(WellKnownSymbols.ITERATOR); // id
+        addQword(0); // description (懒初始化)
 
         // Symbol.toStringTag
         asm.addDataLabel("_Symbol_toStringTag");
-        asm.addDataQword(TYPE_SYMBOL);
-        asm.addDataQword(WellKnownSymbols.TO_STRING_TAG);
-        asm.addDataQword(0);
+        addQword(TYPE_SYMBOL);
+        addQword(WellKnownSymbols.TO_STRING_TAG);
+        addQword(0);
 
         // Symbol.toPrimitive
         asm.addDataLabel("_Symbol_toPrimitive");
-        asm.addDataQword(TYPE_SYMBOL);
-        asm.addDataQword(WellKnownSymbols.TO_PRIMITIVE);
-        asm.addDataQword(0);
+        addQword(TYPE_SYMBOL);
+        addQword(WellKnownSymbols.TO_PRIMITIVE);
+        addQword(0);
 
         // Symbol.hasInstance
         asm.addDataLabel("_Symbol_hasInstance");
-        asm.addDataQword(TYPE_SYMBOL);
-        asm.addDataQword(WellKnownSymbols.HAS_INSTANCE);
-        asm.addDataQword(0);
+        addQword(TYPE_SYMBOL);
+        addQword(WellKnownSymbols.HAS_INSTANCE);
+        addQword(0);
 
         // Symbol.asyncIterator
         asm.addDataLabel("_Symbol_asyncIterator");
-        asm.addDataQword(TYPE_SYMBOL);
-        asm.addDataQword(WellKnownSymbols.ASYNC_ITERATOR);
-        asm.addDataQword(0);
+        addQword(TYPE_SYMBOL);
+        addQword(WellKnownSymbols.ASYNC_ITERATOR);
+        addQword(0);
     }
 
     // 获取 well-known Symbol 的访问函数

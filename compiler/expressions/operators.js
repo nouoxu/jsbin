@@ -383,18 +383,18 @@ export const OperatorCompiler = {
                 case "%":
                     this.vm.mod(VReg.RET, VReg.RET, VReg.V1);
                     return;
-                // 比较运算也用整数比较
+                // 比较运算用浮点比较（因为变量类型不确定）
                 case "<":
-                    this.compileComparison("jlt");
+                    this.compileFloatComparison("jlt");
                     return;
                 case "<=":
-                    this.compileComparison("jle");
+                    this.compileFloatComparison("jle");
                     return;
                 case ">":
-                    this.compileComparison("jgt");
+                    this.compileFloatComparison("jgt");
                     return;
                 case ">=":
-                    this.compileComparison("jge");
+                    this.compileFloatComparison("jge");
                     return;
                 case "==":
                 case "===":
@@ -428,10 +428,12 @@ export const OperatorCompiler = {
                 }
             }
 
-            // 对于变量和其他表达式，假设可能是 Number 对象
-            // 编译后 unbox（unbox 假设值是 Number 对象指针）
+            // 对于变量和其他表达式，调用 _to_number 转换为 float64 位模式
+            // _to_number 可以正确处理 raw float64、Number 对象、int32 等
             this.compileExpression(operand);
-            this.unboxNumber(VReg.RET);
+            this.vm.mov(VReg.A0, VReg.RET);
+            this.vm.call("_to_number");
+            this.vm.mov(VReg.RET, VReg.A0);
         };
 
         // 先计算右操作数，保存到栈
@@ -520,16 +522,16 @@ export const OperatorCompiler = {
                 // 结果已是 Number 对象
                 break;
             case "<":
-                this.compileComparison("jlt");
+                this.compileFloatComparison("jlt");
                 break;
             case "<=":
-                this.compileComparison("jle");
+                this.compileFloatComparison("jle");
                 break;
             case ">":
-                this.compileComparison("jgt");
+                this.compileFloatComparison("jgt");
                 break;
             case ">=":
-                this.compileComparison("jge");
+                this.compileFloatComparison("jge");
                 break;
             case "==":
             case "===":
@@ -579,6 +581,32 @@ export const OperatorCompiler = {
         this.vm.jmp(endLabel);
         this.vm.label(trueLabel);
         // true: 加载 NaN-boxed true (0x7FF9000000000001)
+        this.vm.lea(VReg.RET, "_js_true");
+        this.vm.load(VReg.RET, VReg.RET, 0);
+        this.vm.label(endLabel);
+    },
+
+    // 编译浮点比较运算
+    // RET 和 V1 已包含 float64 位模式（由 compileOperandAsFloat 设置）
+    // 直接移到浮点寄存器进行比较
+    // 返回 NaN-boxed 布尔值
+    compileFloatComparison(jumpOp) {
+        const trueLabel = this.ctx.newLabel("fcmp_true");
+        const endLabel = this.ctx.newLabel("fcmp_end");
+
+        // 将位模式移到浮点寄存器
+        this.vm.fmovToFloat(0, VReg.RET); // D0 = left
+        this.vm.fmovToFloat(1, VReg.V1); // D1 = right
+
+        // 浮点比较
+        this.vm.fcmp(0, 1);
+        this.vm[jumpOp](trueLabel);
+        // false: 加载 NaN-boxed false
+        this.vm.lea(VReg.RET, "_js_false");
+        this.vm.load(VReg.RET, VReg.RET, 0);
+        this.vm.jmp(endLabel);
+        this.vm.label(trueLabel);
+        // true: 加载 NaN-boxed true
         this.vm.lea(VReg.RET, "_js_true");
         this.vm.load(VReg.RET, VReg.RET, 0);
         this.vm.label(endLabel);

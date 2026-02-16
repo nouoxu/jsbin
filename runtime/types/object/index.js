@@ -114,6 +114,12 @@ export class ObjectGenerator {
         vm.cmpImm(VReg.V0, 31); // TYPE_ERROR
         vm.jeq("_object_get_error");
 
+        // Map/Set support (TYPE_MAP=4, TYPE_SET=5)
+        vm.cmpImm(VReg.V0, 4);
+        vm.jeq("_object_get_map");
+        vm.cmpImm(VReg.V0, 5);
+        vm.jeq("_object_get_map");
+
         // 加载属性数量并进行上限裁剪，避免越界读取未初始化槽位
         vm.load(VReg.S2, VReg.S0, 8); // prop count
         vm.movImm(VReg.V0, this.MAX_PROP_COUNT);
@@ -174,6 +180,22 @@ export class ObjectGenerator {
 
         vm.label(notFoundLabel);
         vm.movImm(VReg.RET, 0);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
+
+        // Map/Set .size handler
+        vm.label("_object_get_map");
+
+        vm.mov(VReg.A0, VReg.S1); // key
+        vm.lea(VReg.A1, "_str_size");
+        vm.call("_strcmp");
+        vm.cmpImm(VReg.RET, 0);
+        vm.jne("_object_get_notfound"); // Only support .size for now
+
+        // Found size (offset 8)
+        vm.load(VReg.V0, VReg.S0, 8);
+
+        vm.scvtf(VReg.D0, VReg.V0);
+        vm.fmov(VReg.RET, VReg.D0);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
 
         // Error 对象属性处理
@@ -306,7 +328,9 @@ export class ObjectGenerator {
         vm.store(VReg.V0, 8, VReg.S2);
 
         // 更新 count
-        vm.addImm(VReg.S3, VReg.S3, 1);
+        // Workaround: addImm might be buggy?
+        vm.movImm(VReg.A0, 1);
+        vm.add(VReg.S3, VReg.S3, VReg.A0);
         vm.store(VReg.S0, 8, VReg.S3);
 
         vm.label(doneLabel);

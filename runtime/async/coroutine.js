@@ -458,17 +458,29 @@ export class CoroutineGenerator {
 
     // 生成数据段
     generateDataSection(asm) {
+        const align8 = () => {
+            const misalign = asm.data.length & 7;
+            if (misalign !== 0) {
+                const pad = 8 - misalign;
+                for (let i = 0; i < pad; i++) asm.addDataByte(0);
+            }
+        };
+        const addZeroQword = () => {
+            align8();
+            for (let i = 0; i < 8; i++) asm.addDataByte(0);
+        };
+
         // 调度器全局变量
         asm.addDataLabel("_scheduler_main");
-        asm.addDataQword(0); // 主协程指针
+        addZeroQword(); // 主协程指针
 
         asm.addDataLabel("_scheduler_current");
-        asm.addDataQword(0); // 当前运行的协程
+        addZeroQword(); // 当前运行的协程
 
         asm.addDataLabel("_scheduler_ready_head");
-        asm.addDataQword(0); // 就绪队列头
+        addZeroQword(); // 就绪队列头
 
         asm.addDataLabel("_scheduler_ready_tail");
-        asm.addDataQword(0); // 就绪队列尾
+        addZeroQword(); // 就绪队列尾
     }
 }

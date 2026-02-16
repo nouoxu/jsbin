@@ -14,7 +14,7 @@ import { execSync } from "child_process";
 
 // 语言前端
 import { Lexer, Parser } from "../lang/index.js";
-import { analyzeCapturedVariables, analyzeSharedVariables, analyzeTopLevelSharedVariables } from "../lang/analysis/closure.js";
+import { analyzeCapturedVariables, analyzeSharedVariables, analyzeTopLevelSharedVariables, usesArgumentsObject } from "../lang/analysis/closure.js";
 
 // 虚拟机和汇编器
 import { VirtualMachine, VReg } from "../vm/index.js";
@@ -874,7 +874,15 @@ export class Compiler {
                             moduleExports.addVariable(varName, globalLabel);
                             // 为导出变量分配数据段空间
                             this.asm.addDataLabel(globalLabel);
-                            this.asm.addDataQword(0);
+                            // Manual Qword(0) emission to avoid BigInt issues
+                            {
+                                const misalign = this.asm.data.length & 7;
+                                if (misalign !== 0) {
+                                    const pad = 8 - misalign;
+                                    for (let k = 0; k < pad; k++) this.asm.data.push(0);
+                                }
+                                for (let k = 0; k < 8; k++) this.asm.addDataByte(0);
+                            }
                             // 注册到 importedSymbols，让模块内部可以通过变量名访问
                             this.importedSymbols.set(varName, {
                                 modulePath: this.currentModulePath,
@@ -1088,14 +1096,14 @@ export class Compiler {
         }
 
         console.log("\n=== Labels ===");
-        const labels = Object.keys(this.asm.labels);
+        const labels = Array.from(this.asm.labels.keys());
         console.log(`Total labels: ${labels.length}`);
         // 只显示用户定义的标签（以 _user_ 开头的）
         const userLabels = labels.filter((l) => l.startsWith("_user_"));
         if (userLabels.length > 0) {
             console.log("User functions:");
             for (const label of userLabels) {
-                console.log(`    ${label}: offset ${this.asm.labels[label]}`);
+                console.log(`    ${label}: offset ${this.asm.labels.get(label)}`);
             }
         }
 
@@ -1227,27 +1235,37 @@ export class Compiler {
         console.log("[generateRuntime] RuntimeGenerator.generate() done");
         // 分代 GC 运行时
         if (this.gcEnabled && this.gcManager) {
+            console.log("[generateRuntime] Generating GC runtime");
             const gcRuntimeGen = new GenerationalGCRuntimeGenerator(this.vm, this.ctx);
             gcRuntimeGen.generate();
         }
+        console.log("[generateRuntime] Generating Data Section");
         this.generateDataSection();
+        console.log("[generateRuntime] Data Section generated");
         // 注意：IC 槽位在 compileProgram 后通过 generateICSlots() 单独生成;
     }
 
     generateDataSection() {
+        console.log("[DataSection] Starting");
         const numberGen = new NumberGenerator(this.vm, this.ctx);
+        console.log("[DataSection] NumberGenerator");
         numberGen.generateDataSection(this.asm);
         // Math 数据段（常量和随机数状态）
         const mathGen = new MathGenerator(this.vm, this.ctx);
+        console.log("[DataSection] MathGenerator");
         mathGen.generateDataSection(this.asm);
         // Symbol 数据段
         const symbolGen = new SymbolGenerator(this.vm, this.ctx);
+        console.log("[DataSection] SymbolGenerator");
         symbolGen.generateDataSection(this.asm);
         const wellKnownSymbolsGen = new WellKnownSymbolsGenerator(this.vm, this.ctx);
+        console.log("[DataSection] WellKnownSymbolsGenerator");
         wellKnownSymbolsGen.generateDataSection(this.asm);
         // Iterator 数据段
         const iteratorGen = new IteratorGenerator(this.vm, this.ctx);
+        console.log("[DataSection] IteratorGenerator");
         iteratorGen.generateDataSection(this.asm);
+        console.log("[DataSection] Done");
         // Error 数据段
         const errorGen = new ErrorGenerator(this.vm, this.ctx);
         errorGen.generateDataSection(this.asm);
@@ -1289,9 +1307,15 @@ export class Compiler {
         // 生成 IC 槽位（每个槽位 24 字节：state + cached_count + offset）
         for (const slot of slots) {
             this.asm.addDataLabel(slot.label);
-            this.asm.addDataQword(0); // state (UNINITIALIZED)
-            this.asm.addDataQword(0); // cached_count
-            this.asm.addDataQword(0); // offset
+            // Manual Qword(0) emission for state, cached_count, offset
+            for (let i = 0; i < 3; i++) {
+                const misalign = this.asm.data.length & 7;
+                if (misalign !== 0) {
+                    const pad = 8 - misalign;
+                    for (let k = 0; k < pad; k++) this.asm.data.push(0);
+                }
+                for (let k = 0; k < 8; k++) this.asm.addDataByte(0);
+            }
         }
     }
 
@@ -1393,17 +1417,21 @@ export class Compiler {
 
     compileProgram(ast) {
         const vm = this.vm;
+        console.log("DEBUG: compileProgram entry");
 
         // 先处理模块导入
         this.processMainModuleImports(ast);
+        console.log("DEBUG: processMainModuleImports done");
 
         // 收集模块级常量（用于常量折叠）
         this.collectModuleConstants(ast);
+        console.log("DEBUG: collectModuleConstants done");
 
         this.collectFunctions(ast);
+        console.log("DEBUG: collectFunctions done");
 
         // 初始化函数内联优化器
-        if (this.options.inline !== false) {
+        if (false && this.options.inline !== false) {
             this.inlineGenerator = createInlineGenerator(this);
             this.inlineGenerator.initialize();
             this.inlineEnabled = true;
@@ -1416,12 +1444,14 @@ export class Compiler {
                 }
             }
         }
+        console.log("DEBUG: inlineGenerator init done");
 
         // 初始化内联缓存 (IC) 优化器
-        if (this.options.ic !== false) {
+        if (false && this.options.ic !== false) {
             this.icManager = createInlineCacheManager(this);
             this.icEnabled = true;
         }
+        console.log("DEBUG: icManager init done");
 
         // 初始化分代 GC（通过 --gc 选项启用）
         // 注意：可能已在 compile() 中初始化，检查避免重复
@@ -1432,8 +1462,10 @@ export class Compiler {
                 console.log("Generational GC enabled");
             }
         }
+        console.log("DEBUG: gcManager init done");
 
         const mainBoxedVars = analyzeTopLevelSharedVariables(ast);
+
         const mainFunc = {
             params: [],
             body: {
@@ -1448,12 +1480,23 @@ export class Compiler {
         }
 
         this.ctx.boxedVars = mainBoxedVars;
+        console.log("DEBUG: boxedVars analysis done");
 
         const topLevelCapturedVars = analyzeTopLevelSharedVariables(ast);
+        console.log("DEBUG: topLevelCapturedVars count: " + topLevelCapturedVars.size);
         for (const name of topLevelCapturedVars) {
+            console.log("DEBUG: processing captured var " + name);
             const label = this.ctx.allocMainCapturedVar(name);
             this.asm.addDataLabel(label);
-            this.asm.addDataQword(0);
+            // Manual Qword(0) emission
+            {
+                const misalign = this.asm.data.length & 7;
+                if (misalign !== 0) {
+                    const pad = 8 - misalign;
+                    for (let k = 0; k < pad; k++) this.asm.data.push(0);
+                }
+                for (let k = 0; k < 8; k++) this.asm.addDataByte(0);
+            }
         }
 
         vm.label("_main");
@@ -1464,17 +1507,22 @@ export class Compiler {
         this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
         this.ctx.returnLabel = "_main_return";
 
+        console.log("DEBUG: Starting main body loop");
         for (const stmt of ast.body) {
+            console.log("DEBUG: Compiling stmt type: " + stmt.type);
             if (stmt.type !== "FunctionDeclaration") {
                 this.compileStatement(stmt);
             }
         }
+        console.log("DEBUG: Finished main body loop");
 
         vm.movImm(VReg.RET, 0);
         vm.label("_main_return");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 1024);
 
+        console.log("DEBUG: Calling compileUserFunctions");
         this.compileUserFunctions();
+        console.log("DEBUG: Calling generatePendingFunctions");
         this.generatePendingFunctions();
     }
 
@@ -1505,9 +1553,38 @@ export class Compiler {
     }
 
     compileUserFunctions() {
+        console.log("DEBUG: compileUserFunctions start. Functions count: " + Object.keys(this.ctx.functions).length);
+        let count = 0;
         for (const name in this.ctx.functions) {
-            this.compileFunction(name, this.ctx.functions[name]);
+            count++;
+            console.log("DEBUG: Loop name=" + name);
+            try {
+                const func = this.ctx.functions[name];
+                console.log("DEBUG: Checking function " + name + ", func type=" + typeof func);
+
+                if (!func) {
+                    console.log("DEBUG: Function " + name + " is null/undefined");
+                    continue;
+                }
+
+                // Skip numeric keys that might be artifacts (workaround for ghost "0" key issue)
+                if (name === "0" || (name.match(/^\d+$/) && !func.type)) {
+                    console.log("DEBUG: Skipping artifact function '" + name + "'");
+                    continue;
+                }
+
+                if (!func.type) {
+                    console.log("DEBUG: Function " + name + " has no type property. func=" + JSON.stringify(func));
+                    continue;
+                }
+
+                this.compileFunction(name, func);
+            } catch (e) {
+                console.log("ERROR in compileUserFunctions for " + name + ": " + e);
+                // Print stack if available, but in this limited env maybe not
+            }
         }
+        console.log("DEBUG: compileUserFunctions done, iterated " + count + " items");
     }
 
     compileFunction(name, func) {
@@ -1542,16 +1619,48 @@ export class Compiler {
         this.ctx.allocatedStackSize = stackSize;
 
         vm.label(funcLabel);
+
         vm.prologue(stackSize, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
         // 保留 callee-saved 寄存器占用的栈空间
         this.ctx.reserveCalleeSavedSpace(4); // S0, S1, S2, S3 = 4 个寄存器
 
+        // 保存 V7（参数个数）到 S2 供 rest 参数使用
+        // 注意：V7 可能在函数调用后被破坏，所以立即保存
+        vm.mov(VReg.S2, VReg.V7);
+
         const params = func.params || [];
         const paramOffsets = [];
         const defaultParams = []; // 记录有默认值的参数
+        let restParamInfo = null; // Rest 参数信息
+
+        // 检查是否有 rest 参数（只能在最后一个）
+        // 注意：解析器可能生成 RestElement 或 SpreadElement
+        const lastParam = params.length > 0 ? params[params.length - 1] : null;
+        const isRestParam = lastParam && (lastParam.type === "RestElement" || lastParam.type === "SpreadElement");
+        if (isRestParam) {
+            const restParam = lastParam;
+            restParamInfo = {
+                name: restParam.argument.name,
+                startIndex: params.length - 1,
+            };
+        }
+
+        // 正常参数的数量（不包括 rest）
+        const normalParamCount = restParamInfo ? params.length - 1 : params.length;
+
+        // 如果有 rest 参数或使用 arguments 对象，需要保存所有 6 个参数寄存器到栈上
+        const needsSaveAllArgs = restParamInfo || usesArgumentsObject(func);
+        const argsSaveOffsets = [];
+        if (needsSaveAllArgs) {
+            for (let i = 0; i < 6; i++) {
+                const offset = this.ctx.allocLocal(`__arg_${i}`);
+                argsSaveOffsets.push(offset);
+                vm.store(VReg.FP, offset, vm.getArgReg(i));
+            }
+        }
 
         // 处理寄存器传递的参数（前 6 个）
-        for (let i = 0; i < params.length && i < 6; i++) {
+        for (let i = 0; i < normalParamCount && i < 6; i++) {
             const param = params[i];
             let paramName = null;
             let hasDefault = false;
@@ -1569,7 +1678,14 @@ export class Compiler {
             if (paramName) {
                 const offset = this.ctx.allocLocal(paramName);
                 paramOffsets.push({ name: paramName, offset: offset });
-                vm.store(VReg.FP, offset, vm.getArgReg(i));
+                // 如果需要保存所有参数（rest 或 arguments），从 argsSaveOffsets 复制
+                // 否则直接从寄存器保存
+                if (needsSaveAllArgs) {
+                    vm.load(VReg.V0, VReg.FP, argsSaveOffsets[i]);
+                    vm.store(VReg.FP, offset, VReg.V0);
+                } else {
+                    vm.store(VReg.FP, offset, vm.getArgReg(i));
+                }
 
                 if (hasDefault) {
                     defaultParams.push({ offset: offset, defaultValue: defaultValue });
@@ -1590,7 +1706,7 @@ export class Compiler {
         // 栈参数在 FP **上方**（正偏移），从 FP + 16 开始
         const stackArgsBaseOffset = 16; // 跳过保存的 FP(8) + LR(8)
 
-        for (let i = 6; i < params.length; i++) {
+        for (let i = 6; i < normalParamCount; i++) {
             const param = params[i];
             let paramName = null;
             let hasDefault = false;
@@ -1632,6 +1748,172 @@ export class Compiler {
             this.compileExpression(dp.defaultValue);
             vm.store(VReg.FP, dp.offset, VReg.RET);
             vm.label(skipDefaultLabel);
+        }
+
+        // 处理 Rest 参数：收集剩余参数到数组
+        if (restParamInfo) {
+            const restOffset = this.ctx.allocLocal(restParamInfo.name);
+            paramOffsets.push({ name: restParamInfo.name, offset: restOffset });
+
+            // S2 已经在函数入口时保存了 V7（实际参数个数）
+            const restStartIdx = restParamInfo.startIndex;
+
+            // 创建空数组
+            vm.movImm(VReg.A0, 0);
+            vm.call("_array_new_with_size");
+            vm.store(VReg.FP, restOffset, VReg.RET);
+
+            // 循环添加剩余参数
+            // S2 = 实际参数个数
+            // S3 = 当前索引 (从 restStartIdx 开始)
+            const loopLabel = `_rest_loop_${this.ctx.labelId++}`;
+            const endLabel = `_rest_end_${this.ctx.labelId++}`;
+
+            vm.movImm(VReg.S3, restStartIdx);
+
+            vm.label(loopLabel);
+            // if S3 >= S2, 跳出循环
+            vm.cmp(VReg.S3, VReg.S2);
+            vm.jge(endLabel);
+
+            // 根据 S3 位置获取参数值
+            // 如果 S3 < 6，从寄存器保存位置获取
+            // 否则从栈获取
+            const fromStackLabel = `_rest_from_stack_${this.ctx.labelId++}`;
+            const gotArgLabel = `_rest_got_arg_${this.ctx.labelId++}`;
+
+            vm.movImm(VReg.V0, 6);
+            vm.cmp(VReg.S3, VReg.V0);
+            vm.jge(fromStackLabel);
+
+            // 从寄存器参数保存位置获取（根据索引计算偏移）
+            // 参数 0-5 保存在 paramOffsets 数组的对应偏移
+            // 这里需要动态计算，比较复杂，先简化处理：
+            // 对于寄存器参数，我们在上面已经保存过了，可以通过 paramOffsets 找到
+            // 但这里运行时不知道偏移，需要用一个 switch-like 结构
+            // 简化：直接从已保存的参数位置加载
+            // 实际上，由于我们知道 rest 开始的位置，可以:
+            // - 如果 restStartIdx <= 5，需要从保存的参数寄存器位置获取前几个
+            // - 如果 restStartIdx >= 6，所有 rest 参数都在栈上
+
+            // 使用 argsSaveOffsets 来索引寄存器参数
+            // 我们已经在函数入口保存了所有 6 个参数寄存器
+            // 现在生成条件分支链来根据运行时索引 S3 加载对应参数
+
+            for (let i = restStartIdx; i < 6; i++) {
+                const nextCondLabel = `_rest_cond_${i}_next_${this.ctx.labelId++}`;
+                vm.movImm(VReg.V0, i);
+                vm.cmp(VReg.S3, VReg.V0);
+                vm.jne(nextCondLabel);
+                // 找到匹配的索引，从 argsSaveOffsets 加载参数值
+                vm.load(VReg.V1, VReg.FP, argsSaveOffsets[i]);
+                vm.jmp(gotArgLabel);
+                vm.label(nextCondLabel);
+            }
+
+            // 如果没有匹配，说明索引 >= 6，但这里不应该执行到（上面 jge 会跳转）
+            // 加载 undefined 作为默认值
+            vm.movImm64(VReg.V1, "0x7ffb000000000000");
+            vm.jmp(gotArgLabel);
+
+            vm.label(fromStackLabel);
+            // 从栈获取参数（索引 >= 6）
+            // 栈参数偏移: FP + stackArgsBaseOffset + (S3 - 6) * 8
+            vm.movImm(VReg.V0, 6);
+            vm.sub(VReg.V2, VReg.S3, VReg.V0);
+            vm.movImm(VReg.V0, 8);
+            vm.mul(VReg.V2, VReg.V2, VReg.V0);
+            vm.movImm(VReg.V0, stackArgsBaseOffset);
+            vm.add(VReg.V2, VReg.V2, VReg.V0);
+            // V2 = 偏移, FP + V2 = 地址
+            vm.add(VReg.V0, VReg.FP, VReg.V2);
+            vm.load(VReg.V1, VReg.V0, 0);
+
+            vm.label(gotArgLabel);
+            // V1 = 参数值，push 到 rest 数组
+            vm.load(VReg.A0, VReg.FP, restOffset);
+            vm.mov(VReg.A1, VReg.V1);
+            vm.call("_array_push");
+            vm.store(VReg.FP, restOffset, VReg.RET);
+
+            // S3++
+            vm.addImm(VReg.S3, VReg.S3, 1);
+            vm.jmp(loopLabel);
+
+            vm.label(endLabel);
+        }
+
+        // 创建 arguments 对象（如果函数中使用了 arguments）
+        if (usesArgumentsObject(func)) {
+            const argumentsOffset = this.ctx.allocLocal("arguments");
+
+            // S2 已经在函数入口时保存了 V7（实际参数个数）
+
+            // 创建空数组
+            vm.movImm(VReg.A0, 0);
+            vm.call("_array_new_with_size");
+            vm.store(VReg.FP, argumentsOffset, VReg.RET);
+
+            // 循环添加所有参数
+            // S2 = 实际参数个数
+            // S3 = 当前索引 (从 0 开始)
+            const argsLoopLabel = `_args_loop_${this.ctx.labelId++}`;
+            const argsEndLabel = `_args_end_${this.ctx.labelId++}`;
+
+            vm.movImm(VReg.S3, 0);
+
+            vm.label(argsLoopLabel);
+            // if S3 >= S2, 跳出循环
+            vm.cmp(VReg.S3, VReg.S2);
+            vm.jge(argsEndLabel);
+
+            // 根据 S3 位置获取参数值
+            const argsFromStackLabel = `_args_from_stack_${this.ctx.labelId++}`;
+            const argsGotArgLabel = `_args_got_arg_${this.ctx.labelId++}`;
+
+            vm.movImm(VReg.V0, 6);
+            vm.cmp(VReg.S3, VReg.V0);
+            vm.jge(argsFromStackLabel);
+
+            // 从保存的参数寄存器加载（使用 argsSaveOffsets）
+            for (let i = 0; i < 6; i++) {
+                const nextCondLabel = `_args_cond_${i}_next_${this.ctx.labelId++}`;
+                vm.movImm(VReg.V0, i);
+                vm.cmp(VReg.S3, VReg.V0);
+                vm.jne(nextCondLabel);
+                // 找到匹配的索引，从 argsSaveOffsets 加载参数值
+                vm.load(VReg.V1, VReg.FP, argsSaveOffsets[i]);
+                vm.jmp(argsGotArgLabel);
+                vm.label(nextCondLabel);
+            }
+
+            // 没有匹配（不应该到达这里）
+            vm.movImm64(VReg.V1, "0x7ffb000000000000");
+            vm.jmp(argsGotArgLabel);
+
+            vm.label(argsFromStackLabel);
+            // 从栈获取参数（索引 >= 6）
+            vm.movImm(VReg.V0, 6);
+            vm.sub(VReg.V2, VReg.S3, VReg.V0);
+            vm.movImm(VReg.V0, 8);
+            vm.mul(VReg.V2, VReg.V2, VReg.V0);
+            vm.movImm(VReg.V0, stackArgsBaseOffset);
+            vm.add(VReg.V2, VReg.V2, VReg.V0);
+            vm.add(VReg.V0, VReg.FP, VReg.V2);
+            vm.load(VReg.V1, VReg.V0, 0);
+
+            vm.label(argsGotArgLabel);
+            // V1 = 参数值，push 到 arguments 数组
+            vm.load(VReg.A0, VReg.FP, argumentsOffset);
+            vm.mov(VReg.A1, VReg.V1);
+            vm.call("_array_push");
+            vm.store(VReg.FP, argumentsOffset, VReg.RET);
+
+            // S3++
+            vm.addImm(VReg.S3, VReg.S3, 1);
+            vm.jmp(argsLoopLabel);
+
+            vm.label(argsEndLabel);
         }
 
         for (let i = 0; i < paramOffsets.length; i++) {
@@ -2031,9 +2313,9 @@ export class Compiler {
 
         for (const [name, offset] of Object.entries(linked.symbols)) {
             const finalOffset = staticCodeBase + offset;
-            this.asm.labels[name] = finalOffset;
+            this.asm.labels.set(name, finalOffset);
             if (!name.startsWith("_")) {
-                this.asm.labels["_" + name] = finalOffset;
+                this.asm.labels.set("_" + name, finalOffset);
             }
         }
     }
@@ -2058,16 +2340,23 @@ export class Compiler {
     // ========== 二进制生成 ==========
 
     generateExecutable() {
+        console.log("DEBUG: generateExecutable start");
         const allocGen = new AllocatorGenerator(this.vm);
+        console.log("DEBUG: AllocatorGenerator created");
         allocGen.generateDataSection(this.asm);
+        console.log("DEBUG: AllocatorGenerator.generateDataSection done");
 
         // 生成异步运行时数据段（调度器全局变量）
         const asyncGen = new AsyncGenerator(this.vm);
+        console.log("DEBUG: AsyncGenerator created");
         asyncGen.generateDataSection(this.asm);
+        console.log("DEBUG: AsyncGenerator.generateDataSection done");
 
         this.asm.finalize();
+        console.log("DEBUG: asm.finalize done. asm.id=" + this.asm.id + ", data len=" + this.asm.data.length);
 
         const generator = new BinaryOutputGenerator(this);
+        console.log("DEBUG: BinaryOutputGenerator created");
 
         if (this.outputType === "shared") {
             return generator.generateSharedLibrary();
@@ -2077,6 +2366,7 @@ export class Compiler {
             return generator.generateStaticLibrary();
         }
 
+        console.log("DEBUG: calling generator.generateExecutable");
         return generator.generateExecutable();
     }
 

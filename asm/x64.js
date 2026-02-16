@@ -101,7 +101,10 @@ export class X64Assembler {
         if (typeof value === "string") {
             // 字符串格式 "0x..."，逐字节解析
             let hex = value.startsWith("0x") ? value.slice(2) : value;
-            hex = hex.padStart(16, "0");
+            // 用循环补齐避免 padStart 在 selfhost 中的问题
+            while (hex.length < 16) {
+                hex = "0" + hex;
+            }
             // 小端顺序: 低字节先
             for (let i = 7; i >= 0; i--) {
                 let byteStr = hex.slice(i * 2, i * 2 + 2);
@@ -1406,8 +1409,10 @@ export class X64Assembler {
             hexStr = val.toString(16);
         }
 
-        // 补齐到 16 位十六进制（64 位）
-        hexStr = hexStr.padStart(16, "0");
+        // 补齐到 16 位十六进制（64 位）- 用循环避免 padStart 问题
+        while (hexStr.length < 16) {
+            hexStr = "0" + hexStr;
+        }
 
         // 添加到数据标签（x64 格式）
         this.dataLabels.push({ type: "label", name: labelName });

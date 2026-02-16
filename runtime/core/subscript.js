@@ -257,11 +257,12 @@ export class SubscriptGenerator {
 
         // ========== Array 路径 ==========
         // Array 结构: [type:8, length:8, capacity:8, elem0, elem1, ...]
-        // 偏移 = 24 + index * 8
+        // 偏移 = load(header[24]) + index * 8
         vm.label("_subscript_get_array");
+        vm.load(VReg.V0, VReg.S0, 24); // Load Body Ptr
         vm.shl(VReg.V1, VReg.S1, 3);
-        vm.add(VReg.V1, VReg.S0, VReg.V1);
-        vm.load(VReg.RET, VReg.V1, 24);
+        vm.add(VReg.V1, VReg.V0, VReg.V1);
+        vm.load(VReg.RET, VReg.V1, 0);
         vm.jmp("_subscript_get_done"); // 必须跳转到结束，否则会落入 String 路径
 
         // ========== String 路径 ==========
@@ -307,11 +308,11 @@ export class SubscriptGenerator {
 
         // Array 路径
         vm.label("_subscript_set_array");
-        // Array 结构: [type:8, length:8, capacity:8, elem0, elem1, ...]
-        // 偏移 = 24 + index * 8
+        // Array 结构: [type:8, length:8, capacity:8, ptr:8] -> [elem0, elem1, ...]
+        vm.load(VReg.V1, VReg.S0, 24); // Load Body Ptr
         vm.shl(VReg.V0, VReg.S1, 3); // index * 8
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
-        vm.store(VReg.V0, 24, VReg.S2);
+        vm.add(VReg.V0, VReg.V1, VReg.V0);
+        vm.store(VReg.V0, 0, VReg.S2);
 
         vm.label("_subscript_set_done");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
@@ -350,11 +351,10 @@ export class SubscriptGenerator {
 
         // String 路径：key 是字符串
         vm.label("_dynamic_subscript_get_string");
-        // 提取字符串指针 (低 48 位)
-        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
-        vm.and(VReg.V0, VReg.S1, VReg.V1);
-        // String 对象结构: +0=type, +8=length, +16=data (C string)
-        vm.addImm(VReg.A1, VReg.V0, 16); // A1 = C string pointer
+        // 获取字符串内容指针（支持数据段/堆字符串）
+        vm.mov(VReg.A0, VReg.S1);
+        vm.call("_getStrContent");
+        vm.mov(VReg.A1, VReg.RET); // A1 = C string pointer
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_object_get");
         vm.jmp("_dynamic_subscript_get_done");
@@ -380,7 +380,9 @@ export class SubscriptGenerator {
         vm.label("_dynamic_subscript_get_boxed_string");
         vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.V0, VReg.S1, VReg.V1);
-        vm.addImm(VReg.A1, VReg.V0, 16); // C string at offset 16
+        vm.mov(VReg.A0, VReg.V0);
+        vm.call("_getStrContent");
+        vm.mov(VReg.A1, VReg.RET);
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_object_get");
         vm.jmp("_dynamic_subscript_get_done");
@@ -464,9 +466,9 @@ export class SubscriptGenerator {
 
         // String 路径
         vm.label("_dynamic_subscript_set_string");
-        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
-        vm.and(VReg.V0, VReg.S1, VReg.V1);
-        vm.addImm(VReg.A1, VReg.V0, 16); // C string
+        vm.mov(VReg.A0, VReg.S1);
+        vm.call("_getStrContent");
+        vm.mov(VReg.A1, VReg.RET); // C string
         vm.mov(VReg.A0, VReg.S0);
         vm.mov(VReg.A2, VReg.S2);
         vm.call("_object_set");
@@ -488,7 +490,9 @@ export class SubscriptGenerator {
         vm.label("_dynamic_subscript_set_boxed_string");
         vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.V0, VReg.S1, VReg.V1);
-        vm.addImm(VReg.A1, VReg.V0, 16);
+        vm.mov(VReg.A0, VReg.V0);
+        vm.call("_getStrContent");
+        vm.mov(VReg.A1, VReg.RET);
         vm.mov(VReg.A0, VReg.S0);
         vm.mov(VReg.A2, VReg.S2);
         vm.call("_object_set");

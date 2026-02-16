@@ -61,7 +61,7 @@ export class BinaryOutputGenerator {
             // 设置 PLT 入口地址
             for (const sym of gen.importedSymbols) {
                 const pltAddr = gen.getPltEntryVAddr(sym);
-                this.asm.labels["_" + sym] = pltAddr;
+                this.asm.labels.set("_" + sym, pltAddr);
             }
 
             this.asm.fixupAll();
@@ -79,25 +79,36 @@ export class BinaryOutputGenerator {
 
     // 生成 macOS Mach-O 可执行文件
     generateMacOSExecutable() {
+        let asm = this.asm;
+        if (this.compiler && this.compiler.asm) {
+            asm = this.compiler.asm;
+        }
+
         const gen = this.arch === "arm64" ? new MachOARM64Generator() : new MachOX64Generator();
+
         const registeredDylibs = this.compiler.registeredDylibs || [];
 
         for (const dylibPath of registeredDylibs) {
             gen.addDylib(dylibPath);
         }
 
-        gen.setExternalSymbols(this.asm.externalSymbolList);
+        if (asm.externalSymbolList === undefined)
+        gen.setExternalSymbols(asm.externalSymbolList);
 
         // 设置 GOT 基地址偏移
-        const dataSize = this.asm.data.length;
-        const gotBaseOffset = Math.ceil(dataSize / 8) * 8;
-        this.asm.setGotBaseOffset(gotBaseOffset);
+        const dataSize = asm.data.length;
+        const gotBaseOffset = (dataSize + 7) & -8;
+
+        asm.setGotBaseOffset(gotBaseOffset);
 
         const codeVAddr = gen.getCodeVAddr();
-        const dataVAddr = gen.getDataVAddr(this.asm.code.length);
-        this.asm.codeVAddr = codeVAddr;
-        this.asm.dataVAddr = dataVAddr;
-        this.asm.fixupAll();
+        const dataVAddr = gen.getDataVAddr(asm.code.length);
+
+        asm.codeVAddr = codeVAddr;
+        asm.dataVAddr = dataVAddr;
+
+        asm.fixupAll();
+
         return gen.generate(this.asm.code, this.asm.data, this.asm.labels);
     }
 
@@ -176,7 +187,7 @@ export class BinaryOutputGenerator {
 
         for (const name of exportFuncs) {
             const wrapperLabel = "_" + name;
-            const offset = this.asm.labels[wrapperLabel];
+            const offset = this.asm.labels.get(wrapperLabel);
             if (offset !== undefined) {
                 gen.addExportedSymbol(name, offset);
             }
@@ -206,7 +217,7 @@ export class BinaryOutputGenerator {
 
         for (const name of exportFuncs) {
             const wrapperLabel = "_" + name;
-            const offset = this.asm.labels[wrapperLabel];
+            const offset = this.asm.labels.get(wrapperLabel);
             if (offset !== undefined) {
                 gen.addExportedSymbol(name, offset);
             }
@@ -235,7 +246,7 @@ export class BinaryOutputGenerator {
 
         for (const name of exportFuncs) {
             const wrapperLabel = "_" + name;
-            const offset = this.asm.labels[wrapperLabel];
+            const offset = this.asm.labels.get(wrapperLabel);
             if (offset !== undefined) {
                 gen.addExportedSymbol(name, offset);
             }
