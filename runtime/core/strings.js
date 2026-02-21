@@ -36,6 +36,7 @@ export const RUNTIME_STRINGS = {
     boolean: { label: "_str_boolean", value: "boolean" },
     functionType: { label: "_str_function_type", value: "function" },
     objectType: { label: "_str_object_type", value: "object" },
+    bigint: { label: "_str_bigint", value: "bigint" },
 
     // 详细类型名称 (用于 _get_type_name)
     Number: { label: "_str_Number", value: "Number" },
@@ -151,6 +152,7 @@ export class StringConstantsGenerator {
             "boolean",
             "functionType",
             "objectType",
+            "bigint",
             "Number",
             "String",
             "Array",

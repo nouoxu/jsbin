@@ -22,7 +22,7 @@ import { ARM64Assembler } from "../asm/arm64.js";
 import { X64Assembler } from "../asm/x64.js";
 
 // 运行时
-import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator, ErrorGenerator, FSGenerator, PathGenerator, ProcessGenerator, OSGenerator, ChildProcessGenerator, CoercionGenerator } from "../runtime/index.js";
+import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator, ErrorGenerator, FSGenerator, PathGenerator, ProcessGenerator, OSGenerator, ChildProcessGenerator, CoercionGenerator, NetGenerator } from "../runtime/index.js";
 
 // 编译上下文和平台
 import { CompileContext, CompileOptions, CompileResult } from "./core/context.js";
@@ -1401,6 +1401,19 @@ export class Compiler {
             if (moduleExports.initLabel) {
                 vm.call(moduleExports.initLabel);
             }
+        }
+
+        // 如果是 compiler 模式，生成编译器后直接退出，不运行嵌入的 JS
+        if (this.options.compiler) {
+            vm.movImm(VReg.A0, 0);
+            if (this.os === "windows") {
+                vm.callWindowsExitProcess();
+            } else if (this.arch === "arm64") {
+                vm.syscall(this.os === "linux" ? 93 : 1);
+            } else {
+                vm.syscall(this.os === "linux" ? 60 : 0x2000001);
+            }
+            return;
         }
 
         vm.call("_main");

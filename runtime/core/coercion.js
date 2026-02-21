@@ -5,7 +5,7 @@
 import { VReg } from "../../vm/index.js";
 import { JS_NULL, JS_UNDEFINED, JS_FALSE, JS_TAG_BOOL_BASE, JS_TAG_INT32_BASE, JS_TAG_STRING_BASE } from "./jsvalue.js";
 import { TYPE_NUMBER } from "./types.js";
-import { TYPE_FLOAT64 } from "./allocator.js";
+import { TYPE_FLOAT64, TYPE_INT64 } from "./allocator.js";
 
 export class CoercionGenerator {
     constructor(vm) {
@@ -217,13 +217,34 @@ export class CoercionGenerator {
         vm.cmpImm(VReg.S0, 0);
         vm.jeq("_to_number_zero");
 
+        // 检查是否为小整数（可能是 raw int64 BigInt）
+        // 注意：这个检查有问题，会错误地将小浮点数当作 BigInt
+        // 暂时移除，改用更保守的方法
+        // vm.cmpImm(VReg.S0, 0x1000);
+        // vm.jlt("_to_number_small_int");
+
         // 非 null，检查类型字段
         vm.load(VReg.V0, VReg.S0, 0); // 加载类型字段
+
+        // 检查是否是 BigInt (TYPE_INT64 = 23)
+        vm.movImm(VReg.V1, TYPE_INT64);
+        vm.cmp(VReg.V0, VReg.V1);
+        vm.jeq("_to_number_from_bigint");
+        
         vm.movImm(VReg.V1, 0x1d); // TYPE_FLOAT64 = 29
         vm.cmp(VReg.V0, VReg.V1);
         vm.jeq("_to_number_from_number_obj");
         // 类型不匹配，可能是其他对象，返回 NaN
         vm.jmp("_to_number_nan");
+
+        // 从 BigInt (TYPE_INT64) 转换为 Number
+        vm.label("_to_number_from_bigint");
+        // 加载 int64 值（偏移 8）
+        vm.load(VReg.V0, VReg.S0, 8);
+        // 转换为 float64
+        vm.scvtf(0, VReg.V0); // D0 = (double)value
+        vm.fmovToInt(VReg.RET, 0); // RET = float64 位模式
+        vm.epilogue([VReg.S0], 0);
 
         // 从 Number 对象读取 float64 值
         vm.label("_to_number_from_number_obj");

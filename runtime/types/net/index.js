@@ -24,7 +24,19 @@ export class NetGenerator {
     }
 
     generate() {
-        // 暂时不生成任何函数，net 模块需要更多工作
+        // 生成所有网络函数
+        this.generateSocket();
+        this.generateBind();
+        this.generateListen();
+        this.generateAccept();
+        this.generateConnect();
+        this.generateSendTo();
+        this.generateRecvFrom();
+        this.generateShutdown();
+        this.generateClose();
+        this.generateNetIsIP();
+        this.generateNetCreateServer();
+        this.generateNetCreateConnection();
     }
 
     getSyscallNum(name) {
@@ -229,32 +241,18 @@ export class NetGenerator {
     // net.isIP(str) -> 0 不是 IP，4 是 IPv4，6 是 IPv6
     generateNetIsIP() {
         const vm = this.vm;
-        vm.label("_net_is_ip");
-        vm.prologue(16, [VReg.S0, VReg.S1]);
+        vm.label("_net_isIP");
 
-        // A0: string
-        // 简单实现：检查是否包含点号
-
-        vm.mov(VReg.S0, VReg.A0);
-
-        // 获取字符串内容
-        vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
-        vm.mov(VReg.A0, VReg.RET);
-        vm.call("_get_string_content");
-
-        // 简单检查：如果包含 ':' 则可能是 IPv6，如果是数字和点则是 IPv4
-        // 这里返回 0 表示不是有效 IP（简化实现）
-
+        // 简化实现：直接返回 0
         vm.movImm(VReg.RET, 0);
-
-        vm.epilogue([VReg.S0, VReg.S1], 0);
+        vm.ret();
     }
 
     // net.createServer() - 创建服务器
     generateNetCreateServer() {
         const vm = this.vm;
         vm.label("_net_create_server");
+        vm.label("_net_createServer");
         vm.prologue(0, []);
 
         // TODO: 完整实现

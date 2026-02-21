@@ -2,7 +2,7 @@
 // 提供类型检测功能
 
 import { VReg } from "../../vm/registers.js";
-import { TYPE_STRING, TYPE_ARRAY, TYPE_OBJECT, TYPE_CLOSURE, TYPE_FLOAT64 } from "../core/allocator.js";
+import { TYPE_STRING, TYPE_ARRAY, TYPE_OBJECT, TYPE_CLOSURE, TYPE_FLOAT64, TYPE_INT64 } from "../core/allocator.js";
 import { TYPE_ARRAY_BUFFER, TYPE_NUMBER, TYPE_INT8_ARRAY, TYPE_INT16_ARRAY, TYPE_INT32_ARRAY, TYPE_INT64_ARRAY, TYPE_UINT8_ARRAY, TYPE_UINT16_ARRAY, TYPE_UINT32_ARRAY, TYPE_UINT64_ARRAY, TYPE_UINT8_CLAMPED_ARRAY, TYPE_FLOAT32_ARRAY, TYPE_FLOAT64_ARRAY } from "../core/types.js";
 
 export class TypeofGenerator {
@@ -25,6 +25,7 @@ export class TypeofGenerator {
         const isObjectLabel = "_typeof_object";
         const isFunctionLabel = "_typeof_function";
         const isStringLabel = "_typeof_string";
+        const isBigIntLabel = "_typeof_bigint";
         const checkHeapLabel = "_typeof_check_heap";
         const checkTypedArrayLabel = "_typeof_check_typed_array";
         const doneLabel = "_typeof_done";
@@ -90,7 +91,20 @@ export class TypeofGenerator {
         vm.cmp(VReg.S0, VReg.V1);
         vm.jlt("_typeof_check_heap_type"); // >= heap_base && < heap_ptr，是堆对象
 
-        // >= heap_ptr，不在堆中（可能是大数值的浮点数）
+        // >= heap_ptr，不在堆中
+        // 检查是否是 BigInt (raw int64) - 检查是否在数据段范围
+        // 数据段通常在低地址 (0x1000 - 0x100000)
+        vm.cmpImm(VReg.S0, 0x10000000); // 大于 256MB 不可能是数据段
+        vm.jge(isNumberLabel); // 太大，当作数字
+        
+        // 检查是否是 BigInt (TYPE_INT64 = 23)
+        // 加载第一个字节检查类型
+        vm.load(VReg.V2, VReg.S0, 0);
+        vm.andImm(VReg.V2, VReg.V2, 0xff);
+        vm.cmpImm(VReg.V2, TYPE_INT64);
+        vm.jeq("_typeof_bigint"); // TYPE_INT64 = BigInt
+
+        // 不是 BigInt，当作数字
         vm.jmp(isNumberLabel);
 
         vm.label("_typeof_not_in_heap");
@@ -183,6 +197,10 @@ export class TypeofGenerator {
 
         vm.label(isObjectLabel);
         vm.lea(VReg.RET, "_str_object_type");
+        vm.jmp(doneLabel);
+
+        vm.label(isBigIntLabel);
+        vm.lea(VReg.RET, "_str_bigint");
 
         vm.label(doneLabel);
         // NaN-box 返回值：添加 0x7FFC 字符串标签

@@ -174,7 +174,14 @@ export const ExpressionParser = {
     parseAssignmentExpression(left) {
         let operator = this.curToken.literal;
         this.nextToken();
-        return new AST.AssignmentExpression(operator, left, this.parseExpression(Precedence.ASSIGN - 1));
+        let right = this.parseExpression(Precedence.ASSIGN - 1);
+        // 检查是否有右侧表达式
+        if (right === null) {
+            this.errors.push(`Assignment expression missing right side for operator '${operator}'`);
+            // 返回一个假的标识符避免编译器崩溃
+            return new AST.Identifier("__error__");
+        }
+        return new AST.AssignmentExpression(operator, left, right);
     },
 
     parseConditionalExpression(test) {

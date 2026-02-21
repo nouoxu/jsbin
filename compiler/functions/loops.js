@@ -119,15 +119,17 @@ export const LoopCompiler = {
         this.ctx.breakLabel = endLabel;
         this.ctx.continueLabel = loopLabel;
 
-        // 计算数组，保存到 S0
+        // 计算数组，保存到 S0 (boxed JSValue)
         this.compileExpression(stmt.right);
         this.vm.mov(VReg.S0, VReg.RET);
 
+        // Pass boxed array to _array_length
+        this.vm.mov(VReg.A0, VReg.S0);
+        this.vm.call("_array_length");
+        this.vm.mov(VReg.S2, VReg.RET);  // S2 = length
+
         // 索引变量 i = 0，保存到 S1
         this.vm.movImm(VReg.S1, 0);
-
-        // 获取数组长度，保存到 S2
-        this.vm.load(VReg.S2, VReg.S0, 0);
 
         // 获取迭代变量名
         let varName = null;
@@ -149,12 +151,12 @@ export const LoopCompiler = {
         this.vm.cmp(VReg.S1, VReg.S2);
         this.vm.jge(endLabel);
 
-        // 获取 array[i]
-        this.vm.mov(VReg.V0, VReg.S1);
-        this.vm.shlImm(VReg.V0, VReg.V0, 3);
-        this.vm.addImm(VReg.V0, VReg.V0, 8);
-        this.vm.add(VReg.V0, VReg.S0, VReg.V0);
-        this.vm.load(VReg.RET, VReg.V0, 0);
+        // 获取 array[i] - use _array_get function
+        // Pass boxed array in A0, index in A1
+        this.vm.mov(VReg.A0, VReg.S0);  // A0 = boxed array (we kept the original JSValue in S0)
+        this.vm.mov(VReg.A1, VReg.S1);  // A1 = index
+        this.vm.call("_array_get");
+        // RET now contains the element value
 
         // 存储到迭代变量
         if (varOffset !== null) {

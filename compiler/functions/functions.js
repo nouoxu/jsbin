@@ -793,10 +793,34 @@ export const FunctionCompiler = {
             if (callee.name === "Number") {
                 // Number(value) - 转换为数字
                 if (expr.arguments.length > 0) {
-                    this.compileExpression(expr.arguments[0]);
-                    // 已经是 NaN-boxed 值，调用运行时转换函数
-                    this.vm.mov(VReg.A0, VReg.RET);
-                    this.vm.call("_to_number");
+                    const argType = inferType(expr.arguments[0], this.ctx);
+                    if (argType === Type.BIGINT) {
+                        // BigInt -> Number: raw int64 -> boxed Number
+                        // 先编译参数（得到 raw int64）
+                        this.compileExpression(expr.arguments[0]);
+                        // 转换为 float64 并装箱为 Number 对象
+                        // boxIntAsNumber 期望 int64 在寄存器中，会转换为 float64 并装箱
+                        // 使用内联的 boxNumber
+                        // 保存 int64 到 S0（因为 boxNumber 会覆盖）
+                        this.vm.mov(VReg.S0, VReg.RET);
+                        // 转换为 float64
+                        this.vm.scvtf(0, VReg.S0); // D0 = (double)value
+                        this.vm.fmovToInt(VReg.S0, 0); // S0 = float64 bits
+                        // 分配 Number 对象
+                        this.vm.movImm(VReg.A0, 16);
+                        this.vm.call("_alloc");
+                        // RET = 堆地址
+                        // 写入类型 (TYPE_FLOAT64 = 29)
+                        this.vm.movImm(VReg.V1, 29);
+                        this.vm.store(VReg.RET, 0, VReg.V1);
+                        // 写入 float64 值
+                        this.vm.store(VReg.RET, 8, VReg.S0);
+                    } else {
+                        // 已经是 NaN-boxed 值，调用运行时转换函数
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.vm.call("_to_number");
+                    }
                 } else {
                     // Number() 无参数返回 0
                     this.compileNumericLiteral(0);

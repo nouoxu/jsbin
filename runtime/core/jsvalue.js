@@ -201,6 +201,7 @@ export class JSValueGenerator {
         this.generateIsFloat64();
         this.generateGetTag();
         this.generateGetPayload();
+        this.generateBox();
         this.generateBoxString();
         this.generateBoxArray();
         this.generateBoxObject();
@@ -258,6 +259,28 @@ export class JSValueGenerator {
         // 使用 V1 避免与 RET 冲突
         vm.movImm64(VReg.V1, "0x0000ffffffffffff");
         vm.and(VReg.RET, VReg.A0, VReg.V1);
+        vm.ret();
+    }
+
+    // _js_box(ptr, type) -> JSValue
+    // 通用装箱函数：A0=指针, A1=类型
+    generateBox() {
+        const vm = this.vm;
+
+        vm.label("_js_box");
+        // A0 = 原始指针
+        // A1 = 类型标签
+        // 返回 NaN-boxed 值
+
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff"); // PAYLOAD_MASK
+        vm.and(VReg.V0, VReg.A0, VReg.V1);
+
+        // 根据类型设置 tag
+        vm.shlImm(VReg.V1, VReg.A1, 48);
+        vm.movImm64(VReg.V2, "0x7fff000000000000");
+        vm.or(VReg.V1, VReg.V1, VReg.V2);
+
+        vm.or(VReg.RET, VReg.V0, VReg.V1);
         vm.ret();
     }
 

@@ -51,6 +51,9 @@ export { OSGenerator } from "./types/os/index.js";
 // Child Process
 export { ChildProcessGenerator } from "./types/child_process/index.js";
 
+// Net
+export { NetGenerator } from "./types/net/index.js";
+
 // Buffer
 export { BufferGenerator } from "./types/buffer/index.js";
 
@@ -97,6 +100,7 @@ import { ProcessGenerator } from "./types/process/index.js";
 import { OSGenerator } from "./types/os/index.js";
 import { ChildProcessGenerator } from "./types/child_process/index.js";
 import { BufferGenerator } from "./types/buffer/index.js";
+import { NetGenerator } from "./types/net/index.js";
 import { FunctionMethodsGenerator } from "./core/function.js";
 
 function isRuntimeDebug() {
@@ -164,6 +168,9 @@ export class RuntimeGenerator {
         // Buffer
         this.bufferGen = new BufferGenerator(vm, ctx);
 
+        // Net
+        this.netGen = new NetGenerator(vm, ctx);
+
         // Function methods
         this.functionMethodsGen = new FunctionMethodsGenerator(vm, ctx);
     }
@@ -223,6 +230,9 @@ export class RuntimeGenerator {
 
         // Buffer
         this.bufferGen.generate();
+
+        // Net
+        this.netGen.generate();
 
         // Function methods (apply, call, bind)
         this.functionMethodsGen.generate();

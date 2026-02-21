@@ -714,11 +714,22 @@ export const OperatorCompiler = {
                 break;
             case "+":
                 break;
-            case "typeof":
-                // 调用运行时函数获取类型字符串
-                this.vm.mov(VReg.A0, VReg.RET);
-                this.vm.call("_typeof");
+            case "typeof": {
+                // 检查操作数类型，如果是 BigInt 直接返回 "bigint" 字符串
+                const argType = inferType(expr.argument, this.ctx);
+                if (argType === Type.BIGINT) {
+                    // BigInt 类型：直接返回 "bigint" 字符串
+                    this.vm.lea(VReg.RET, "_str_bigint");
+                    // NaN-box: 添加 0x7FFC 字符串标签
+                    this.vm.movImm64(VReg.V1, "0x7ffc000000000000");
+                    this.vm.or(VReg.RET, VReg.RET, VReg.V1);
+                } else {
+                    // 调用运行时函数获取类型字符串
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_typeof");
+                }
                 break;
+            }
         }
     },
 

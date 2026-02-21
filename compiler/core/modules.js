@@ -105,7 +105,7 @@ export class ModuleManager {
      */
     resolveModulePath(specifier, fromPath) {
         // 内置模块 - 返回虚拟路径
-        const builtinModules = ["path", "fs", "process", "os", "child_process", "buffer", "url", "util"];
+        const builtinModules = ["path", "fs", "process", "os", "child_process", "buffer", "url", "util", "net"];
         if (builtinModules.includes(specifier)) {
             return `builtin:${specifier}`;
         }

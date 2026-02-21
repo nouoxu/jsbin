@@ -245,11 +245,10 @@ export class IteratorGenerator {
         vm.cmp(VReg.S2, VReg.V0);
         vm.jge("_array_iter_done");
 
-        // 计算值地址: array + 24 + index * 8
-        vm.mov(VReg.V1, VReg.S2);
-        vm.shlImm(VReg.V1, VReg.V1, 3);
-        vm.addImm(VReg.V1, VReg.V1, 24);
-        vm.add(VReg.V1, VReg.S1, VReg.V1);
+        // 计算值地址: 先获取 body ptr，再加 index * 8
+        vm.load(VReg.V1, VReg.S1, 24); // body ptr
+        vm.shl(VReg.V0, VReg.S2, 3);
+        vm.add(VReg.V1, VReg.V1, VReg.V0);
         vm.load(VReg.V2, VReg.V1, 0); // value
 
         // 递增索引

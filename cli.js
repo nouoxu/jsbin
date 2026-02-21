@@ -22,6 +22,7 @@ Options:
   --no-jslib            Don't generate .jslib declaration file
   --source-map          Generate source map file (.map)
   --gc                  Enable Generational GC (experimental)
+  --compiler            Generate compiler binary (don't run embedded JS)
   --export <name>       Export symbol (can be used multiple times)
   --lib <name>          Link with library
   --lib-path <path>     Add library search path
@@ -61,6 +62,7 @@ function parseArgs(args) {
         exports: [],
         libs: [],
         libPaths: [],
+        compiler: false, // NEW: Generate compiler binary (don't run embedded JS)
     };
 
     let i = 0;
@@ -106,6 +108,8 @@ function parseArgs(args) {
         } else if (arg === "--lib-path" || arg === "-L") {
             i++;
             result.libPaths.push(args[i]);
+        } else if (arg === "--compiler") {
+            result.compiler = true;
         } else if (!arg.startsWith("-")) {
             result.input = arg;
         } else {
@@ -241,6 +245,10 @@ try {
 
     if (opts.gc) {
         compiler.setOption("gc", true);
+    }
+
+    if (opts.compiler) {
+        compiler.setOption("compiler", true);
     }
 
     for (const exp of opts.exports) {
