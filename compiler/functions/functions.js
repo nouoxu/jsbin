@@ -489,16 +489,54 @@ export const FunctionCompiler = {
     compileClosureCall(funcReg, args) {
         const vm = this.vm;
 
-        // 保存函数指针/闭包对象到栈
-        vm.push(funcReg);
+        // 保存函数指针/闭包对象到局部变量槽（而不是栈）
+        // 原因：compileCallArguments 会将参数压栈，如果使用栈保存闭包对象，
+        // pop 时会弹出参数而不是闭包对象
+        const closureOffset = this.ctx.allocLocal("__closure_ptr");
+        vm.store(VReg.FP, closureOffset, funcReg);
 
         // 编译参数到 A0-A5
         this.compileCallArguments(args);
 
-        // 恢复函数指针/闭包对象并 unbox
-        vm.pop(VReg.A0); // 可能是 NaN-boxed
+        // 先保存参数寄存器（因为后面恢复闭包对象会覆盖 A0）
+        const savedA0 = this.ctx.allocLocal("__saved_a0");
+        const savedA1 = this.ctx.allocLocal("__saved_a1");
+        const savedA2 = this.ctx.allocLocal("__saved_a2");
+        const savedA3 = this.ctx.allocLocal("__saved_a3");
+        const savedA4 = this.ctx.allocLocal("__saved_a4");
+        const savedA5 = this.ctx.allocLocal("__saved_a5");
+        
+        // 直接保存参数寄存器当前值（不初始化为 undefined）
+        vm.store(VReg.FP, savedA0, VReg.A0);
+        vm.store(VReg.FP, savedA1, VReg.A1);
+        vm.store(VReg.FP, savedA2, VReg.A2);
+        vm.store(VReg.FP, savedA3, VReg.A3);
+        vm.store(VReg.FP, savedA4, VReg.A4);
+        vm.store(VReg.FP, savedA5, VReg.A5);
+
+        // 恢复函数指针/闭包对象
+        // 需要检查是否是 NaN-boxed 函数，还是闭包对象指针
+        vm.load(VReg.A0, VReg.FP, closureOffset); // A0 = 可能是 NaN-boxed 函数或闭包对象
+
+        // 检查高16位是否是函数标签 (0x7FFF)
+        const notNanBoxedLabel = this.ctx.newLabel("not_nanboxed_closure");
+        vm.shrImm(VReg.V1, VReg.A0, 48);
+        vm.movImm(VReg.V2, 0x7fff); // JS_TAG_FUNCTION
+        vm.cmp(VReg.V1, VReg.V2);
+        vm.jne(notNanBoxedLabel);
+
+        // 是 NaN-boxed 函数，调用 _js_unbox
+        // 参数已经在 savedA0-savedA5 中保存好了
+        // A0 已经是原始的 NaN-boxed 函数值
         vm.call("_js_unbox");
-        vm.mov(VReg.S0, VReg.RET); // S0 = 原始堆指针
+        vm.mov(VReg.S0, VReg.RET);
+        vm.jmp("after_unbox_closure");
+
+        // 不是 NaN-boxed（可能是闭包对象指针或直接函数指针）
+        vm.label(notNanBoxedLabel);
+        vm.mov(VReg.S0, VReg.A0); // S0 = 可能是闭包对象指针
+
+        vm.label("after_unbox_closure");
 
         // 检查是否是 async 闭包（magic == 0xA51C）
         const notAsyncLabel = this.ctx.newLabel("not_async");
@@ -531,6 +569,13 @@ export const FunctionCompiler = {
 
         // async 闭包调用：创建协程 + 返回 Promise
         vm.label(asyncCallLabel);
+        // 恢复参数寄存器
+        vm.load(VReg.A0, VReg.FP, savedA0);
+        vm.load(VReg.A1, VReg.FP, savedA1);
+        vm.load(VReg.A2, VReg.FP, savedA2);
+        vm.load(VReg.A3, VReg.FP, savedA3);
+        vm.load(VReg.A4, VReg.FP, savedA4);
+        vm.load(VReg.A5, VReg.FP, savedA5);
         this.compileAsyncClosureCall(args);
         // 返回，RET = Promise
         const asyncDoneLabel = this.ctx.newLabel("async_done");
@@ -542,11 +587,25 @@ export const FunctionCompiler = {
         vm.movImm(VReg.S0, 0); // 清空闭包指针
 
         vm.label(callLabel);
+        // 恢复参数寄存器
+        vm.load(VReg.A0, VReg.FP, savedA0);
+        vm.load(VReg.A1, VReg.FP, savedA1);
+        vm.load(VReg.A2, VReg.FP, savedA2);
+        vm.load(VReg.A3, VReg.FP, savedA3);
+        vm.load(VReg.A4, VReg.FP, savedA4);
+        vm.load(VReg.A5, VReg.FP, savedA5);
         // 通过 S1 间接调用（不能用 V6 因为它映射到 X6 = A5+1）
         vm.callIndirect(VReg.S1);
         vm.jmp(asyncDoneLabel);
 
         vm.label(nullFuncLabel);
+        // 恢复参数寄存器
+        vm.load(VReg.A0, VReg.FP, savedA0);
+        vm.load(VReg.A1, VReg.FP, savedA1);
+        vm.load(VReg.A2, VReg.FP, savedA2);
+        vm.load(VReg.A3, VReg.FP, savedA3);
+        vm.load(VReg.A4, VReg.FP, savedA4);
+        vm.load(VReg.A5, VReg.FP, savedA5);
         // 函数指针为 null，返回 undefined (NaN-boxed)
         vm.movImm64(VReg.RET, "0x7ffb000000000000");
 
@@ -793,34 +852,10 @@ export const FunctionCompiler = {
             if (callee.name === "Number") {
                 // Number(value) - 转换为数字
                 if (expr.arguments.length > 0) {
-                    const argType = inferType(expr.arguments[0], this.ctx);
-                    if (argType === Type.BIGINT) {
-                        // BigInt -> Number: raw int64 -> boxed Number
-                        // 先编译参数（得到 raw int64）
-                        this.compileExpression(expr.arguments[0]);
-                        // 转换为 float64 并装箱为 Number 对象
-                        // boxIntAsNumber 期望 int64 在寄存器中，会转换为 float64 并装箱
-                        // 使用内联的 boxNumber
-                        // 保存 int64 到 S0（因为 boxNumber 会覆盖）
-                        this.vm.mov(VReg.S0, VReg.RET);
-                        // 转换为 float64
-                        this.vm.scvtf(0, VReg.S0); // D0 = (double)value
-                        this.vm.fmovToInt(VReg.S0, 0); // S0 = float64 bits
-                        // 分配 Number 对象
-                        this.vm.movImm(VReg.A0, 16);
-                        this.vm.call("_alloc");
-                        // RET = 堆地址
-                        // 写入类型 (TYPE_FLOAT64 = 29)
-                        this.vm.movImm(VReg.V1, 29);
-                        this.vm.store(VReg.RET, 0, VReg.V1);
-                        // 写入 float64 值
-                        this.vm.store(VReg.RET, 8, VReg.S0);
-                    } else {
-                        // 已经是 NaN-boxed 值，调用运行时转换函数
-                        this.compileExpression(expr.arguments[0]);
-                        this.vm.mov(VReg.A0, VReg.RET);
-                        this.vm.call("_to_number");
-                    }
+                    this.compileExpression(expr.arguments[0]);
+                    // 已经是 NaN-boxed 值，调用运行时转换函数
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_to_number");
                 } else {
                     // Number() 无参数返回 0
                     this.compileNumericLiteral(0);
@@ -976,6 +1011,21 @@ export const FunctionCompiler = {
                         }
                     }
                     this.vm.movImm(VReg.RET, size);
+                }
+                return;
+            }
+
+            // require(moduleName) - CommonJS 模块加载
+            if (callee.name === "require") {
+                // require 返回模块的 exports 对象
+                // 调用运行时实现的 _user_require 函数
+                if (expr.arguments.length > 0) {
+                    this.compileExpression(expr.arguments[0]);
+                    this.vm.mov(VReg.A0, VReg.RET);
+                    this.vm.call("_user_require");
+                } else {
+                    // require() 无参数返回错误
+                    this.vm.movImm(VReg.RET, 0);
                 }
                 return;
             }
@@ -1539,6 +1589,40 @@ export const FunctionCompiler = {
                     return;
                 }
             }
+                if (prop.name === "byteLength") {
+                    // Buffer.byteLength(string, encoding?) -> number
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        if (expr.arguments.length > 1) {
+                            this.compileExpression(expr.arguments[1]);
+                            this.vm.mov(VReg.A1, VReg.RET);
+                        } else {
+                            this.vm.movImm(VReg.A1, 0); // 默认 encoding
+                        }
+                        this.vm.call("_buffer_byteLength");
+                        // 将返回值转换为 Number 对象
+                        this.boxIntAsNumber(VReg.RET);
+                    } else {
+                        this.vm.movImm(VReg.RET, 0);
+                    }
+                    return;
+                }
+                if (prop.name === "compare") {
+                    // Buffer.compare(buf1, buf2) -> number
+                    if (expr.arguments.length >= 2) {
+                        this.compileExpression(expr.arguments[0]);
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        this.compileExpression(expr.arguments[1]);
+                        this.vm.mov(VReg.A1, VReg.RET);
+                        this.vm.call("_buffer_compare");
+                        // 将返回值转换为 Number 对象
+                        this.boxIntAsNumber(VReg.RET);
+                    } else {
+                        this.vm.movImm(VReg.RET, 0);
+                    }
+                    return;
+                }
 
             // Math 对象方法
             if (obj.type === "Identifier" && obj.name === "Math") {
@@ -1692,16 +1776,18 @@ export const FunctionCompiler = {
                 }
             }
 
-            // Promise 静态方法 (Promise.resolve(), Promise.reject())
+            // Promise 静态方法 (Promise.resolve(), Promise.reject(), Promise.all())
             if (obj.type === "Identifier" && obj.name === "Promise") {
                 if (prop.name === "resolve") {
                     // Promise.resolve(value) - 创建已 resolved 的 Promise
                     if (expr.arguments.length > 0) {
                         this.compileExpression(expr.arguments[0]);
+                        // 直接传递编译后的值给 runtime，让 runtime 处理解包
+                        this.vm.mov(VReg.A0, VReg.RET);
                     } else {
                         this.vm.movImm(VReg.RET, 0);
+                        this.vm.mov(VReg.A0, VReg.RET);
                     }
-                    this.vm.mov(VReg.A0, VReg.RET);
                     this.vm.call("_Promise_resolve");
                     return;
                 }
@@ -1709,11 +1795,43 @@ export const FunctionCompiler = {
                     // Promise.reject(reason) - 创建已 rejected 的 Promise
                     if (expr.arguments.length > 0) {
                         this.compileExpression(expr.arguments[0]);
+                        // 同上
+                        this.vm.mov(VReg.A0, VReg.RET);
                     } else {
                         this.vm.movImm(VReg.RET, 0);
+                        this.vm.mov(VReg.A0, VReg.RET);
                     }
-                    this.vm.mov(VReg.A0, VReg.RET);
                     this.vm.call("_Promise_reject");
+                    return;
+                }
+                if (prop.name === "all") {
+                    // Promise.all(iterable) - 需要 unbox 数组
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        // A0 = boxed 数组
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        // unbox 得到原始指针
+                        this.vm.call("_js_unbox");
+                        this.vm.mov(VReg.A0, VReg.RET);
+                    } else {
+                        this.vm.movImm(VReg.A0, 0);
+                    }
+                    this.vm.call("_Promise_all");
+                    return;
+                }
+                if (prop.name === "race") {
+                    // Promise.race(iterable) - 需要 unbox 数组
+                    if (expr.arguments.length > 0) {
+                        this.compileExpression(expr.arguments[0]);
+                        // A0 = boxed 数组
+                        this.vm.mov(VReg.A0, VReg.RET);
+                        // unbox 得到原始指针
+                        this.vm.call("_js_unbox");
+                        this.vm.mov(VReg.A0, VReg.RET);
+                    } else {
+                        this.vm.movImm(VReg.A0, 0);
+                    }
+                    this.vm.call("_Promise_race");
                     return;
                 }
             }

@@ -2,8 +2,38 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import { detectPlatform, resolveTarget, listTargets } from "./compiler/core/platform.js";
 import * as compilerModule from "./compiler/index.js";
+
+// 内联 platform 检测函数，避免 ES module export 问题
+const TARGETS = {
+    "macos-arm64": { os: "macos", arch: "arm64", ext: "", dylibExt: ".dylib", desc: "macOS ARM64" },
+    "macos-x64": { os: "macos", arch: "x64", ext: "", dylibExt: ".dylib", desc: "macOS x86_64" },
+    "linux-arm64": { os: "linux", arch: "arm64", ext: "", dylibExt: ".so", desc: "Linux ARM64" },
+    "linux-x64": { os: "linux", arch: "x64", ext: "", dylibExt: ".so", desc: "Linux x86_64" },
+    "windows-x64": { os: "windows", arch: "x64", ext: ".exe", dylibExt: ".dll", desc: "Windows x86_64" },
+};
+
+function detectPlatform() {
+    const platform = process.platform;
+    const arch = process.arch;
+    if (platform === "darwin" || platform === "macos") {
+        return arch === "arm64" ? "macos-arm64" : "macos-x64";
+    } else if (platform === "linux") {
+        return arch === "arm64" ? "linux-arm64" : "linux-x64";
+    } else if (platform === "win32") {
+        return "windows-x64";
+    }
+    return "linux-x64";
+}
+
+function listTargets() {
+    return Object.keys(TARGETS);
+}
+
+function resolveTarget(os, arch) {
+    const key = `${os}-${arch}`;
+    return TARGETS[key] ? key : null;
+}
 
 function printUsage() {
     console.log(`

@@ -354,13 +354,47 @@ export const ClosureCompiler = {
         // 注意：先保存参数，再处理闭包捕获变量，避免寄存器冲突
         // 调用约定: A0-A5=参数 (最多6个寄存器参数)
         const paramOffsets = [];
+        const defaultParams = []; // 记录有默认值的参数
         for (let i = 0; i < params.length && i < 6; i++) {
-            if (params[i].type === "Identifier") {
-                const paramName = params[i].name;
+            const param = params[i];
+            let paramName = null;
+            let hasDefault = false;
+            let defaultValue = null;
+
+            if (param.type === "Identifier") {
+                paramName = param.name;
+            } else if (param.type === "AssignmentPattern") {
+                // 默认参数: x = 5
+                paramName = param.left.name;
+                hasDefault = true;
+                defaultValue = param.right;
+            }
+
+            if (paramName) {
                 const offset = this.ctx.allocLocal(paramName);
                 paramOffsets.push({ name: paramName, offset: offset, argReg: vm.getArgReg(i) });
                 vm.store(VReg.FP, offset, vm.getArgReg(i));
+                
+                if (hasDefault) {
+                    defaultParams.push({ offset: offset, defaultValue: defaultValue });
+                }
             }
+        }
+
+        // 处理默认参数：检查参数是否为 undefined，如果是则使用默认值
+        for (const dp of defaultParams) {
+            const skipLabel = this.ctx.newLabel("skip_default");
+            // 加载参数值
+            vm.load(VReg.V0, VReg.FP, dp.offset);
+            // 检查是否为 undefined (0x7FFB000000000000)
+            vm.shrImm(VReg.V1, VReg.V0, 48);
+            vm.movImm(VReg.V2, 0x7ffb);
+            vm.cmp(VReg.V1, VReg.V2);
+            vm.jne(skipLabel);
+            // 是 undefined，编译并存储默认值
+            this.compileExpression(dp.defaultValue);
+            vm.store(VReg.FP, dp.offset, VReg.RET);
+            vm.label(skipLabel);
         }
 
         // 保存 this 指针（通过 V5 传入的隐藏参数）到 __this 局部变量
