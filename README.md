@@ -4,7 +4,6 @@
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License">
   <img src="https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-blue.svg" alt="Platform">
   <img src="https://img.shields.io/badge/Architecture-ARM64%20%7C%20x64-green.svg" alt="Architecture">
-  <img src="https://img.shields.io/badge/Bootstrap-97.5%25-success.svg" alt="Bootstrap">
 </p>
 
 <p align="center">
@@ -24,7 +23,6 @@ JSBin is a groundbreaking compiler that compiles JavaScript directly to native m
 | Output | **Native Binary** | Bytecode | Native Binary |
 | Zero Dependencies | **✅** | ❌ | ❌ |
 | Cross-compilation | **✅** | ❌ | ❌ |
-| Bootstrap | **97.5%** | - | - |
 
 ---
 
@@ -45,10 +43,8 @@ The compiled binaries have **zero external dependencies**. No Node.js, no runtim
 - Modern Array/Object features
 
 ### 🔧 Developer Friendly
-- Simple CLI: `jsbin input.js -o output`
-- Source maps support
+- Simple CLI: `node cli.js input.js -o output`
 - Detailed error messages
-- Multiple output formats (executable, static library, dynamic library)
 
 ---
 
@@ -60,7 +56,7 @@ The compiled binaries have **zero external dependencies**. No Node.js, no runtim
 | Type System | ✅ 75% |
 | Runtime | ✅ 92% |
 | Code Generation | ✅ 96% |
-| Bootstrap | ✅ 97.5% (236/242 tests) |
+| Self-hosting | 🔄 In Progress |
 
 ---
 
@@ -73,7 +69,7 @@ The compiled binaries have **zero external dependencies**. No Node.js, no runtim
 git clone https://github.com/nouoxu/jsbin.git
 cd jsbin
 
-# Install dependencies
+# Install dependencies (only for development)
 npm install
 ```
 
@@ -81,7 +77,7 @@ npm install
 
 ```bash
 # Compile JavaScript to native binary
-./cli input.js -o output
+node cli.js input.js -o output
 ```
 
 ### Example
@@ -96,7 +92,7 @@ console.log(greet("World"));
 ```
 
 ```bash
-./cli hello.js -o hello
+node cli.js hello.js -o hello
 ./hello
 # Output: Hello, World!
 ```
@@ -108,7 +104,7 @@ console.log(greet("World"));
 ### CLI Options
 
 ```bash
-jsbin [options] input.js -o output
+node cli.js [options] input.js -o output
 
 Options:
   -o, --output <file>    Output file path
@@ -123,11 +119,11 @@ Options:
 
 | Platform | Arch | Command |
 |----------|------|---------|
-| macOS | ARM64 | `./cli input.js -t macos -a arm64 -o output` |
-| macOS | x64 | `./cli input.js -t macos -a x64 -o output` |
-| Linux | ARM64 | `./cli input.js -t linux -a arm64 -o output` |
-| Linux | x64 | `./cli input.js -t linux -a x64 -o output` |
-| Windows | x64 | `./cli input.js -t windows -a x64 -o output.exe` |
+| macOS | ARM64 | `node cli.js input.js -t macos -a arm64 -o output` |
+| macOS | x64 | `node cli.js input.js -t macos -a x64 -o output` |
+| Linux | ARM64 | `node cli.js input.js -t linux -a arm64 -o output` |
+| Linux | x64 | `node cli.js input.js -t linux -a x64 -o output` |
+| Windows | x64 | `node cli.js input.js -t windows -a x64 -o output.exe` |
 
 ---
 
@@ -163,12 +159,6 @@ Options:
 │    Native Binary (ELF/MACH-O/PE)   │
 └─────────────────────────────────────┘
 ```
-
----
-
-## 🔬 Self-Hosting
-
-JSBin compiles itself! The compiler is written in JavaScript and compiles to native code, achieving **97.5% bootstrap completion**.
 
 ---
 
