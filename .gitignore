@@ -1,16 +1,15 @@
-# .DS_Store
+# macOS
 .DS_Store
 
 # 二进制文件
 *.bin
 *.asm
-*.txt
 
 # CLI 构建产物
 cli
 cli-*
 cli_*
-cli-*
+cli_*
 
 # Node.js
 node_modules/
@@ -47,3 +46,7 @@ __pycache__/
 # Crash报告
 crash_point.txt
 grep_out.txt
+
+# 编译输出
+bun/
+asm.txt
