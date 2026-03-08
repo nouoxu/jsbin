@@ -82,9 +82,6 @@ npm install
 ```bash
 # Compile JavaScript to native binary
 ./cli input.js -o output
-
-# Or use the standalone version
-./cli-standalone input.js -o output
 ```
 
 ### Example
@@ -118,8 +115,8 @@ Options:
   -t, --target <target>  Target platform (macos, linux, windows)
   -a, --arch <arch>      Target architecture (arm64, x64)
   -O, --optimize         Enable optimizations
-  -d, --debug            Include debug info
-  -h, --help             Show help
+  -d, --debug           Include debug info
+  -h, --help            Show help
 ```
 
 ### Targets
@@ -169,15 +166,8 @@ Options:
 
 ---
 
-## 🔬 Technical Highlights
+## 🔬 Self-Hosting
 
-### NaN-boxing Value Representation
-64-bit unified representation for all JavaScript values:
-- **Doubles**: Direct IEEE 754 storage
-- **Tagged**: `[tag:16][payload:48]`
-- **Tags**: int(0), bool(1), null(2), undefined(3), string(4), object(5), array(6), function(7)
-
-### Self-Hosting
 JSBin compiles itself! The compiler is written in JavaScript and compiles to native code, achieving **97.5% bootstrap completion**.
 
 ---
@@ -189,15 +179,6 @@ Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) file.
-
----
-
-## 🙏 Acknowledgments
-
-Inspired by:
-- [QuickJS](https://github.com/bellard/quickjs) - Fabrice Bellard's amazing JS engine
-- [C compilers](https://github.com/rui314/chibicc) - Compilers for learning
-- [The Super Tiny Compiler](https://github.com/jamiebuilds/the-super-tiny-compiler)
 
 ---
 
