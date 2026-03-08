@@ -28,7 +28,6 @@ export const ArrayBaseMixin = {
 
         // 然后 unbox 数组
         vm.mov(VReg.A0, VReg.A0);
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // S0 = unboxed 数组指针
 
         // 获取当前长度和容量
@@ -86,7 +85,6 @@ export const ArrayBaseMixin = {
 
         // 返回 boxed 数组 JSValue
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_box_array");
 
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     },
@@ -98,7 +96,6 @@ export const ArrayBaseMixin = {
         vm.label("_array_pop");
         vm.prologue(16, [VReg.S0, VReg.S1]);
 
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
         vm.load(VReg.S1, VReg.S0, 0);
 
@@ -127,7 +124,6 @@ export const ArrayBaseMixin = {
         vm.prologue(16, [VReg.S0, VReg.S1]);
 
         vm.mov(VReg.S1, VReg.A1);
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
 
         vm.shlImm(VReg.V0, VReg.S1, 3);
@@ -148,7 +144,6 @@ export const ArrayBaseMixin = {
         vm.mov(VReg.S1, VReg.A1);
         vm.mov(VReg.S2, VReg.A2);
 
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
 
         vm.shl(VReg.V0, VReg.S1, 3);
@@ -166,7 +161,6 @@ export const ArrayBaseMixin = {
         vm.label("_array_length");
         vm.prologue(0, []);
 
-        vm.call("_js_unbox");
         vm.load(VReg.RET, VReg.RET, 8); // offset 8 = length (offset 0 is type)
 
         vm.epilogue([], 0);
@@ -254,7 +248,6 @@ export const ArrayBaseMixin = {
 
         vm.label("_array_new_init_done");
         vm.mov(VReg.A0, VReg.S1);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 16);
     },
 };

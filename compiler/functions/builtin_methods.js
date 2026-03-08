@@ -38,7 +38,6 @@ export const BuiltinMethodCompiler = {
                 // 从 Number 对象中提取值并取绝对值
                 // 先 unbox 获取原始堆指针
                 this.vm.mov(VReg.A0, VReg.RET);
-                this.vm.call("_js_unbox");
                 this.vm.load(VReg.V0, VReg.RET, 8);
                 this.vm.fmovToFloat(0, VReg.V0);
                 this.vm.fabs(0, 0);
@@ -86,7 +85,6 @@ export const BuiltinMethodCompiler = {
                 this.vm.push(VReg.RET); // 保存 current
                 this.vm.push(VReg.V1); // 保存 best
                 this.vm.mov(VReg.A0, VReg.V1);
-                this.vm.call("_js_unbox");
                 this.vm.load(VReg.V2, VReg.RET, 8); // best.value
                 // 再 unbox current
                 this.vm.pop(VReg.V1); // 恢复 best (NaN-boxed)
@@ -94,7 +92,6 @@ export const BuiltinMethodCompiler = {
                 this.vm.push(VReg.V1); // 保存 best
                 this.vm.push(VReg.A0); // 保存 current
                 this.vm.push(VReg.V2); // 保存 best.value
-                this.vm.call("_js_unbox");
                 this.vm.load(VReg.V3, VReg.RET, 8); // cur.value
                 this.vm.pop(VReg.V2); // 恢复 best.value
                 this.vm.pop(VReg.RET); // 恢复 current (NaN-boxed)
@@ -325,7 +322,6 @@ export const BuiltinMethodCompiler = {
                 // Number 对象布局: [type:8][value:8]
                 // 先 unbox 获取原始堆指针
                 this.vm.mov(VReg.A0, VReg.RET);
-                this.vm.call("_js_unbox");
                 // 从 offset 8 读取 double 值 (作为整数位模式)
                 this.vm.load(VReg.V1, VReg.RET, 8);
                 // 使用 fmovToFloat 将整数寄存器的位模式移到浮点寄存器 D0
@@ -356,7 +352,6 @@ export const BuiltinMethodCompiler = {
             this.vm.lea(VReg.A0, "_process_platform_str");
             this.vm.call("_createStrFromCStr");
             this.vm.mov(VReg.A0, VReg.RET);
-            this.vm.call("_js_box_string");
             return true;
         }
         if (propName === "arch") {
@@ -364,7 +359,6 @@ export const BuiltinMethodCompiler = {
             this.vm.lea(VReg.A0, "_process_arch_str");
             this.vm.call("_createStrFromCStr");
             this.vm.mov(VReg.A0, VReg.RET);
-            this.vm.call("_js_box_string");
             return true;
         }
         if (propName === "env") {
@@ -426,7 +420,6 @@ export const BuiltinMethodCompiler = {
             case "length":
                 // 先 unbox 获取原始堆指针
                 this.vm.mov(VReg.A0, VReg.RET);
-                this.vm.call("_js_unbox");
                 this.vm.load(VReg.RET, VReg.RET, 8);
                 break;
             case "at":
@@ -697,7 +690,6 @@ export const BuiltinMethodCompiler = {
         vm.push(VReg.A1);
         vm.push(VReg.A2);
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
         vm.pop(VReg.A2);
         vm.pop(VReg.A1);
@@ -1468,7 +1460,6 @@ export const BuiltinMethodCompiler = {
             case "size":
                 // map.size - 直接从头部读取 length 字段 (统一头部结构 +8)
                 this.vm.pop(VReg.A0);
-                this.vm.call("_js_unbox");
                 this.vm.load(VReg.RET, VReg.RET, 8);
                 return true;
 

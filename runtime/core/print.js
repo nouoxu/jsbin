@@ -743,7 +743,6 @@ export class PrintGenerator {
 
         // A0 包含输入参数（可能是 boxed 数组 JSValue 或原始指针）
         // 调用 _js_unbox 获取原始指针
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // 原始数组指针
 
         // 打印 "["
@@ -803,7 +802,6 @@ export class PrintGenerator {
         vm.mov(VReg.S3, VReg.A0);
 
         // 调用 _js_unbox 获取原始指针
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
 
         // 打印 "["
@@ -1277,7 +1275,6 @@ export class PrintGenerator {
         vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
         // A0 可能是 boxed TypedArray，先 unbox
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed pointer)
 
         // 加载 type 和 length
@@ -1331,7 +1328,7 @@ export class PrintGenerator {
         // 打印类型名称
         vm.label("_print_ta_header");
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_get_type_name");
+        vm.call("_typeof");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_print_str_no_nl");
 
@@ -1536,12 +1533,11 @@ export class PrintGenerator {
         vm.prologue(16, [VReg.S0]);
 
         // A0 可能是 boxed TypedArray，先 unbox
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
 
         // 打印类型名和基本信息
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_get_type_name");
+        vm.call("_typeof");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_print_str_no_nl");
 

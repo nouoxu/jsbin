@@ -309,7 +309,6 @@ export class CoercionGenerator {
         vm.lea(VReg.A0, "_to_string_placeholder");
         vm.call("_createStrFromCStr");
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_box_string");
         vm.epilogue([VReg.S0], 0);
 
         vm.label("_to_string_is_string");

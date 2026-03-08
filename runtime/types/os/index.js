@@ -38,7 +38,6 @@ export class OSGenerator {
         vm.call("_createStrFromCStr");
         vm.mov(VReg.S0, VReg.RET);
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_box_string");
         vm.jmp("_os_tmpdir_done");
 
         vm.label("_os_tmpdir_default");
@@ -47,7 +46,6 @@ export class OSGenerator {
         vm.call("_createStrFromCStr");
         vm.mov(VReg.S0, VReg.RET);
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_box_string");
 
         vm.label("_os_tmpdir_done");
         vm.epilogue([VReg.S0], 16);

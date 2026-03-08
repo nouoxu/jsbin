@@ -702,11 +702,9 @@ export const StringMethodsGenerator = {
         vm.store(VReg.S4, 16, VReg.V1); // capacity = 1
         // box 字符串后存入数组
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_box_string");
         vm.store(VReg.S4, 24, VReg.RET); // 存储 boxed 字符串
         // box 数组后返回
         vm.mov(VReg.A0, VReg.S4);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
 
         vm.label("_split_nonempty_sep");
@@ -776,7 +774,6 @@ export const StringMethodsGenerator = {
 
         // 添加到数组 - 先 box 字符串
         vm.mov(VReg.A0, VReg.V1);
-        vm.call("_js_box_string");
         vm.mov(VReg.V1, VReg.RET); // V1 = boxed 字符串
         vm.load(VReg.V4, VReg.S4, 8); // 当前 length
         vm.shlImm(VReg.V2, VReg.V4, 3);
@@ -824,7 +821,6 @@ export const StringMethodsGenerator = {
 
         // 添加到数组 - 先 box 字符串
         vm.mov(VReg.A0, VReg.V1);
-        vm.call("_js_box_string");
         vm.mov(VReg.V1, VReg.RET); // V1 = boxed 字符串
         vm.load(VReg.V4, VReg.S4, 8);
         vm.shlImm(VReg.V2, VReg.V4, 3);
@@ -836,7 +832,6 @@ export const StringMethodsGenerator = {
 
         // box 数组后返回
         vm.mov(VReg.A0, VReg.S4);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
     },
 

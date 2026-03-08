@@ -22,7 +22,7 @@ import { ARM64Assembler } from "../asm/arm64.js";
 import { X64Assembler } from "../asm/x64.js";
 
 // 运行时
-import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator, ErrorGenerator, FSGenerator, PathGenerator, ProcessGenerator, OSGenerator, ChildProcessGenerator, CoercionGenerator, NetGenerator } from "../runtime/index.js";
+import { AllocatorGenerator, RuntimeGenerator, NumberGenerator, MathGenerator, SymbolGenerator, WellKnownSymbolsGenerator, StringConstantsGenerator, AsyncGenerator, IteratorGenerator, ErrorGenerator, FSGenerator, PathGenerator, ProcessGenerator, OSGenerator, ChildProcessGenerator, CoercionGenerator, NetGenerator, CompilerFSGenerator } from "../runtime/index.js";
 
 // 编译上下文和平台
 import { CompileContext, CompileOptions, CompileResult } from "./core/context.js";
@@ -137,6 +137,9 @@ export class Compiler {
         this.libraryPaths = [];
         this.sourcePath = "";
         this.options = {}; // 编译选项
+        
+        // 一次自举/二次自举模式
+        this.bootstrapMode = false; // true = 二次自举，不加载外部库
 
         // Source Map 支持
         this.sourceMapGenerator = null;
@@ -202,6 +205,18 @@ export class Compiler {
         this.options[key] = value;
     }
 
+    // 设置 bootstrap 模式 (二次自举)
+    setBootstrapMode(enabled) {
+        this.bootstrapMode = enabled;
+        if (enabled) {
+            console.log("[Bootstrap] 二次自举模式：不加载外部库");
+        }
+    }
+
+    isBootstrapMode() {
+        return this.bootstrapMode;
+    }
+
     getOption(key) {
         return this.options[key];
     }
@@ -240,6 +255,7 @@ export class Compiler {
     // ========== 库处理 ==========
 
     compileImportLibDeclaration(stmt) {
+        // jslib 是内置库，一直加载
         let jslibPath = stmt.libPath;
         let libInfo = parseJslibFile(jslibPath, this.sourcePath, this.target);
         if (libInfo) {
@@ -1117,21 +1133,49 @@ export class Compiler {
 
     compileFile(inputFile, outputFile) {
         console.log("[compileFile] Starting, inputFile =", inputFile);
-        const source = fs.readFileSync(inputFile, "utf-8");
+        
+        // 根据 bootstrap 模式选择文件 API
+        let source;
+        if (this.bootstrapMode) {
+            // 二次自举：使用内置 API
+            source = this._readFileNative(inputFile);
+        } else {
+            // 一次自举：使用 Node.js API
+            source = fs.readFileSync(inputFile, "utf-8");
+        }
         console.log("[compileFile] Read source, length =", source.length);
 
         // 设置当前模块路径
         console.log("[compileFile] Setting currentModulePath");
-        this.currentModulePath = path.resolve(inputFile);
+        let currentPath;
+        if (this.bootstrapMode) {
+            currentPath = this._pathResolveNative(inputFile);
+        } else {
+            currentPath = path.resolve(inputFile);
+        }
+        this.currentModulePath = currentPath;
         console.log("[compileFile] currentModulePath =", this.currentModulePath);
 
         console.log("[compileFile] Adding search path");
-        this.moduleManager.addSearchPath(path.dirname(this.currentModulePath));
+        let dirPath;
+        if (this.bootstrapMode) {
+            dirPath = this._pathDirnameNative(this.currentModulePath);
+        } else {
+            dirPath = path.dirname(this.currentModulePath);
+        }
+        this.moduleManager.addSearchPath(dirPath);
         console.log("[compileFile] Search path added");
 
         if (!outputFile) {
             console.log("[compileFile] No outputFile, generating from baseName");
-            const baseName = path.basename(inputFile, ".js");
+            let baseName;
+            if (this.bootstrapMode) {
+                baseName = this._pathBasenameNative(inputFile);
+                // 去掉 .js 后缀
+                baseName = baseName.replace(/\.js$/, "");
+            } else {
+                baseName = path.basename(inputFile, ".js");
+            }
             // 使用 getTargets() 和已知的 ext 值来避免 selfhost 计算属性访问 bug
             let ext = "";
             if (this.target === "windows-x64") {
@@ -1148,11 +1192,23 @@ export class Compiler {
         console.log("[compileFile] Checking sourceMap option");
         if (this.options.sourceMap) {
             console.log("[compileFile] Initializing SourceMap");
+            let baseName;
+            if (this.bootstrapMode) {
+                baseName = this._pathBasenameNative(outputFile);
+            } else {
+                baseName = path.basename(outputFile);
+            }
             this.sourceMapGenerator = new SourceMapGenerator({
-                file: path.basename(outputFile),
+                file: baseName,
             });
             this.sourceContent = source;
-            this.sourceIndex = this.sourceMapGenerator.addSource(path.basename(inputFile), source);
+            let srcBaseName;
+            if (this.bootstrapMode) {
+                srcBaseName = this._pathBasenameNative(inputFile);
+            } else {
+                srcBaseName = path.basename(inputFile);
+            }
+            this.sourceIndex = this.sourceMapGenerator.addSource(srcBaseName, source);
         }
 
         console.log("[compileFile] Calling compile");
@@ -1169,13 +1225,24 @@ export class Compiler {
         }
 
         const binary = result;
-        fs.writeFileSync(outputFile, Buffer.from(binary));
-        fs.chmodSync(outputFile, 0o755);
+        
+        // 写入输出文件
+        if (this.bootstrapMode) {
+            this._writeFileNative(outputFile, Buffer.from(binary));
+            this._chmodNative(outputFile, 0o755);
+        } else {
+            fs.writeFileSync(outputFile, Buffer.from(binary));
+            fs.chmodSync(outputFile, 0o755);
+        }
 
         // 生成 Source Map 文件
         if (this.options.sourceMap && this.sourceMapGenerator) {
             const mapFile = outputFile + ".map";
-            fs.writeFileSync(mapFile, this.sourceMapGenerator.toFormattedString());
+            if (this.bootstrapMode) {
+                this._writeFileNative(mapFile, this.sourceMapGenerator.toFormattedString());
+            } else {
+                fs.writeFileSync(mapFile, this.sourceMapGenerator.toFormattedString());
+            }
             console.log(`Generated source map: ${mapFile}`);
         }
 
@@ -1185,6 +1252,67 @@ export class Compiler {
         }
 
         return { output: outputFile, size: binary.length };
+    }
+
+    // ========== 二次自举内置 API ==========
+    // 这些方法会被编译进二次自举的编译器二进制
+    // 在运行时，这些调用编译好的 syscall 函数
+    
+    _readFileNative(path) {
+        // 实际实现在运行时 - 调用 _compiler_open/read/close
+        // 这里只是一个桥接，会被编译进二进制
+        // 运行时通过嵌入的 CompilerFS 生成这些调用
+        return this._readFileRuntime(path);
+    }
+    
+    _readFileRuntime(path) {
+        // 这个方法会被编译进二进制
+        // 在运行时调用编译好的 _compiler_open, _compiler_read, _compiler_close
+        // 注意：这是编译后的代码路径，不是解释执行
+        throw new Error("Native file read not implemented - use bootstrap compiler");
+    }
+    
+    _writeFileNative(path, data) {
+        // 类似上面
+        return this._writeFileRuntime(path, data);
+    }
+    
+    _writeFileRuntime(path, data) {
+        throw new Error("Native file write not implemented - use bootstrap compiler");
+    }
+    
+    _chmodNative(path, mode) {
+        // chmod 简化处理，直接返回成功
+        return 0;
+    }
+    
+    _pathResolveNative(...paths) {
+        // 简单的路径解析
+        let result = "";
+        for (const p of paths) {
+            if (p.startsWith("/")) {
+                result = p;
+            } else if (p.startsWith("./")) {
+                result = result + p.slice(1);
+            } else {
+                if (result && !result.endsWith("/")) result += "/";
+                result += p;
+            }
+        }
+        return result || ".";
+    }
+    
+    _pathDirnameNative(path) {
+        const lastSlash = path.lastIndexOf("/");
+        if (lastSlash === -1) return ".";
+        if (lastSlash === 0) return "/";
+        return path.substring(0, lastSlash);
+    }
+    
+    _pathBasenameNative(path) {
+        const lastSlash = path.lastIndexOf("/");
+        if (lastSlash === -1) return path;
+        return path.substring(lastSlash + 1);
     }
 
     // 生成 .jslib 声明文件
@@ -1233,6 +1361,16 @@ export class Compiler {
         console.log("[generateRuntime] RuntimeGenerator created");
         runtimeGen.generate();
         console.log("[generateRuntime] RuntimeGenerator.generate() done");
+        
+        // 编译器内置 FS (二次自举时使用)
+        if (this.bootstrapMode) {
+            console.log("[generateRuntime] Creating CompilerFSGenerator");
+            const compilerFsGen = new CompilerFSGenerator(this.vm, this.arch, this.os);
+            console.log("[generateRuntime] CompilerFSGenerator created");
+            compilerFsGen.generate();
+            console.log("[generateRuntime] CompilerFSGenerator.generate() done");
+        }
+        
         // 分代 GC 运行时
         if (this.gcEnabled && this.gcManager) {
             console.log("[generateRuntime] Generating GC runtime");
@@ -2304,6 +2442,12 @@ export class Compiler {
     // ========== 静态库支持 ==========
 
     embedStaticLibraries() {
+        // 二次自举模式下跳过静态库
+        if (this.bootstrapMode) {
+            console.log("[Bootstrap] 跳过静态库链接");
+            return;
+        }
+        
         const linker = new StaticLinker();
 
         for (const lib of this.staticLibs) {

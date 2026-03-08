@@ -44,7 +44,6 @@ export class ArrayGenerator {
         vm.mov(VReg.S2, VReg.A2); // deleteCount
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // length
@@ -90,7 +89,6 @@ export class ArrayGenerator {
 
         // removed_unboxed
         vm.mov(VReg.A0, VReg.S4);
-        vm.call("_js_unbox");
         vm.mov(VReg.S5, VReg.RET);
 
         // 拷贝被删除的元素到 removed
@@ -186,7 +184,6 @@ export class ArrayGenerator {
         vm.mov(VReg.S1, VReg.A1); // 保存 value
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (Header Ptr)
 
         // 获取当前长度和容量
@@ -267,7 +264,6 @@ export class ArrayGenerator {
 
         // 返回 boxed 数组
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     }
 
@@ -280,7 +276,6 @@ export class ArrayGenerator {
         vm.prologue(16, [VReg.S0, VReg.S1]);
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取当前长度
@@ -317,7 +312,6 @@ export class ArrayGenerator {
         vm.mov(VReg.S1, VReg.A1); // 保存 index
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 计算偏移: 24 + index * 8
@@ -341,7 +335,6 @@ export class ArrayGenerator {
         vm.mov(VReg.S2, VReg.A2); // 保存 value
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 计算偏移: 24 + index * 8
@@ -362,7 +355,6 @@ export class ArrayGenerator {
         vm.prologue(0, []);
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.load(VReg.RET, VReg.RET, 8); // length at offset 8
 
         vm.epilogue([], 0);
@@ -379,7 +371,6 @@ export class ArrayGenerator {
         vm.mov(VReg.S1, VReg.A1); // 保存 index
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取长度
@@ -425,7 +416,6 @@ export class ArrayGenerator {
         vm.mov(VReg.S1, VReg.A1); // 保存 value to find
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 堆范围检查，非法数组直接返回未找到
@@ -515,7 +505,6 @@ export class ArrayGenerator {
         vm.mov(VReg.S1, VReg.A1); // 保存 value to find
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 堆范围检查，非法数组直接返回 false
@@ -598,7 +587,6 @@ export class ArrayGenerator {
 
         // unbox src 获取 raw 指针
         vm.mov(VReg.A0, VReg.S1);
-        vm.call("_js_unbox");
         vm.mov(VReg.S2, VReg.RET); // S2 = src raw pointer
 
         // 获取 src 数组长度
@@ -649,7 +637,6 @@ export class ArrayGenerator {
         vm.mov(VReg.S2, VReg.A2); // 保存 end
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取原数组长度
@@ -714,7 +701,6 @@ export class ArrayGenerator {
         vm.label("_array_slice_done");
         // 装箱返回数组
         vm.mov(VReg.A0, VReg.S4);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
 
         // 空数组
@@ -741,7 +727,6 @@ export class ArrayGenerator {
         vm.store(VReg.S4, 24, VReg.V1); // Body Ptr
 
         vm.mov(VReg.A0, VReg.S4);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 32);
     }
 
@@ -810,7 +795,6 @@ export class ArrayGenerator {
         vm.label("_array_new_init_done");
         // 返回 boxed 数组 JSValue
         vm.mov(VReg.A0, VReg.S1);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 16);
     }
 

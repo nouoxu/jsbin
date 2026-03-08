@@ -78,7 +78,6 @@ export class PathGenerator {
         // 先处理第一个参数
         // 解箱获取字符串指针
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
         vm.mov(VReg.S1, VReg.RET); // S1 = base/path 内容指针
@@ -94,7 +93,6 @@ export class PathGenerator {
 
         // 解箱 cwd
         vm.mov(VReg.A0, VReg.S2);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
 
         // 拼接 cwd + "/"
@@ -105,7 +103,6 @@ export class PathGenerator {
         // 解箱原始 path
         vm.push(VReg.A0);
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.A1, VReg.RET);
         vm.pop(VReg.A0);
 
@@ -117,7 +114,6 @@ export class PathGenerator {
         vm.label("_path_resolve_base_absolute");
         // 绝对路径：解箱保存
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.S2, VReg.RET); // S2 = 解析后的 base（未 boxed）
 
         vm.label("_path_resolve_check_second");
@@ -132,7 +128,6 @@ export class PathGenerator {
 
         // 解箱第二个参数
         vm.mov(VReg.A0, VReg.S3);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
         vm.mov(VReg.S1, VReg.RET); // S1 = relative 内容指针
@@ -148,12 +143,10 @@ export class PathGenerator {
         vm.call("_strconcat");
         vm.push(VReg.RET);
         vm.mov(VReg.A0, VReg.S3);
-        vm.call("_js_unbox");
         vm.mov(VReg.A1, VReg.RET);
         vm.pop(VReg.A0);
         vm.call("_strconcat");
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_box_string");
         vm.jmp("_path_resolve_done");
 
         vm.label("_path_resolve_second_absolute");
@@ -164,7 +157,6 @@ export class PathGenerator {
         vm.label("_path_resolve_done_box");
         // 只有第一个参数，box 并返回
         vm.mov(VReg.A0, VReg.S2);
-        vm.call("_js_box_string");
 
         vm.label("_path_resolve_done");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
@@ -202,7 +194,6 @@ export class PathGenerator {
         vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
         // A0 可能是 NaN-boxed 字符串，先 unbox
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         // 获取字符串内容指针（处理堆字符串有16字节头的情况）
         vm.call("_get_string_content");
@@ -254,19 +245,16 @@ export class PathGenerator {
 
         // Box 成 NaN-boxed 字符串（指向带头的堆对象）
         vm.mov(VReg.A0, VReg.S3);
-        vm.call("_js_box_string");
         vm.jmp("_path_dirname_done");
 
         vm.label("_path_dirname_root");
         // 返回 "/" - 使用数据段字符串
         vm.lea(VReg.A0, "_str_slash");
-        vm.call("_js_box_string");
         vm.jmp("_path_dirname_done");
 
         vm.label("_path_dirname_not_found");
         // 没找到，返回 "." - 使用数据段字符串
         vm.lea(VReg.A0, "_str_dot");
-        vm.call("_js_box_string");
 
         vm.label("_path_dirname_done");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 48);
@@ -283,7 +271,6 @@ export class PathGenerator {
         vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5]);
 
         // A0 可能是 NaN-boxed 字符串，先 unbox
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         // 获取字符串内容指针（处理堆字符串有16字节头的情况）
         vm.call("_get_string_content");
@@ -335,7 +322,6 @@ export class PathGenerator {
 
         // Box 成 NaN-boxed 字符串
         vm.mov(VReg.A0, VReg.S4);
-        vm.call("_js_box_string");
         vm.jmp("_path_basename_done");
 
         vm.label("_path_basename_not_found");
@@ -360,7 +346,6 @@ export class PathGenerator {
         vm.storeByte(VReg.V0, 0, VReg.V1);
 
         vm.mov(VReg.A0, VReg.S4);
-        vm.call("_js_box_string");
 
         vm.label("_path_basename_done");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 48);
@@ -374,7 +359,6 @@ export class PathGenerator {
         vm.prologue(16, [VReg.S0]);
 
         // A0 可能是 NaN-boxed 字符串，先 unbox
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         // 获取字符串内容指针
         vm.call("_get_string_content");

@@ -718,11 +718,8 @@ export const OperatorCompiler = {
                 // 检查操作数类型，如果是 BigInt 直接返回 "bigint" 字符串
                 const argType = inferType(expr.argument, this.ctx);
                 if (argType === Type.BIGINT) {
-                    // BigInt 类型：直接返回 "bigint" 字符串
+                    // BigInt 类型：直接返回 "bigint" 字符串指针
                     this.vm.lea(VReg.RET, "_str_bigint");
-                    // NaN-box: 添加 0x7FFC 字符串标签
-                    this.vm.movImm64(VReg.V1, "0x7ffc000000000000");
-                    this.vm.or(VReg.RET, VReg.RET, VReg.V1);
                 } else {
                     // 调用运行时函数获取类型字符串
                     this.vm.mov(VReg.A0, VReg.RET);
@@ -796,7 +793,6 @@ export const OperatorCompiler = {
             this.compileExpression(expr);
             // 先 unbox 获取原始堆指针
             this.vm.mov(VReg.A0, VReg.RET);
-            this.vm.call("_js_unbox");
             // Number 对象布局: [type:8][float64_bits:8]
             // 从 offset 8 加载 float64 位表示
             this.vm.load(VReg.V0, VReg.RET, 8);

@@ -27,18 +27,16 @@ export const LiteralCompiler = {
         } else if (typeof value === "string") {
             this.compileStringValue(value);
         } else if (typeof value === "boolean") {
-            // 使用 NaN-boxing 格式的布尔值
+            // 布尔值 - 加载全局 true/false 对象指针
             const label = value ? "_js_true" : "_js_false";
             this.vm.lea(VReg.RET, label);
             this.vm.load(VReg.RET, VReg.RET, 0);
         } else if (value === null) {
-            // 使用 NaN-boxing 格式的 null
-            this.vm.lea(VReg.RET, "_js_null");
-            this.vm.load(VReg.RET, VReg.RET, 0);
+            // null - 返回 0 指针
+            this.vm.movImm(VReg.RET, 0);
         } else if (value === undefined || expr.raw === "undefined") {
-            // 使用 NaN-boxing 格式的 undefined
-            this.vm.lea(VReg.RET, "_js_undefined");
-            this.vm.load(VReg.RET, VReg.RET, 0);
+            // undefined - 使用 NaN-boxing 格式 (0x7FFB000000000000)
+            this.vm.movImm64(VReg.RET, "0x7ffb000000000000");
         } else if (value instanceof RegExp || expr.regex) {
             // 正则表达式字面量
             this.compileRegExpLiteral(expr);
@@ -123,17 +121,10 @@ export const LiteralCompiler = {
         this.compileStringValue(expr.value);
     },
 
-    // 编译字符串值 - NaN-boxed 格式
-    // 字符串 JSValue = (0x7FFC << 48) | pointer
+    // 编译字符串值 - 直接返回指针
     compileStringValue(str) {
         const label = this.asm.addString(str);
         this.vm.lea(VReg.RET, label);
-        // Box 成 NaN-boxed 字符串：先屏蔽高位，再添加 0x7FFC 标签
-        // 注意：使用 V1 而不是 V0，因为 V0 和 RET 都映射到同一个物理寄存器
-        this.vm.movImm64(VReg.V1, "0x0000ffffffffffff");
-        this.vm.and(VReg.RET, VReg.RET, VReg.V1);
-        this.vm.movImm64(VReg.V1, "0x7ffc000000000000");
-        this.vm.or(VReg.RET, VReg.RET, VReg.V1);
     },
 
     // 编译原始字符串指针（不做 NaN-boxing，用于需要 C 字符串的场景）

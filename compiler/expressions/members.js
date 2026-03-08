@@ -404,7 +404,6 @@ export const MemberCompiler = {
                     this.compileExpression(expr.object);
                     // 先 unbox 获取原始堆指针
                     this.vm.mov(VReg.A0, VReg.RET);
-                    this.vm.call("_js_unbox");
                     // Map/Set 内存布局: [type:8][size:8][...]
                     this.vm.load(VReg.RET, VReg.RET, 8);
                     this.boxIntAsNumber(VReg.RET);

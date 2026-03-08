@@ -40,17 +40,14 @@ export const DecoratorCompiler = {
 
             // 设置 kind = "class"
             this.vm.lea(VReg.A0, "_str_kind");
-            this.vm.call("_js_box_string");
             this.vm.mov(VReg.A1, VReg.RET);
             this.vm.lea(VReg.A0, "_str_class");
-            this.vm.call("_js_box_string");
             this.vm.mov(VReg.A2, VReg.RET);
             this.vm.mov(VReg.A0, VReg.S0);
             this.vm.call("_object_set");
 
             // 设置 name = className
             this.vm.lea(VReg.A0, "_str_name");
-            this.vm.call("_js_box_string");
             this.vm.mov(VReg.A1, VReg.RET);
             // className 需要动态生成或使用预定义字符串
 
@@ -68,7 +65,6 @@ export const DecoratorCompiler = {
             // 如果装饰器是调用表达式，RET 已经是函数指针
             // 否则需要调用装饰器函数
             if (decorator.expression.type !== "CallExpression") {
-                this.vm.call("_js_unbox");
                 this.vm.load(VReg.V1, VReg.RET, 8); // 函数指针
                 this.vm.callr(VReg.V1);
             }
@@ -108,17 +104,14 @@ export const DecoratorCompiler = {
             // kind
             let kindStr = kind === "get" ? "_str_getter" : kind === "set" ? "_str_setter" : "_str_method";
             this.vm.lea(VReg.A0, "_str_kind");
-            this.vm.call("_js_box_string");
             this.vm.mov(VReg.A1, VReg.RET);
             this.vm.lea(VReg.A0, kindStr);
-            this.vm.call("_js_box_string");
             this.vm.mov(VReg.A2, VReg.RET);
             this.vm.mov(VReg.A0, VReg.S0);
             this.vm.call("_object_set");
 
             // static
             this.vm.lea(VReg.A0, "_str_static");
-            this.vm.call("_js_box_string");
             this.vm.mov(VReg.A1, VReg.RET);
             if (isStatic) {
                 this.vm.lea(VReg.A2, "_js_true");
@@ -131,7 +124,6 @@ export const DecoratorCompiler = {
 
             // private
             this.vm.lea(VReg.A0, "_str_private");
-            this.vm.call("_js_box_string");
             this.vm.mov(VReg.A1, VReg.RET);
             if (isPrivate) {
                 this.vm.lea(VReg.A2, "_js_true");

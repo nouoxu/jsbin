@@ -148,7 +148,6 @@ export const ArrayMutateMixin = {
         vm.mov(VReg.S4, VReg.A0);
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取长度
@@ -237,7 +236,6 @@ export const ArrayMutateMixin = {
         vm.mov(VReg.S5, VReg.A0);
 
         // unbox 数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
 
         // 获取长度

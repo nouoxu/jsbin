@@ -1174,7 +1174,6 @@ export class ObjectGenerator {
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_createStrFromCStr");
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_box_string");
         vm.jmp("_object_get_prop_done");
 
         vm.label("_object_get_prop_env_notfound");

@@ -33,7 +33,6 @@ export class FunctionMethodsGenerator {
 
         // 先解包函数
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // S0 = 原始函数指针/闭包堆指针
 
         // 检查 argsArray 是否为 null/undefined
@@ -52,7 +51,6 @@ export class FunctionMethodsGenerator {
 
         // 有参数数组，获取其长度
         vm.mov(VReg.A0, VReg.S2);
-        vm.call("_js_unbox");
         vm.mov(VReg.V0, VReg.RET); // V0 = 数组堆指针
         vm.load(VReg.S3, VReg.V0, 8); // S3 = 数组长度
 
@@ -258,7 +256,6 @@ export class FunctionMethodsGenerator {
         // NaN-box 闭包指针
         vm.mov(VReg.A0, VReg.RET);
         vm.movImm(VReg.A1, 10); // TYPE_CLOSURE
-        vm.call("_js_box");
 
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 64);
     }

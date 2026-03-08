@@ -604,7 +604,6 @@ export class JSONGenerator {
 
         // 装箱为 NaN-boxed 字符串
         vm.mov(VReg.A0, VReg.S3);
-        vm.call("_js_box_string");
 
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
     }

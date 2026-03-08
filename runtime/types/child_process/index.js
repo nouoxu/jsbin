@@ -95,7 +95,6 @@ export class ChildProcessGenerator {
         vm.lea(VReg.A0, "_empty_cstr");
         vm.call("_createStrFromCStr");
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_box_string");
         vm.epilogue([], 0);
     }
 

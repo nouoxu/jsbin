@@ -90,7 +90,6 @@ export class ProxyGenerator {
         // 检查 handler.get 是否存在
         vm.mov(VReg.A0, VReg.S3);
         vm.lea(VReg.A1, "_str_get");
-        vm.call("_js_box_string");
         vm.mov(VReg.A1, VReg.RET);
         vm.mov(VReg.A0, VReg.S3);
         vm.call("_object_get");
@@ -107,7 +106,6 @@ export class ProxyGenerator {
         vm.mov(VReg.A2, VReg.S0); // receiver (proxy)
 
         // 调用 trap
-        vm.call("_js_unbox");
         vm.load(VReg.V1, VReg.RET, 8); // 函数指针
         vm.callr(VReg.V1);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
@@ -148,7 +146,6 @@ export class ProxyGenerator {
         // 检查 handler.set
         vm.mov(VReg.A0, VReg.S4);
         vm.lea(VReg.A1, "_str_set");
-        vm.call("_js_box_string");
         vm.mov(VReg.A1, VReg.RET);
         vm.mov(VReg.A0, VReg.S4);
         vm.call("_object_get");
@@ -164,7 +161,6 @@ export class ProxyGenerator {
         vm.mov(VReg.A2, VReg.S2); // value
         vm.mov(VReg.A3, VReg.S0); // receiver
 
-        vm.call("_js_unbox");
         vm.load(VReg.V1, VReg.RET, 8);
         vm.callr(VReg.V1);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4], 48);
@@ -205,7 +201,6 @@ export class ProxyGenerator {
         // 检查 handler.has
         vm.mov(VReg.A0, VReg.S3);
         vm.lea(VReg.A1, "_str_has");
-        vm.call("_js_box_string");
         vm.mov(VReg.A1, VReg.RET);
         vm.mov(VReg.A0, VReg.S3);
         vm.call("_object_get");
@@ -218,7 +213,6 @@ export class ProxyGenerator {
         vm.mov(VReg.V0, VReg.RET);
         vm.mov(VReg.A0, VReg.S2);
         vm.mov(VReg.A1, VReg.S1);
-        vm.call("_js_unbox");
         vm.load(VReg.V1, VReg.RET, 8);
         vm.callr(VReg.V1);
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
@@ -256,7 +250,6 @@ export class ProxyGenerator {
         // 设置 proxy 属性
         vm.mov(VReg.A0, VReg.V0);
         vm.lea(VReg.A1, "_str_proxy");
-        vm.call("_js_box_string");
         vm.mov(VReg.A1, VReg.RET);
         vm.mov(VReg.A2, VReg.S2);
         vm.mov(VReg.A0, VReg.V0);

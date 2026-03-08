@@ -490,7 +490,6 @@ export class BufferGenerator {
 
         // 装箱返回（返回头部指针，打印时会加 16）
         vm.mov(VReg.A0, VReg.S2);
-        vm.call("_js_box_string");
 
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
     }

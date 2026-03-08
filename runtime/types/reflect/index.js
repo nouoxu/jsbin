@@ -87,12 +87,10 @@ export class ReflectGenerator {
 
         // unbox 函数
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.V0, VReg.RET);
 
         // 获取参数数组长度
         vm.mov(VReg.A0, VReg.S2);
-        vm.call("_js_unbox");
         vm.mov(VReg.V1, VReg.RET);
         vm.load(VReg.V2, VReg.V1, 0); // length
 

@@ -528,7 +528,6 @@ export const FunctionCompiler = {
         // 是 NaN-boxed 函数，调用 _js_unbox
         // 参数已经在 savedA0-savedA5 中保存好了
         // A0 已经是原始的 NaN-boxed 函数值
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
         vm.jmp("after_unbox_closure");
 
@@ -642,13 +641,11 @@ export const FunctionCompiler = {
         vm.pop(VReg.A0); // 函数指针/闭包 (可能是 NaN-boxed)
         vm.pop(VReg.S3); // this 对象 (NaN-boxed)
         vm.push(VReg.S3); // 暂存 this
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // S0 = 原始函数指针/闭包
         vm.pop(VReg.S3); // 恢复 this (NaN-boxed)
 
         // 解包 this 到 S2
         vm.mov(VReg.A0, VReg.S3);
-        vm.call("_js_unbox");
         vm.mov(VReg.S2, VReg.RET); // S2 = 解包后的 this 指针
 
         // 检查是否是闭包
@@ -1811,7 +1808,6 @@ export const FunctionCompiler = {
                         // A0 = boxed 数组
                         this.vm.mov(VReg.A0, VReg.RET);
                         // unbox 得到原始指针
-                        this.vm.call("_js_unbox");
                         this.vm.mov(VReg.A0, VReg.RET);
                     } else {
                         this.vm.movImm(VReg.A0, 0);
@@ -1826,7 +1822,6 @@ export const FunctionCompiler = {
                         // A0 = boxed 数组
                         this.vm.mov(VReg.A0, VReg.RET);
                         // unbox 得到原始指针
-                        this.vm.call("_js_unbox");
                         this.vm.mov(VReg.A0, VReg.RET);
                     } else {
                         this.vm.movImm(VReg.A0, 0);

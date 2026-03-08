@@ -79,7 +79,6 @@ export class ProcessGenerator {
 
         // 装箱字符串
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_box_string");
         vm.jmp("_process_cwd_done");
 
         vm.label("_process_cwd_empty");
@@ -87,7 +86,6 @@ export class ProcessGenerator {
         vm.lea(VReg.A0, "_empty_cstr");
         vm.call("_createStrFromCStr");
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_box_string");
 
         vm.label("_process_cwd_done");
         vm.epilogue([VReg.S0], 16);
@@ -218,7 +216,6 @@ export class ProcessGenerator {
         vm.mov(VReg.A0, VReg.S4);
         vm.call("_createStrFromCStr");
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_box_string");
         vm.mov(VReg.V2, VReg.RET); // V2 = boxed argv[0]
 
         // 存入 Body[0]: body[0*8] = boxed string
@@ -247,7 +244,6 @@ export class ProcessGenerator {
 
         // 装箱字符串为 JSValue
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_box_string");
         // RET = boxed string JSValue
 
         // 保存 boxed string 到 V2（避免与 V0/RET 冲突）
@@ -280,7 +276,6 @@ export class ProcessGenerator {
         vm.label("_argv_init_save");
         // 装箱数组并保存到全局变量
         vm.mov(VReg.A0, VReg.S2);
-        vm.call("_js_box_array");
         vm.mov(VReg.V1, VReg.RET); // 保存 boxed array
         vm.lea(VReg.V0, "_process_argv_array");
         vm.store(VReg.V0, 0, VReg.V1);
@@ -315,7 +310,6 @@ export class ProcessGenerator {
         vm.load(VReg.V0, VReg.V0, 0); // 获取 boxed array JSValue
         // 解箱获取裸指针
         vm.mov(VReg.A0, VReg.V0);
-        vm.call("_js_unbox");
         vm.load(VReg.RET, VReg.RET, 8); // offset 8 = length
         vm.epilogue([], 0);
     }
@@ -349,7 +343,6 @@ export class ProcessGenerator {
 
         // 将裸指针装箱为 JSValue
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_box_object");
 
         vm.epilogue([VReg.S0], 0);
     }

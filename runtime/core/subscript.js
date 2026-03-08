@@ -282,7 +282,7 @@ export class SubscriptGenerator {
         const vm = this.vm;
 
         vm.label("_subscript_set");
-        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2]);
+        vm.prologue(32, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
         vm.mov(VReg.S1, VReg.A1); // index
         vm.mov(VReg.S2, VReg.A2); // value
@@ -315,7 +315,7 @@ export class SubscriptGenerator {
         vm.store(VReg.V0, 0, VReg.S2);
 
         vm.label("_subscript_set_done");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 32);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 32);
     }
 
     // _dynamic_subscript_get(obj, key_jsvalue) -> value
@@ -442,7 +442,7 @@ export class SubscriptGenerator {
         const vm = this.vm;
 
         vm.label("_dynamic_subscript_set");
-        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2]);
+        vm.prologue(48, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
         vm.mov(VReg.S0, VReg.A0); // obj
         vm.mov(VReg.S1, VReg.A1); // key (JSValue)
@@ -522,7 +522,7 @@ export class SubscriptGenerator {
         vm.call("_subscript_set");
 
         vm.label("_dynamic_subscript_set_done");
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 48);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 48);
     }
 
     generate() {

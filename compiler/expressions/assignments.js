@@ -627,7 +627,6 @@ export const AssignmentCompiler = {
         // 使用 VM 的统一浮点接口
         // 1. 先 unbox 获取原始堆指针
         this.vm.mov(VReg.A0, VReg.RET);
-        this.vm.call("_js_unbox");
         // 2. 从 Number 对象加载 float64 位
         this.vm.load(VReg.V0, VReg.RET, 8); // V0 = float64 位
         this.vm.fmovToFloat(0, VReg.V0); // FP0 = float

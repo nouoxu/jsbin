@@ -553,7 +553,6 @@ export class IteratorGenerator {
         // ============ 先 unbox 获取指针 ============
         // _js_unbox 提取低 48 位，无论是 NaN-boxed 还是原始指针都可以处理
         // A0 已经包含输入值，直接调用
-        vm.call("_js_unbox");
         vm.mov(VReg.S2, VReg.RET); // S2 = 指针
 
         // ============ 检查是否为空 ============

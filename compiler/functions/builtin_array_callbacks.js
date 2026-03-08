@@ -107,7 +107,6 @@ export const ArrayCallbackCompiler = {
         vm.push(VReg.A1);
         vm.push(VReg.A2);
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
         vm.pop(VReg.A2);
         vm.pop(VReg.A1);
@@ -173,7 +172,6 @@ export const ArrayCallbackCompiler = {
 
         // 获取数组长度：先 unbox 再从 offset 0 读取
         this.vm.load(VReg.A0, VReg.FP, arrOffset);
-        this.vm.call("_js_unbox");
         this.vm.load(VReg.V0, VReg.RET, 0); // 新布局：offset 0 是 length
         const lenOffset = this.ctx.allocLocal(`__map_len_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, lenOffset, VReg.V0);
@@ -262,7 +260,6 @@ export const ArrayCallbackCompiler = {
 
         // 获取数组长度：先 unbox 再从 offset 0 读取
         this.vm.load(VReg.A0, VReg.FP, arrOffset);
-        this.vm.call("_js_unbox");
         this.vm.load(VReg.V0, VReg.RET, 0); // 新布局：offset 0 是 length
         const lenOffset = this.ctx.allocLocal(`__filter_len_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, lenOffset, VReg.V0);
@@ -367,7 +364,6 @@ export const ArrayCallbackCompiler = {
 
         // 获取数组长度：先 unbox 再从 offset 0 读取
         this.vm.mov(VReg.A0, VReg.RET);
-        this.vm.call("_js_unbox");
         this.vm.load(VReg.V1, VReg.RET, 0); // 用 V1 避免与 RET/V0 冲突
         const lenOffset = this.ctx.allocLocal(`__reduce_len_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, lenOffset, VReg.V1);
@@ -456,7 +452,6 @@ export const ArrayCallbackCompiler = {
 
         // 获取数组长度：先 unbox 再从 offset 8 读取 length
         this.vm.mov(VReg.A0, VReg.RET);
-        this.vm.call("_js_unbox");
         this.vm.load(VReg.V1, VReg.RET, 8);
         const lenOffset = this.ctx.allocLocal(`__find_len_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, lenOffset, VReg.V1);
@@ -534,7 +529,6 @@ export const ArrayCallbackCompiler = {
 
         // 获取数组长度：先 unbox 再从 offset 0 读取
         this.vm.mov(VReg.A0, VReg.RET);
-        this.vm.call("_js_unbox");
         this.vm.load(VReg.V1, VReg.RET, 0);
         const lenOffset = this.ctx.allocLocal(`__findIdx_len_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, lenOffset, VReg.V1);
@@ -606,7 +600,6 @@ export const ArrayCallbackCompiler = {
 
         // 获取数组长度：先 unbox 再从 offset 0 读取
         this.vm.mov(VReg.A0, VReg.RET);
-        this.vm.call("_js_unbox");
         this.vm.load(VReg.V1, VReg.RET, 0);
         const lenOffset = this.ctx.allocLocal(`__some_len_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, lenOffset, VReg.V1);
@@ -675,7 +668,6 @@ export const ArrayCallbackCompiler = {
 
         // 获取数组长度：先 unbox 再从 offset 0 读取
         this.vm.mov(VReg.A0, VReg.RET);
-        this.vm.call("_js_unbox");
         this.vm.load(VReg.V1, VReg.RET, 0);
         const lenOffset = this.ctx.allocLocal(`__every_len_${this.nextLabelId()}`);
         this.vm.store(VReg.FP, lenOffset, VReg.V1);

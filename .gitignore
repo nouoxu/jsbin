@@ -1,10 +1,49 @@
+# .DS_Store
 .DS_Store
-test
-test*
-test/*
+
+# 二进制文件
+*.bin
+*.asm
+*.txt
+
+# CLI 构建产物
+cli
 cli-*
-tmp
-.claude
-.venv
-.vscode
-logs
+cli_*
+cli-*
+
+# Node.js
+node_modules/
+package-lock.json
+
+# 测试文件
+test/
+test*
+tests/
+
+# 临时文件
+tmp/
+out/
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# 构建产物
+*.o
+*.a
+*.so
+*.dylib
+
+# Crash报告
+crash_point.txt
+grep_out.txt

@@ -78,7 +78,6 @@ export class FSGenerator {
 
         // 获取字符串内容指针 (处理 NaN-boxed 字符串)
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
         vm.mov(VReg.A0, VReg.RET); // A0 = content pointer
@@ -157,7 +156,6 @@ export class FSGenerator {
 
         // Get string content pointer
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
         
@@ -362,7 +360,6 @@ export class FSGenerator {
         // 2. Get data content pointer using _get_string_content
         // This handles both data segment strings (no header) and heap strings (16-byte header)
         vm.mov(VReg.A0, VReg.S1);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
         vm.mov(VReg.S3, VReg.RET); // S3 = content pointer
@@ -414,7 +411,6 @@ export class FSGenerator {
 
         // Get string content pointer
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
         vm.mov(VReg.S0, VReg.RET); // S0 = path C string
@@ -481,7 +477,6 @@ export class FSGenerator {
 
         // Get string content pointer
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
         vm.mov(VReg.S0, VReg.RET);
@@ -536,7 +531,6 @@ export class FSGenerator {
 
         // 获取字符串内容指针
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
         vm.mov(VReg.S1, VReg.RET); // S1 = path C string
@@ -596,7 +590,6 @@ export class FSGenerator {
 
         // 装箱对象
         vm.mov(VReg.A0, VReg.S1);
-        vm.call("_js_box_object");
         vm.jmp("_fs_stat_sync_done");
 
         vm.label("_fs_stat_sync_fail");

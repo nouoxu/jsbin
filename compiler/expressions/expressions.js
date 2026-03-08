@@ -434,10 +434,8 @@ export const ExpressionCompiler = {
         if (offset !== undefined) {
             // 类在局部变量中，加载类信息对象
             this.vm.load(VReg.S1, VReg.FP, offset); // S1 = 类信息对象 (NaN-boxed)
-            // unbox 获取原始堆指针
-            this.vm.mov(VReg.A0, VReg.S1);
-            this.vm.call("_js_unbox");
-            this.vm.mov(VReg.S1, VReg.RET);
+            // 直接获取指针（box/unbox 现在是空操作）
+            this.vm.mov(VReg.S1, VReg.S1); // 无操作，保留兼容性
 
             // 获取 prototype 并设置到新对象的 __proto__
             this.vm.load(VReg.V0, VReg.S1, 16); // prototype 地址

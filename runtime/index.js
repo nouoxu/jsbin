@@ -8,6 +8,7 @@ export { PrintGenerator } from "./core/print.js";
 export { RUNTIME_STRINGS, StringConstantsGenerator } from "./core/strings.js";
 export { CoercionGenerator } from "./core/coercion.js";
 export { FunctionMethodsGenerator } from "./core/function.js";
+export { CompilerFSGenerator } from "./core/compiler_fs.js";
 
 // 类型运行时 - Number (包含所有数值子类型)
 export { NumberGenerator } from "./types/number/index.js";
@@ -59,6 +60,7 @@ export { BufferGenerator } from "./types/buffer/index.js";
 
 // 运算符
 export { TypeofGenerator } from "./operators/typeof.js";
+export { InstanceofGenerator } from "./operators/instanceof.js";
 export { EqualityGenerator } from "./operators/equality.js";
 export { AddGenerator } from "./operators/add.js";
 
@@ -89,6 +91,7 @@ import { ErrorGenerator } from "./types/error/index.js";
 import { PrintGenerator } from "./core/print.js";
 import { SubscriptGenerator } from "./core/subscript.js";
 import { TypeofGenerator } from "./operators/typeof.js";
+import { InstanceofGenerator } from "./operators/instanceof.js";
 import { EqualityGenerator } from "./operators/equality.js";
 import { AddGenerator } from "./operators/add.js";
 import { AsyncGenerator } from "./async/index.js";
@@ -146,6 +149,7 @@ export class RuntimeGenerator {
         this.printGen = new PrintGenerator(vm);
         this.subscriptGen = new SubscriptGenerator(vm, ctx);
         this.typeofGen = new TypeofGenerator(vm);
+        this.instanceofGen = new InstanceofGenerator(vm);
         this.equalityGen = new EqualityGenerator(vm);
         this.addGen = new AddGenerator(vm);
         this.coercionGen = new CoercionGenerator(vm);
@@ -177,65 +181,105 @@ export class RuntimeGenerator {
 
     // 生成所有运行时函数
     generate() {
-        // 类型
-        this.numberGen.generate();
-        this.mathGen.generate();
-        this.jsonGen.generate();
-        this.stringGen.generate();
-        this.arrayGen.generate();
-        this.typedArrayGen.generate();
-        this.arrayBufferGen.generate();
-        this.dataViewGen.generate();
-        this.objectGen.generate();
-        this.mapGen.generate();
-        this.setGen.generate();
-        this.dateGen.generate();
-        this.regexpGen.generate();
-        this.symbolGen.generate();
+        // ============================================
+        // 1. 基础类型 (无依赖)
+        // ============================================
+        this.numberGen.generate();      // 数值类型
+        this.mathGen.generate();       // Math 对象
+        this.jsonGen.generate();       // JSON 对象
+
+        // ============================================
+        // 2. 字符串相关 (依赖基础类型)
+        // ============================================
+        this.stringGen.generate();      // 字符串类型
+
+        // ============================================
+        // 3. 容器类型 (依赖字符串)
+        // ============================================
+        this.arrayGen.generate();       // 数组
+        this.typedArrayGen.generate();  // 类型化数组
+        this.arrayBufferGen.generate(); // ArrayBuffer
+        this.dataViewGen.generate();    // DataView
+
+        // ============================================
+        // 4. 对象类型
+        // ============================================
+        this.objectGen.generate();      // 普通对象
+        this.mapGen.generate();        // Map
+        this.setGen.generate();        // Set
+
+        // ============================================
+        // 5. 日期/正则
+        // ============================================
+        this.dateGen.generate();        // Date
+        this.regexpGen.generate();     // 正则
+
+        // ============================================
+        // 6. Symbol
+        // ============================================
+        this.symbolGen.generate();      // Symbol
         this.wellKnownSymbolsGen.generate();
-        // 迭代器
+
+        // ============================================
+        // 7. 迭代器 (依赖容器)
+        // ============================================
         this.iteratorGen.generate();
         this.arrayIteratorMethodsGen.generate();
         this.mapSetIteratorMethodsGen.generate();
-        // Generator
+
+        // ============================================
+        // 8. 生成器 (依赖迭代器)
+        // ============================================
         this.generatorGen.generate();
         this.asyncGeneratorGen.generate();
-        // 私有字段
+
+        // ============================================
+        // 9. 私有字段
+        // ============================================
         this.privateFieldGen.generate();
-        // Error
+
+        // ============================================
+        // 10. 错误
+        // ============================================
         this.errorGen.generate();
-        // 核心
-        this.jsValueGen.generate();
-        this.printGen.generate();
-        this.subscriptGen.generate();
-        this.typeofGen.generate();
-        this.equalityGen.generate();
-        this.addGen.generate();
-        this.coercionGen.generate();
-        // 异步
+
+        // ============================================
+        // 11. 核心值系统 (依赖基础类型)
+        // ============================================
+        this.jsValueGen.generate();    // box/unbox (空操作)
+        this.printGen.generate();       // console.log
+        this.subscriptGen.generate();   // []
+        this.typeofGen.generate();      // typeof
+        this.instanceofGen.generate();  // instanceof
+        this.equalityGen.generate();    // ==, ===
+        this.addGen.generate();         // +
+        this.coercionGen.generate();    // 类型转换
+
+        // ============================================
+        // 12. 异步 (依赖生成器/迭代器)
+        // ============================================
         this.asyncGen.generate();
 
-        // Path must be generated before FS (FS uses _get_string_content from path)
+        // ============================================
+        // 13. 系统功能 (依赖字符串)
+        // ============================================
+        // Path 必须在 FS 之前 (FS 使用 path 的函数)
         this.pathGen.generate();
         this.fsGen.generate();
-
-        // Process
         this.processGen.generate();
-
-        // OS
         this.osGen.generate();
 
-        // Child Process
+        // ============================================
+        // 14. 网络 (依赖异步)
+        // ============================================
         this.childProcessGen.generate();
-
-        // Buffer
         this.bufferGen.generate();
-
-        // Net
         this.netGen.generate();
 
-        // Function methods (apply, call, bind)
-        this.functionMethodsGen.generate();
+        // ============================================
+        // 15. 函数方法
+        // ============================================
+        this.functionMethodsGen.generate(); // apply, call, bind
     }
 
     // 生成异步运行时数据段

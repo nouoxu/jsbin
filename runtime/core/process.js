@@ -149,7 +149,6 @@ export class ProcessGenerator {
         vm.load(VReg.V1, VReg.SP, 8); // V1 = argv
         vm.load(VReg.V0, VReg.V1, 0); // V0 = argv[0] (程序名)
         vm.mov(VReg.A0, VReg.V0);
-        vm.call("_js_box_string");
         vm.store(VReg.SP, 32, VReg.RET); // 保存 boxed 字符串
         vm.load(VReg.A0, VReg.SP, 16); // A0 = 数组
         vm.load(VReg.A1, VReg.SP, 32); // A1 = argv[0]
@@ -160,7 +159,6 @@ export class ProcessGenerator {
         vm.load(VReg.V1, VReg.SP, 8); // V1 = argv
         vm.load(VReg.V0, VReg.V1, 0); // V0 = argv[0]
         vm.mov(VReg.A0, VReg.V0);
-        vm.call("_js_box_string");
         vm.store(VReg.SP, 32, VReg.RET);
         vm.load(VReg.A0, VReg.SP, 16);
         vm.load(VReg.A1, VReg.SP, 32);
@@ -187,7 +185,6 @@ export class ProcessGenerator {
 
         // 将 C 字符串指针转换为 JSBin 字符串 JSValue（添加 0x7FFC 标签）
         vm.mov(VReg.A0, VReg.V0);
-        vm.call("_js_box_string");
         // 保存字符串到 [SP+32] 临时位置（避免被覆盖）
         vm.store(VReg.SP, 32, VReg.RET);
 

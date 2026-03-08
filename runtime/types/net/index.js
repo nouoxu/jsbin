@@ -179,7 +179,6 @@ export class NetGenerator {
 
         // 获取字符串内容
         vm.mov(VReg.A0, VReg.A1);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.call("_get_string_content");
 

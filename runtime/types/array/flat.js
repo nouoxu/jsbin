@@ -85,7 +85,6 @@ export const ArrayFlatMixin = {
         // 是数组，递归展平
         // unbox 子数组
         vm.mov(VReg.A0, VReg.V1);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET); // 子数组 unboxed
         vm.subImm(VReg.A1, VReg.S1, 1); // depth - 1
         vm.mov(VReg.A2, VReg.S2); // result
@@ -207,7 +206,6 @@ export const ArrayFlatMixin = {
         vm.mov(VReg.S1, VReg.A1); // depth
 
         // unbox 源数组 (A0 已包含 arr_jsvalue)
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
 
         // 创建结果数组 - 用 0 作为初始长度，容量为 MIN_CAPACITY (8)
@@ -215,7 +213,6 @@ export const ArrayFlatMixin = {
         vm.call("_array_new_with_size");
         // _array_new_with_size 返回 boxed JSValue, 需要 unbox
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_unbox");
         vm.mov(VReg.S2, VReg.RET); // result (unboxed)
 
         // 递归展平
@@ -227,7 +224,6 @@ export const ArrayFlatMixin = {
 
         // box 结果数组
         vm.mov(VReg.A0, VReg.S2);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 40);
     },
 
@@ -248,13 +244,11 @@ export const ArrayFlatMixin = {
         // 保存 A0 (源数组 boxed)，因为 _js_unbox 会修改它
         vm.push(VReg.A0);
         vm.mov(VReg.A0, VReg.A1); // 准备 unbox callback
-        vm.call("_js_unbox");
         // 将 callback 保存到栈上而不是 S1
         vm.store(VReg.FP, CALLBACK_OFFSET, VReg.RET);
         vm.pop(VReg.A0); // 恢复源数组 boxed
 
         // unbox 源数组
-        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET);
 
         // 获取源数组长度 (offset 8)
@@ -265,7 +259,6 @@ export const ArrayFlatMixin = {
         vm.call("_array_new_with_size");
         // _array_new_with_size 返回 boxed JSValue, 需要 unbox
         vm.mov(VReg.A0, VReg.RET);
-        vm.call("_js_unbox");
         vm.mov(VReg.S2, VReg.RET); // result (unboxed)
 
         vm.movImm(VReg.S4, 0); // index i = 0
@@ -284,7 +277,6 @@ export const ArrayFlatMixin = {
         // 先 box array 到 S5
         vm.push(VReg.V1);
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_box_array");
         vm.mov(VReg.S5, VReg.RET); // S5 = boxed array
         vm.pop(VReg.V1);
 
@@ -343,7 +335,6 @@ export const ArrayFlatMixin = {
 
         // 是数组，展平一层
         vm.mov(VReg.A0, VReg.V4);
-        vm.call("_js_unbox");
         vm.mov(VReg.A0, VReg.RET);
         vm.movImm(VReg.A1, 0); // depth = 0 (不递归，只展开一层)
         vm.mov(VReg.A2, VReg.S2);
@@ -365,7 +356,6 @@ export const ArrayFlatMixin = {
         vm.label("_array_flatmap_done");
         // box 结果
         vm.mov(VReg.A0, VReg.S2);
-        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3, VReg.S4, VReg.S5], 80);
     },
 
@@ -403,7 +393,6 @@ export const ArrayFlatMixin = {
         if (isDebug) console.log("[Runtime:ArrayFrom] emit copy-array path");
         vm.label("_array_from_copy_array");
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.S1, VReg.RET); // 源数组指针
 
         // 获取源长度
@@ -418,12 +407,10 @@ export const ArrayFlatMixin = {
 
         // 解包新数组
         vm.mov(VReg.A0, VReg.S3);
-        vm.call("_js_unbox");
         vm.mov(VReg.S4, VReg.RET); // 新数组指针
 
         // GC 可能发生，刷新源数组指针
         vm.mov(VReg.A0, VReg.S0);
-        vm.call("_js_unbox");
         vm.mov(VReg.S1, VReg.RET);
 
         // 设置长度
