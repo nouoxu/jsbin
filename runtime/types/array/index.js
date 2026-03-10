@@ -329,21 +329,24 @@ export class ArrayGenerator {
         const vm = this.vm;
 
         vm.label("_array_set");
-        vm.prologue(0, [VReg.S0, VReg.S1, VReg.S2]);
+        vm.prologue(0, [VReg.S0, VReg.S1, VReg.S2, VReg.S3]);
 
+        vm.mov(VReg.S3, VReg.A0); // 保存数组 (A0)
         vm.mov(VReg.S1, VReg.A1); // 保存 index
         vm.mov(VReg.S2, VReg.A2); // 保存 value
 
-        // unbox 数组
-        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
+        // unbox 数组 (A0 是 boxed 数组)
+        vm.mov(VReg.A0, VReg.S3); // 恢复 A0
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET);
 
-        // 计算偏移: 24 + index * 8
-        vm.load(VReg.V1, VReg.S0, 24); // Load Body Ptr
+        // 获取 Body Ptr 并计算偏移: Body + index * 8
+        vm.load(VReg.V1, VReg.S0, 24); // Body Ptr
         vm.shl(VReg.V0, VReg.S1, 3);
         vm.add(VReg.V0, VReg.V1, VReg.V0);
         vm.store(VReg.V0, 0, VReg.S2);
 
-        vm.epilogue([VReg.S0, VReg.S1, VReg.S2], 0);
+        vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 0);
     }
 
     // 数组长度
@@ -355,6 +358,7 @@ export class ArrayGenerator {
         vm.prologue(0, []);
 
         // unbox 数组
+        vm.call("_js_unbox");
         vm.load(VReg.RET, VReg.RET, 8); // length at offset 8
 
         vm.epilogue([], 0);
@@ -371,7 +375,8 @@ export class ArrayGenerator {
         vm.mov(VReg.S1, VReg.A1); // 保存 index
 
         // unbox 数组
-        vm.mov(VReg.S0, VReg.RET); // arr (unboxed)
+        vm.call("_js_unbox");
+        vm.mov(VReg.S0, VReg.RET);
 
         // 获取长度
         vm.load(VReg.V0, VReg.S0, 8);
@@ -390,10 +395,10 @@ export class ArrayGenerator {
         vm.cmp(VReg.S1, VReg.V0);
         vm.jge("_array_at_undefined");
 
-        // 计算偏移: 24 + index * 8
-        vm.shl(VReg.V1, VReg.S1, 3);
-        vm.addImm(VReg.V1, VReg.V1, ARRAY_HEADER_SIZE);
-        vm.add(VReg.V1, VReg.S0, VReg.V1);
+        // 获取 Body Ptr 并计算偏移: Body + index * 8
+        vm.load(VReg.V1, VReg.S0, 24); // Body Ptr
+        vm.shl(VReg.V0, VReg.S1, 3);
+        vm.add(VReg.V1, VReg.V1, VReg.V0);
         vm.load(VReg.RET, VReg.V1, 0);
         vm.epilogue([VReg.S0, VReg.S1], 0);
 
@@ -795,6 +800,7 @@ export class ArrayGenerator {
         vm.label("_array_new_init_done");
         // 返回 boxed 数组 JSValue
         vm.mov(VReg.A0, VReg.S1);
+        vm.call("_js_box_array");
         vm.epilogue([VReg.S0, VReg.S1, VReg.S2, VReg.S3], 16);
     }
 

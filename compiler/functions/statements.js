@@ -108,6 +108,11 @@ export const StatementCompiler = {
         const kind = stmt.kind; // var, let, const, int
 
         for (const decl of stmt.declarations) {
+            // 安全检查：确保 decl.id 存在
+            if (!decl.id) {
+                continue;
+            }
+            
             if (decl.id.type === "Identifier") {
                 const name = decl.id.name;
 

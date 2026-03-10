@@ -88,14 +88,302 @@ export const FunctionCompiler = {
         // 检查是否是导入的符号
         if (this.isImportedSymbol && this.isImportedSymbol(name)) {
             const importInfo = this.getImportedSymbol(name);
-            if (importInfo && importInfo.type === "namespace" && importInfo.source === moduleName) {
-                return true;
+            if (importInfo) {
+                // 检查是否是 namespace 导入
+                if (importInfo.type === "namespace" && importInfo.source === moduleName) {
+                    return true;
+                }
+                // 检查是否是内置模块 (builtin type with builtinName)
+                if (importInfo.type === "builtin" && importInfo.builtinName === moduleName) {
+                    return true;
+                }
             }
         }
         // 直接匹配名称（用于简单情况）
         if (name === moduleName) {
             return true;
         }
+        return false;
+    },
+
+    // 编译 fs 模块方法
+    compileFSMethod(methodName, args) {
+        const vm = this.vm;
+
+        // fs.writeFileSync(path, data[, options])
+        if (methodName === "writeFileSync" && args.length >= 2) {
+            // 编译路径参数
+            this.compileExpression(args[0]);
+            vm.push(VReg.RET);
+            // 编译数据参数
+            this.compileExpression(args[1]);
+            vm.mov(VReg.A1, VReg.RET);
+            // 弹出路径到 A0
+            vm.pop(VReg.A0);
+            // 调用 fs.writeFileSync 运行时函数
+            vm.call("_fs_write_file_sync");
+            return true;
+        }
+
+        // fs.readFileSync(path[, options])
+        if (methodName === "readFileSync" && args.length >= 1) {
+            // 编译路径参数
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            // 调用 fs.readFileSync 运行时函数
+            vm.call("_fs_read_file_sync");
+            return true;
+        }
+
+        // fs.existsSync(path)
+        if (methodName === "existsSync" && args.length >= 1) {
+            // 编译路径参数
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            // 调用 fs.existsSync 运行时函数
+            vm.call("_fs_exists_sync");
+            return true;
+        }
+
+        // fs.mkdirSync(path[, options])
+        if (methodName === "mkdirSync" && args.length >= 1) {
+            // 编译路径参数
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            // 调用 fs.mkdirSync 运行时函数
+            vm.call("_fs_mkdir_sync");
+            return true;
+        }
+
+        // fs.unlinkSync(path)
+        if (methodName === "unlinkSync" && args.length >= 1) {
+            // 编译路径参数
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            // 调用 fs.unlinkSync 运行时函数
+            vm.call("_fs_unlink_sync");
+            return true;
+        }
+
+        // fs.readdirSync(path)
+        if (methodName === "readdirSync" && args.length >= 1) {
+            // 编译路径参数
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            // 调用 fs.readdirSync 运行时函数
+            vm.call("_fs_readdir_sync");
+            return true;
+        }
+
+        // fs.statSync(path)
+        if (methodName === "statSync" && args.length >= 1) {
+            // 编译路径参数
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            // 调用 fs.statSync 运行时函数
+            vm.call("_fs_stat_sync");
+            return true;
+        }
+
+        // fs.rmdirSync(path)
+        if (methodName === "rmdirSync" && args.length >= 1) {
+            // 编译路径参数
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            // 调用 fs.rmdirSync 运行时函数
+            vm.call("_fs_rmdir_sync");
+            return true;
+        }
+
+        return false;
+    },
+
+    // 编译 path 模块方法
+    compilePathMethod(methodName, args) {
+        const vm = this.vm;
+
+        // path.join(...paths)
+        if (methodName === "join" && args.length >= 1) {
+            // 编译所有路径参数
+            for (let i = 0; i < args.length; i++) {
+                this.compileExpression(args[i]);
+                vm.push(VReg.RET);
+            }
+            // 设置参数个数
+            vm.movImm(VReg.A0, args.length);
+            // 调用 path.join 运行时函数
+            vm.call("_path_join");
+            return true;
+        }
+
+        // path.resolve(...paths)
+        if (methodName === "resolve" && args.length >= 1) {
+            // 编译所有路径参数
+            for (let i = 0; i < args.length; i++) {
+                this.compileExpression(args[i]);
+                vm.push(VReg.RET);
+            }
+            // 设置参数个数
+            vm.movImm(VReg.A0, args.length);
+            // 调用 path.resolve 运行时函数
+            vm.call("_path_resolve");
+            return true;
+        }
+
+        // path.basename(path[, ext])
+        if (methodName === "basename" && args.length >= 1) {
+            this.compileExpression(args[0]);
+            vm.push(VReg.RET);
+            if (args.length >= 2) {
+                this.compileExpression(args[1]);
+                vm.mov(VReg.A1, VReg.RET);
+            } else {
+                vm.movImm(VReg.A1, 0); // undefined
+            }
+            vm.pop(VReg.A0);
+            vm.call("_path_basename");
+            return true;
+        }
+
+        // path.dirname(path)
+        if (methodName === "dirname" && args.length >= 1) {
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            vm.call("_path_dirname");
+            return true;
+        }
+
+        // path.extname(path)
+        if (methodName === "extname" && args.length >= 1) {
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            vm.call("_path_extname");
+            return true;
+        }
+
+        // path.isAbsolute(path)
+        if (methodName === "isAbsolute" && args.length >= 1) {
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            vm.call("_path_isAbsolute");
+            return true;
+        }
+
+        // path.parse(path)
+        if (methodName === "parse" && args.length >= 1) {
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            vm.call("_path_parse");
+            return true;
+        }
+
+        // path.format(pathObject)
+        if (methodName === "format" && args.length >= 1) {
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            vm.call("_path_format");
+            return true;
+        }
+
+        // path.normalize(path)
+        if (methodName === "normalize" && args.length >= 1) {
+            this.compileExpression(args[0]);
+            vm.mov(VReg.A0, VReg.RET);
+            vm.call("_path_normalize");
+            return true;
+        }
+
+        // path.relative(from, to)
+        if (methodName === "relative" && args.length >= 2) {
+            this.compileExpression(args[0]);
+            vm.push(VReg.RET);
+            this.compileExpression(args[1]);
+            vm.mov(VReg.A1, VReg.RET);
+            vm.pop(VReg.A0);
+            vm.call("_path_relative");
+            return true;
+        }
+
+        return false;
+    },
+
+    // 编译 os 模块方法
+    compileOSMethod(methodName, args) {
+        const vm = this.vm;
+
+        // os.type()
+        if (methodName === "type") {
+            vm.call("_os_type");
+            return true;
+        }
+
+        // os.platform()
+        if (methodName === "platform") {
+            vm.call("_os_platform");
+            return true;
+        }
+
+        // os.arch()
+        if (methodName === "arch") {
+            vm.call("_os_arch");
+            return true;
+        }
+
+        // os.release()
+        if (methodName === "release") {
+            vm.call("_os_release");
+            return true;
+        }
+
+        // os.hostname()
+        if (methodName === "hostname") {
+            vm.call("_os_hostname");
+            return true;
+        }
+
+        // os.homedir()
+        if (methodName === "homedir") {
+            vm.call("_os_homedir");
+            return true;
+        }
+
+        // os.tmpdir()
+        if (methodName === "tmpdir") {
+            vm.call("_os_tmpdir");
+            return true;
+        }
+
+        // os.cpus()
+        if (methodName === "cpus") {
+            vm.call("_os_cpus");
+            return true;
+        }
+
+        // os.totalmem()
+        if (methodName === "totalmem") {
+            vm.call("_os_totalmem");
+            return true;
+        }
+
+        // os.freemem()
+        if (methodName === "freemem") {
+            vm.call("_os_freemem");
+            return true;
+        }
+
+        // os.uptime()
+        if (methodName === "uptime") {
+            vm.call("_os_uptime");
+            return true;
+        }
+
+        // os.EOL
+        if (methodName === "EOL") {
+            vm.lea(VReg.RET, "_str_os_eol");
+            vm.load(VReg.RET, VReg.RET, 0);
+            return true;
+        }
+
         return false;
     },
 

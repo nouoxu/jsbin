@@ -743,6 +743,7 @@ export class PrintGenerator {
 
         // A0 包含输入参数（可能是 boxed 数组 JSValue 或原始指针）
         // 调用 _js_unbox 获取原始指针
+        vm.call("_js_unbox");
         vm.mov(VReg.S0, VReg.RET); // 原始数组指针
 
         // 打印 "["
@@ -770,12 +771,11 @@ export class PrintGenerator {
         vm.call("_print_str_no_nl");
 
         vm.label(notFirstLabel);
-        // 获取元素值: array[index] = *(array + 24 + index * 8)
-        // 数组布局: [type:8][length:8][capacity:8][elements...], header = 24 bytes
-        vm.mov(VReg.V0, VReg.S2);
-        vm.shlImm(VReg.V0, VReg.V0, 3); // index * 8
-        vm.addImm(VReg.V0, VReg.V0, 24); // + header size (type + length + capacity)
-        vm.add(VReg.V0, VReg.S0, VReg.V0);
+        // 获取元素值: 从 body ptr 开始
+        // 数组布局: [type:8][length:8][capacity:8][body_ptr:8][elements...], header = 32 bytes
+        vm.load(VReg.V0, VReg.S0, 24); // body ptr
+        vm.shlImm(VReg.V1, VReg.S2, 3); // index * 8
+        vm.add(VReg.V0, VReg.V0, VReg.V1); // body + index * 8
         vm.load(VReg.A0, VReg.V0, 0); // 加载元素（JSValue）
         vm.call("_print_value_no_nl"); // 使用通用打印支持各种类型
 

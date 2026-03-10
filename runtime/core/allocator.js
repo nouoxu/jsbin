@@ -76,7 +76,7 @@ export const NUM_FLOAT32 = 0x31;
 export const NUM_FLOAT64 = 0x32;
 
 // ==================== 堆配置（参考 Go runtime）====================
-export const INITIAL_HEAP_SIZE = 268435456; // 初始堆大小 256MB（用于大型编译）
+export const INITIAL_HEAP_SIZE = 16777216; // 初始堆大小 16MB（减小以避免mmap失败）
 export const HEAP_GROW_SIZE = 1048576; // 每次扩展大小 1MB
 export const MAX_HEAP_SIZE = 0; // 最大堆大小，0 = 无限制
 export const GC_THRESHOLD_PERCENT = 75; // 使用率达到 75% 时触发 GC

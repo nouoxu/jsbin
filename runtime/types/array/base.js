@@ -10,7 +10,7 @@ import { JS_UNDEFINED } from "../../core/jsvalue.js";
 //   offset 16: capacity (8 bytes) - 最大容量
 //   offset 24: elements[0]
 //   ...
-const ARRAY_HEADER_SIZE = 32;
+const ARRAY_HEADER_SIZE = 24;  // type(8) + length(8) + capacity(8) = 24 bytes
 const ARRAY_MIN_CAPACITY = 8;
 
 // 数组基础操作 Mixin (unused - see index.js for actual implementation)
@@ -30,9 +30,9 @@ export const ArrayBaseMixin = {
         vm.mov(VReg.A0, VReg.A0);
         vm.mov(VReg.S0, VReg.RET); // S0 = unboxed 数组指针
 
-        // 获取当前长度和容量
-        vm.load(VReg.S2, VReg.S0, 0); // length
-        vm.load(VReg.S3, VReg.S0, 8); // capacity
+        // 获取当前长度和容量 (数组布局: [type:8][length:8][capacity:8][body_ptr:8])
+        vm.load(VReg.S2, VReg.S0, 8); // length at offset 8
+        vm.load(VReg.S3, VReg.S0, 16); // capacity at offset 16
 
         // 检查是否需要扩容: if (length >= capacity)
         vm.cmp(VReg.S2, VReg.S3);
@@ -47,8 +47,11 @@ export const ArrayBaseMixin = {
         vm.call("_alloc");
 
         vm.mov(VReg.V0, VReg.RET);
-        vm.store(VReg.V0, 0, VReg.S2); // length
-        vm.store(VReg.V0, 8, VReg.S4); // newCapacity
+        // 初始化数组头 [type:8][length:8][capacity:8]
+        vm.movImm(VReg.V1, 1); // TYPE_ARRAY = 1
+        vm.store(VReg.V0, 0, VReg.V1); // type at offset 0
+        vm.store(VReg.V0, 8, VReg.S2); // length at offset 8
+        vm.store(VReg.V0, 16, VReg.S4); // capacity at offset 16
 
         // 复制元素
         vm.movImm(VReg.V2, 0);
@@ -79,9 +82,9 @@ export const ArrayBaseMixin = {
         vm.add(VReg.V0, VReg.S0, VReg.V0);
         vm.store(VReg.V0, 0, VReg.S1);
 
-        // 更新长度
+        // 更新长度 (store at offset 8)
         vm.addImm(VReg.S2, VReg.S2, 1);
-        vm.store(VReg.S0, 0, VReg.S2);
+        vm.store(VReg.S0, 8, VReg.S2);
 
         // 返回 boxed 数组 JSValue
         vm.mov(VReg.A0, VReg.S0);
@@ -94,26 +97,26 @@ export const ArrayBaseMixin = {
         const vm = this.vm;
 
         vm.label("_array_pop");
-        vm.prologue(16, [VReg.S0, VReg.S1]);
+        vm.prologue(32, [VReg.S0, VReg.S1]);
 
         vm.mov(VReg.S0, VReg.RET);
-        vm.load(VReg.S1, VReg.S0, 0);
+        vm.load(VReg.S1, VReg.S0, 8); // length at offset 8
 
         vm.cmpImm(VReg.S1, 0);
         vm.jeq("_array_pop_empty");
 
         vm.subImm(VReg.S1, VReg.S1, 1);
-        vm.store(VReg.S0, 0, VReg.S1);
+        vm.store(VReg.S0, 8, VReg.S1); // store new length at offset 8
 
         vm.shl(VReg.V0, VReg.S1, 3);
-        vm.addImm(VReg.V0, VReg.V0, 16);
+        vm.addImm(VReg.V0, VReg.V0, 24); // elements start at offset 24
         vm.add(VReg.V0, VReg.S0, VReg.V0);
         vm.load(VReg.RET, VReg.V0, 0);
-        vm.epilogue([VReg.S0, VReg.S1], 16);
+        vm.epilogue([VReg.S0, VReg.S1], 32);
 
         vm.label("_array_pop_empty");
         vm.movImm64(VReg.RET, "0x7ffb000000000000");
-        vm.epilogue([VReg.S0, VReg.S1], 16);
+        vm.epilogue([VReg.S0, VReg.S1], 32);
     },
 
     // 数组 get

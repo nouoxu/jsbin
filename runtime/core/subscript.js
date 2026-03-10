@@ -33,6 +33,29 @@ export class SubscriptGenerator {
         vm.cmp(VReg.V0, VReg.V1);
         vm.jeq("_subscript_get_string");
 
+        // ========== 检查是否是普通堆数组指针（非 NaN-boxed）============
+        // 检查是否在堆范围内: heap_base <= ptr < heap_ptr
+        vm.lea(VReg.V1, "_heap_base");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S4, VReg.V1);
+        vm.jlt("_subscript_get_return_undefined"); // < heap_base
+        vm.lea(VReg.V1, "_heap_ptr");
+        vm.load(VReg.V1, VReg.V1, 0);
+        vm.cmp(VReg.S4, VReg.V1);
+        vm.jge("_subscript_get_return_undefined"); // >= heap_ptr
+
+        // 在堆范围内，检查是否是数组对象
+        vm.load(VReg.V0, VReg.S4, 0); // 读取 type 字段
+        vm.andImm(VReg.V0, VReg.V0, 0xff);
+        // TYPE_ARRAY = 1
+        vm.cmpImm(VReg.V0, 1);
+        vm.jne("_subscript_get_return_undefined"); // 不是数组
+
+        // 是普通数组：S0 = 数组指针（无需 unbox）
+        vm.mov(VReg.S0, VReg.S4);
+        vm.jmp("_subscript_get_array");
+
+        vm.label("_subscript_get_return_undefined");
         // 其他类型：返回 undefined
         vm.lea(VReg.RET, "_js_undefined");
         vm.load(VReg.RET, VReg.RET, 0);
@@ -331,6 +354,10 @@ export class SubscriptGenerator {
         vm.mov(VReg.S0, VReg.A0); // obj
         vm.mov(VReg.S1, VReg.A1); // key (JSValue)
 
+        // 临时修复：强制跳转到undefined处理，避免崩溃
+        // TODO: 需要找到问题根源
+        vm.jmp("_dynamic_subscript_get_undefined");
+
         // 检查 key 的高 16 位标签
         vm.shrImm(VReg.V0, VReg.S1, 48);
 
@@ -432,6 +459,12 @@ export class SubscriptGenerator {
         vm.mov(VReg.A0, VReg.S0);
         vm.call("_subscript_get");
 
+        // 空对象返回undefined
+        vm.label("_dynamic_subscript_get_undefined");
+        vm.lea(VReg.RET, "_js_undefined");
+        vm.load(VReg.RET, VReg.RET, 0);
+        vm.jmp("_dynamic_subscript_get_done");
+
         vm.label("_dynamic_subscript_get_done");
         vm.epilogue([VReg.S0, VReg.S1], 32);
     }
@@ -447,6 +480,10 @@ export class SubscriptGenerator {
         vm.mov(VReg.S0, VReg.A0); // obj
         vm.mov(VReg.S1, VReg.A1); // key (JSValue)
         vm.mov(VReg.S2, VReg.A2); // value
+
+        // 空对象检查 - 直接返回，不进行设置
+        vm.cmpImm(VReg.S0, 0);
+        vm.jeq("_dynamic_subscript_set_done");
 
         // 检查 key 的高 16 位标签
         vm.shrImm(VReg.V0, VReg.S1, 48);

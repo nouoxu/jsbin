@@ -1511,6 +1511,7 @@ export class Compiler {
 
         // 初始化 process.argv
         // S0 = argc, S1 = argv (指向 char* 数组的指针)
+        
         if (this.os !== "windows") {
             vm.mov(VReg.A0, VReg.S0); // argc
             vm.mov(VReg.A1, VReg.S1); // argv
@@ -1525,11 +1526,11 @@ export class Compiler {
             vm.lea(VReg.V1, "_process_envp_ptr");
             vm.store(VReg.V1, 0, VReg.V0); // 保存 envp
         }
-
-        // 如果启用 GC，初始化分代 GC
+        
         if (this.gcEnabled) {
             vm.call("_gc_init");
         }
+        
         vm.call("_scheduler_init");
 
         // 调用所有已编译模块的初始化函数（按编译顺序）

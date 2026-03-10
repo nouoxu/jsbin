@@ -482,16 +482,18 @@ export class ObjectGenerator {
         vm.cmp(VReg.S3, VReg.S1);
         vm.jge("_object_keys_done");
 
-        // 获取 key
+        // 获取 key (C 字符串指针)
         vm.shl(VReg.V0, VReg.S3, 4);
         vm.addImm(VReg.V0, VReg.V0, this.OBJECT_HEADER_SIZE);
         vm.add(VReg.V0, VReg.S0, VReg.V0);
         vm.load(VReg.S4, VReg.V0, 0); // key -> S4 保存
-        // 如果 key 看起来无效（过小），使用 0 占位并继续
-        vm.cmpImm(VReg.S4, 4096);
-        vm.jge("_object_keys_key_ok");
-        vm.movImm(VReg.S4, 0);
-        vm.label("_object_keys_key_ok");
+
+        // 将 C 字符串指针转换为 JSValue (tag 4 = 字符串指针)
+        // JSValue 格式: (ptr & 0xffffffffffff) | (4 << 44)
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
+        vm.and(VReg.S4, VReg.S4, VReg.V1); // 提取低 48 位
+        vm.movImm64(VReg.V1, "0x400000000000"); // tag 4 左移 44 位
+        vm.or(VReg.S4, VReg.S4, VReg.V1); // 组合 tag 和指针
 
         // 设置到数组
         vm.mov(VReg.A0, VReg.S2);

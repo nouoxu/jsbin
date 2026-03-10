@@ -133,11 +133,23 @@ export class JSValueGenerator {
         vm.ret();
     }
 
-    // _js_unbox(v) -> v (空操作)
+    // _js_unbox(v) -> 指针
+    // 注意：V0 和 RET 都映射到 X0，所以要避免使用 V0
+    // 对于 TypedArray (subtype > 0)，使用 44 位掩码
+    // 对于普通值 (subtype = 0)，使用 48 位掩码
     generateUnbox() {
         const vm = this.vm;
         vm.label("_js_unbox");
-        vm.mov(VReg.RET, VReg.A0);
+        vm.shrImm(VReg.V1, VReg.A0, 44);
+        vm.andImm(VReg.V1, VReg.V1, 15);
+        vm.cmpImm(VReg.V1, 0);
+        vm.jne("_js_unbox_typed");
+        vm.movImm64(VReg.V1, "0x0000ffffffffffff");
+        vm.and(VReg.RET, VReg.A0, VReg.V1);
+        vm.ret();
+        vm.label("_js_unbox_typed");
+        vm.movImm64(VReg.V1, "0x00000fffffffffff");
+        vm.and(VReg.RET, VReg.A0, VReg.V1);
         vm.ret();
     }
 
