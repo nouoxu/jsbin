@@ -1,0 +1,5 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     test_str_print_bin
+relocations:     []
+...

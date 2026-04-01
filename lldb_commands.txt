@@ -1,0 +1,4 @@
+ breakpoint set --name _str_length
+ breakpoint set --name _print_value
+ breakpoint set --name boxIntAsNumber
+ run

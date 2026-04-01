@@ -1,0 +1,4308 @@
+{
+  "type": "Program",
+  "body": [
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "_proc"
+          },
+          "init": {
+            "type": "CallExpression",
+            "callee": {
+              "type": "Identifier",
+              "name": "__get_process"
+            },
+            "arguments": []
+          }
+        }
+      ]
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "platform"
+          },
+          "init": {
+            "type": "LogicalExpression",
+            "operator": "||",
+            "left": {
+              "type": "LogicalExpression",
+              "operator": "&&",
+              "left": {
+                "type": "Identifier",
+                "name": "_proc"
+              },
+              "right": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "_proc"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "platform"
+                },
+                "computed": false,
+                "optional": false
+              }
+            },
+            "right": {
+              "type": "Literal",
+              "value": "macos",
+              "raw": "\"macos\""
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "VariableDeclaration",
+      "kind": "const",
+      "declarations": [
+        {
+          "type": "VariableDeclarator",
+          "id": {
+            "type": "Identifier",
+            "name": "arch"
+          },
+          "init": {
+            "type": "LogicalExpression",
+            "operator": "||",
+            "left": {
+              "type": "LogicalExpression",
+              "operator": "&&",
+              "left": {
+                "type": "Identifier",
+                "name": "_proc"
+              },
+              "right": {
+                "type": "MemberExpression",
+                "object": {
+                  "type": "Identifier",
+                  "name": "_proc"
+                },
+                "property": {
+                  "type": "Identifier",
+                  "name": "arch"
+                },
+                "computed": false,
+                "optional": false
+              }
+            },
+            "right": {
+              "type": "Literal",
+              "value": "arm64",
+              "raw": "\"arm64\""
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "ExportDeclaration",
+      "declaration": {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "SYSCALLS"
+            },
+            "init": {
+              "type": "ObjectExpression",
+              "properties": [
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Literal",
+                    "value": "linux-x64",
+                    "raw": "\"linux-x64\""
+                  },
+                  "value": {
+                    "type": "ObjectExpression",
+                    "properties": [
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "read"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 0,
+                          "raw": "0"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "write"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "open"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 2,
+                          "raw": "2"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "close"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 3,
+                          "raw": "3"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "exit"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 60,
+                          "raw": "60"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "ar"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 59,
+                          "raw": "0x3b"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      }
+                    ]
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Literal",
+                    "value": "linux-arm64",
+                    "raw": "\"linux-arm64\""
+                  },
+                  "value": {
+                    "type": "ObjectExpression",
+                    "properties": [
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "read"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 63,
+                          "raw": "63"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "write"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 64,
+                          "raw": "64"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "openat"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 56,
+                          "raw": "56"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "close"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 57,
+                          "raw": "57"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "exit"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 93,
+                          "raw": "93"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "ar"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 59,
+                          "raw": "0x3b"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      }
+                    ]
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Literal",
+                    "value": "macos-x64",
+                    "raw": "\"macos-x64\""
+                  },
+                  "value": {
+                    "type": "ObjectExpression",
+                    "properties": [
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "read"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 33554435,
+                          "raw": "0x2000003"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "write"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 33554436,
+                          "raw": "0x2000004"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "open"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 33554437,
+                          "raw": "0x2000005"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "close"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 33554438,
+                          "raw": "0x2000006"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "exit"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 33554433,
+                          "raw": "0x2000001"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      }
+                    ]
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Literal",
+                    "value": "macos-arm64",
+                    "raw": "\"macos-arm64\""
+                  },
+                  "value": {
+                    "type": "ObjectExpression",
+                    "properties": [
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "read"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 3,
+                          "raw": "3"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "write"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 4,
+                          "raw": "4"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "open"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 5,
+                          "raw": "5"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "close"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 6,
+                          "raw": "6"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "exit"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      }
+                    ]
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Literal",
+                    "value": "windows-x64",
+                    "raw": "\"windows-x64\""
+                  },
+                  "value": {
+                    "type": "ObjectExpression",
+                    "properties": [
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "read"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 0,
+                          "raw": "0"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "write"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 1,
+                          "raw": "1"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "NtWriteFile"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 8,
+                          "raw": "0x08"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "NtReadFile"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 6,
+                          "raw": "0x06"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      },
+                      {
+                        "type": "Property",
+                        "key": {
+                          "type": "Identifier",
+                          "name": "NtTerminateProcess"
+                        },
+                        "value": {
+                          "type": "Literal",
+                          "value": 44,
+                          "raw": "0x2c"
+                        },
+                        "kind": "init",
+                        "computed": false,
+                        "shorthand": false
+                      }
+                    ]
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "specifiers": [],
+      "source": null,
+      "default": false
+    },
+    {
+      "type": "ExportDeclaration",
+      "declaration": {
+        "type": "FunctionDeclaration",
+        "id": {
+          "type": "Identifier",
+          "name": "getSyscall"
+        },
+        "params": [
+          {
+            "type": "Identifier",
+            "name": "name"
+          }
+        ],
+        "body": {
+          "type": "BlockStatement",
+          "body": [
+            {
+              "type": "IfStatement",
+              "test": {
+                "type": "UnaryExpression",
+                "operator": "!",
+                "argument": {
+                  "type": "Identifier",
+                  "name": "SYSCALLS"
+                },
+                "prefix": true
+              },
+              "consequent": {
+                "type": "ReturnStatement",
+                "argument": {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                }
+              },
+              "alternate": null
+            },
+            {
+              "type": "VariableDeclaration",
+              "kind": "const",
+              "declarations": [
+                {
+                  "type": "VariableDeclarator",
+                  "id": {
+                    "type": "Identifier",
+                    "name": "key"
+                  },
+                  "init": {
+                    "type": "BinaryExpression",
+                    "operator": "+",
+                    "left": {
+                      "type": "BinaryExpression",
+                      "operator": "+",
+                      "left": {
+                        "type": "LogicalExpression",
+                        "operator": "||",
+                        "left": {
+                          "type": "Identifier",
+                          "name": "platform"
+                        },
+                        "right": {
+                          "type": "Literal",
+                          "value": "macos",
+                          "raw": "\"macos\""
+                        }
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": "-",
+                        "raw": "\"-\""
+                      }
+                    },
+                    "right": {
+                      "type": "LogicalExpression",
+                      "operator": "||",
+                      "left": {
+                        "type": "Identifier",
+                        "name": "arch"
+                      },
+                      "right": {
+                        "type": "Literal",
+                        "value": "arm64",
+                        "raw": "\"arm64\""
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "VariableDeclaration",
+              "kind": "const",
+              "declarations": [
+                {
+                  "type": "VariableDeclarator",
+                  "id": {
+                    "type": "Identifier",
+                    "name": "table"
+                  },
+                  "init": {
+                    "type": "LogicalExpression",
+                    "operator": "||",
+                    "left": {
+                      "type": "MemberExpression",
+                      "object": {
+                        "type": "Identifier",
+                        "name": "SYSCALLS"
+                      },
+                      "property": {
+                        "type": "Identifier",
+                        "name": "key"
+                      },
+                      "computed": true,
+                      "optional": false
+                    },
+                    "right": {
+                      "type": "MemberExpression",
+                      "object": {
+                        "type": "Identifier",
+                        "name": "SYSCALLS"
+                      },
+                      "property": {
+                        "type": "Literal",
+                        "value": "macos-arm64",
+                        "raw": "\"macos-arm64\""
+                      },
+                      "computed": true,
+                      "optional": false
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "type": "IfStatement",
+              "test": {
+                "type": "UnaryExpression",
+                "operator": "!",
+                "argument": {
+                  "type": "Identifier",
+                  "name": "table"
+                },
+                "prefix": true
+              },
+              "consequent": {
+                "type": "ReturnStatement",
+                "argument": {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                }
+              },
+              "alternate": null
+            },
+            {
+              "type": "ReturnStatement",
+              "argument": {
+                "type": "LogicalExpression",
+                "operator": "||",
+                "left": {
+                  "type": "MemberExpression",
+                  "object": {
+                    "type": "Identifier",
+                    "name": "table"
+                  },
+                  "property": {
+                    "type": "Identifier",
+                    "name": "name"
+                  },
+                  "computed": true,
+                  "optional": false
+                },
+                "right": {
+                  "type": "Literal",
+                  "value": 0,
+                  "raw": "0"
+                }
+              }
+            }
+          ]
+        },
+        "isAsync": false
+      },
+      "specifiers": [],
+      "source": null,
+      "default": false
+    },
+    {
+      "type": "ExportDeclaration",
+      "declaration": {
+        "type": "VariableDeclaration",
+        "kind": "const",
+        "declarations": [
+          {
+            "type": "VariableDeclarator",
+            "id": {
+              "type": "Identifier",
+              "name": "constants"
+            },
+            "init": {
+              "type": "ObjectExpression",
+              "properties": [
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EOF"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "F_OK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "R_OK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 4,
+                    "raw": "4"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "W_OK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 2,
+                    "raw": "2"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "X_OK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 1,
+                    "raw": "1"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IRUSR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o400"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IWUSR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o200"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IXUSR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o100"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IRGRP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o040"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IWGRP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o020"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IXGRP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o010"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IROTH"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o004"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IWOTH"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o002"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IXOTH"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o001"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IFMT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o170000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IFREG"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o100000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IFDIR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o040000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IFCHR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o020000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IFBLK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o060000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IFIFO"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o010000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IFLNK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o120000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "S_IFSOCK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0o140000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "E2BIG"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 7,
+                    "raw": "7"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EACCES"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 13,
+                    "raw": "13"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EADDRINUSE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 48,
+                    "raw": "48"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EADDRNOTAVAIL"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 49,
+                    "raw": "49"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EAFNOSUPPORT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 47,
+                    "raw": "47"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EAGAIN"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 35,
+                    "raw": "35"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EALREADY"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 37,
+                    "raw": "37"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EBADF"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 9,
+                    "raw": "9"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EBUSY"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 16,
+                    "raw": "16"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ECANCELED"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 89,
+                    "raw": "89"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ECHILD"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 10,
+                    "raw": "10"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ECONNABORTED"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 53,
+                    "raw": "53"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ECONNREFUSED"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 61,
+                    "raw": "61"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ECONNRESET"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 54,
+                    "raw": "54"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EDEADLK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 11,
+                    "raw": "11"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EDESTADDRREQ"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 39,
+                    "raw": "39"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EDOM"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 33,
+                    "raw": "33"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EDQUOT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 69,
+                    "raw": "69"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EEXIST"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 17,
+                    "raw": "17"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EFAULT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 14,
+                    "raw": "14"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EFBIG"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 27,
+                    "raw": "27"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EHOSTUNREACH"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 65,
+                    "raw": "65"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EIDRM"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 90,
+                    "raw": "90"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EILSEQ"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 92,
+                    "raw": "92"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EINPROGRESS"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 36,
+                    "raw": "36"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EINTR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 4,
+                    "raw": "4"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EINVAL"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 22,
+                    "raw": "22"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EIO"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 5,
+                    "raw": "5"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EISCONN"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 56,
+                    "raw": "56"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EISDIR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 21,
+                    "raw": "21"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ELOOP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 62,
+                    "raw": "62"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EMFILE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 24,
+                    "raw": "24"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EMLINK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 31,
+                    "raw": "31"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EMSGSIZE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 40,
+                    "raw": "40"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENAMETOOLONG"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 63,
+                    "raw": "63"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENETDOWN"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 50,
+                    "raw": "50"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENETRESET"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 52,
+                    "raw": "52"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENETUNREACH"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 51,
+                    "raw": "51"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENFILE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 23,
+                    "raw": "23"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOBUFS"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 55,
+                    "raw": "55"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENODATA"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 96,
+                    "raw": "96"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENODEV"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 19,
+                    "raw": "19"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOENT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 2,
+                    "raw": "2"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOEXEC"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 8,
+                    "raw": "8"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOLCK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 77,
+                    "raw": "77"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOLINK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 97,
+                    "raw": "97"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOMEM"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 12,
+                    "raw": "12"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOMSG"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 91,
+                    "raw": "91"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOPROTOOPT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 42,
+                    "raw": "42"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOSPC"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 28,
+                    "raw": "28"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOSR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 98,
+                    "raw": "98"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOSTR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 99,
+                    "raw": "99"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOSYS"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 78,
+                    "raw": "78"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOTCONN"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 57,
+                    "raw": "57"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOTDIR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 20,
+                    "raw": "20"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOTEMPTY"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 66,
+                    "raw": "66"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOTSOCK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 38,
+                    "raw": "38"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOTSUP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 45,
+                    "raw": "45"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENOTTY"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 25,
+                    "raw": "25"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ENXIO"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 6,
+                    "raw": "6"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EOPNOTSUPP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 102,
+                    "raw": "102"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EOVERFLOW"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 84,
+                    "raw": "84"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EPERM"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 1,
+                    "raw": "1"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EPIPE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 32,
+                    "raw": "32"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EPROTO"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 100,
+                    "raw": "100"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EPROTONOSUPPORT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 43,
+                    "raw": "43"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EPROTOTYPE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 41,
+                    "raw": "41"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ERANGE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 34,
+                    "raw": "34"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EREMOTE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 67,
+                    "raw": "67"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EROFS"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 30,
+                    "raw": "30"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ESHUTDOWN"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 58,
+                    "raw": "58"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ESPIPE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 29,
+                    "raw": "29"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ESRCH"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 3,
+                    "raw": "3"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ESTALE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 70,
+                    "raw": "70"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ETIME"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 101,
+                    "raw": "101"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ETIMEDOUT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 60,
+                    "raw": "60"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "ETXTBSY"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 26,
+                    "raw": "26"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EUSERS"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 68,
+                    "raw": "68"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EWOULDBLOCK"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 35,
+                    "raw": "35"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "EXDEV"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 18,
+                    "raw": "18"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGNULL"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGABRT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 6,
+                    "raw": "6"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGALRM"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 14,
+                    "raw": "14"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGBUS"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 10,
+                    "raw": "10"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGCHLD"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 20,
+                    "raw": "20"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGCONT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 19,
+                    "raw": "19"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGFPE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 8,
+                    "raw": "8"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGHUP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 1,
+                    "raw": "1"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGILL"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 4,
+                    "raw": "4"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGINT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 2,
+                    "raw": "2"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGIO"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 23,
+                    "raw": "23"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGKILL"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 9,
+                    "raw": "9"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGPIPE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 13,
+                    "raw": "13"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGPROF"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 27,
+                    "raw": "27"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGPWR"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 29,
+                    "raw": "29"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGQUIT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 3,
+                    "raw": "3"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGSEGV"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 11,
+                    "raw": "11"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGSTOP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 17,
+                    "raw": "17"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGSYS"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 12,
+                    "raw": "12"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGTERM"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 15,
+                    "raw": "15"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGTRAP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 5,
+                    "raw": "5"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGTSTP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 18,
+                    "raw": "18"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGTTIN"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 21,
+                    "raw": "21"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGTTOU"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 22,
+                    "raw": "22"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGURG"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 26,
+                    "raw": "26"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGUSR1"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 10,
+                    "raw": "10"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGUSR2"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 12,
+                    "raw": "12"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGVTALRM"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 26,
+                    "raw": "26"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGWINCH"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 28,
+                    "raw": "28"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGXCPU"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 24,
+                    "raw": "24"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SIGXFSZ"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 25,
+                    "raw": "25"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "RTLD_LAZY"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 1,
+                    "raw": "0x1"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "RTLD_NOW"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 2,
+                    "raw": "0x2"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "RTLD_GLOBAL"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 256,
+                    "raw": "0x100"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "RTLD_LOCAL"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "RTLD_NOLOAD"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 16,
+                    "raw": "0x10"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "RTLD_NODELETE"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 128,
+                    "raw": "0x80"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "RTLD_DEFAULT"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "RTLD_NEXT"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 1,
+                      "raw": "1"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_E2BIG"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 7,
+                      "raw": "7"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EACCES"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 13,
+                      "raw": "13"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EADDRINUSE"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 98,
+                      "raw": "98"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EADDRNOTAVAIL"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 99,
+                      "raw": "99"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EAFNOSUPPORT"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 97,
+                      "raw": "97"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EAGAIN"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 11,
+                      "raw": "11"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EALREADY"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 114,
+                      "raw": "114"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EBADF"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 9,
+                      "raw": "9"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EBUSY"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 16,
+                      "raw": "16"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ECANCELED"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 125,
+                      "raw": "125"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ECHILD"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 10,
+                      "raw": "10"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ECONNABORTED"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 103,
+                      "raw": "103"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ECONNREFUSED"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 111,
+                      "raw": "111"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ECONNRESET"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 104,
+                      "raw": "104"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EDEADLK"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 37,
+                      "raw": "37"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EDESTADDRREQ"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 109,
+                      "raw": "109"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EDOM"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 33,
+                      "raw": "33"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EDQUOT"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 122,
+                      "raw": "122"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EEXIST"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 17,
+                      "raw": "17"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EFAULT"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 14,
+                      "raw": "14"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EFBIG"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 27,
+                      "raw": "27"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EHOSTUNREACH"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 113,
+                      "raw": "113"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EIDRM"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 127,
+                      "raw": "127"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EILSEQ"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 84,
+                      "raw": "84"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EINPROGRESS"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 115,
+                      "raw": "115"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EINTR"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 4,
+                      "raw": "4"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EINVAL"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 22,
+                      "raw": "22"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EIO"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 5,
+                      "raw": "5"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EISCONN"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 106,
+                      "raw": "106"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EISDIR"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 21,
+                      "raw": "21"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ELOOP"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 40,
+                      "raw": "40"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EMFILE"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 24,
+                      "raw": "24"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EMLINK"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 31,
+                      "raw": "31"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EMSGSIZE"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 90,
+                      "raw": "90"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENAMETOOLONG"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 36,
+                      "raw": "36"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENETDOWN"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 100,
+                      "raw": "100"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENETRESET"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 102,
+                      "raw": "102"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENETUNREACH"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 101,
+                      "raw": "101"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENFILE"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 23,
+                      "raw": "23"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOBUFS"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 105,
+                      "raw": "105"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOENT"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 2,
+                      "raw": "2"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOLCK"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 37,
+                      "raw": "37"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOMEM"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 12,
+                      "raw": "12"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOSPC"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 28,
+                      "raw": "28"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOSYS"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 38,
+                      "raw": "38"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOTCONN"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 107,
+                      "raw": "107"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOTDIR"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 20,
+                      "raw": "20"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ENOTEMPTY"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 39,
+                      "raw": "39"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EOF"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 4095,
+                      "raw": "4095"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EPERM"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 1,
+                      "raw": "1"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EPIPE"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 32,
+                      "raw": "32"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ERANGE"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 34,
+                      "raw": "34"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EROFS"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 30,
+                      "raw": "30"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ESPIPE"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 29,
+                      "raw": "29"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ESRCH"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 3,
+                      "raw": "3"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ESTALE"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 70,
+                      "raw": "70"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_ETIMEDOUT"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 110,
+                      "raw": "110"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_EXDEV"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 18,
+                      "raw": "18"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "UV_UNKNOWN"
+                  },
+                  "value": {
+                    "type": "UnaryExpression",
+                    "operator": "-",
+                    "argument": {
+                      "type": "Literal",
+                      "value": 4094,
+                      "raw": "4094"
+                    },
+                    "prefix": true
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "OPENSSL_VERSION_NUMBER"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 269488128,
+                    "raw": "0x10101000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SSL_OP_ALL"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 2147483648,
+                    "raw": "0x80000000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SSL_OP_NO_SSLv2"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 16777216,
+                    "raw": "0x01000000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SSL_OP_NO_SSLv3"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 33554432,
+                    "raw": "0x02000000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SSL_OP_NO_TLSv1"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 67108864,
+                    "raw": "0x04000000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SSL_OP_NO_TLSv1_1"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 134217728,
+                    "raw": "0x08000000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SSL_OP_NO_TLSv1_2"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 268435456,
+                    "raw": "0x10000000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "SSL_OP_NO_TLSv1_3"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 536870912,
+                    "raw": "0x20000000"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "PRIO_PROCESS"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 0,
+                    "raw": "0"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "PRIO_PGRP"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 1,
+                    "raw": "1"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                },
+                {
+                  "type": "Property",
+                  "key": {
+                    "type": "Identifier",
+                    "name": "PRIO_USER"
+                  },
+                  "value": {
+                    "type": "Literal",
+                    "value": 2,
+                    "raw": "2"
+                  },
+                  "kind": "init",
+                  "computed": false,
+                  "shorthand": false
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "specifiers": [],
+      "source": null,
+      "default": false
+    },
+    {
+      "type": "ExportDeclaration",
+      "declaration": {
+        "type": "Identifier",
+        "name": "constants"
+      },
+      "specifiers": [],
+      "source": null,
+      "default": true
+    }
+  ]
+}
