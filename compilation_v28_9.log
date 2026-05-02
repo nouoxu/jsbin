@@ -1,9 +1,0 @@
-npm warn Unknown user config "home". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
-npm error code ENOENT
-npm error syscall open
-npm error path /Users/nouo/github/jsbin/package.json
-npm error errno -2
-npm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/Users/nouo/github/jsbin/package.json'
-npm error enoent This is related to npm not being able to find a file.
-npm error enoent
-npm error A complete log of this run can be found in: /Users/nouo/.npm/_logs/2026-03-29T09_10_16_330Z-debug-0.log
