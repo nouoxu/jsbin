@@ -20,7 +20,7 @@ hello.js
 s-macos-arm64
 s.js
 t-macos-arm64
-t.js
+t
 mymod*.js
 package-lock.json
 cli_backup.js
