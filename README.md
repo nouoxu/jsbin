@@ -1,12 +1,69 @@
-**jsbin** is a groundbreaking compiler project that translates JavaScript code directly into native executable files capable of running independently on **macOS, Linux, and Windows**. With no need for Node.js or any external runtime, it truly delivers on the promise of "Write in JavaScript, Run as Native."
+# jsbin
 
-**✨ Core Features**
+A preview-stage JavaScript-to-native compiler that translates JavaScript code into standalone native executables.
 
-*   **True Native Binaries**: Outputs standard ELF, Mach-O, or PE format files, identical to native system applications.
-*   **Zero External Dependencies**: Compiled programs do not rely on Node.js, a browser, or any external JavaScript engine.
-*   **Cross-Platform Support**: Compile a single codebase into executables for all three major desktop operating systems.
-*   **Low-Level Compilation**: Generates highly efficient assembly code directly, rather than merely bundling or packaging existing code.
+## Current Status
 
+`jsbin` is a **preview** compiler for a substantial ES subset with partial ESM support and a limited Node core shim subset. It is not yet fully self-bootstrapping.
 
+## What Works Today
 
+- Modern JavaScript syntax: arrow functions, async/await, promises, classes, modules
+- ESM import/export flows (validated via in-repo fixtures)
+- Node-style builtins: `console`, `process`, `fs` (partial), `path`, `timers`, `os`
+- Native executable output for supported programs
+
+## What Doesn't Work (Known Gaps)
+
+- Full ECMAScript support
+- Full Node.js compatibility
+- Self-bootstrapping (cannot compile itself yet)
+
+## Quick Start
+
+```bash
+# Compile a JavaScript file
 node cli.js examples/helloworld.js
+
+# Run test fixtures
+npm run test:fixtures
+```
+
+## Project Structure
+
+```
+jsbin/
+├── cli.js           # Compiler CLI entry point
+├── compiler/        # JavaScript → IR → assembly compiler
+├── runtime/         # Runtime shims (console, fs, process, etc.)
+│   └── node/        # Node-style API implementations
+├── asm/             # ARM64 and x64 instruction encoding
+├── backend/         # Binary emission (ELF/Mach-O/PE)
+├── lang/            # Lexer, parser, AST
+└── tests/
+    └── fixtures/    # Test cases for ES, modules, Node subsets
+```
+
+## Allowed Release Messaging
+
+- "preview" / "experimental"
+- "supports a substantial ES subset"
+- "includes a limited Node core shim subset"
+- "validated primarily through repository fixtures"
+
+## Not Allowed
+
+- "full ES support"
+- "full Node support"
+- "drop-in Node replacement"
+- "production-ready"
+- "self-hosting" or "fully self-bootstrapping"
+
+## Before Any Release
+
+```bash
+npm install
+npm run release:check
+```
+
+See [`docs/RELEASE_READINESS.md`](docs/RELEASE_READINESS.md) for full release criteria.
