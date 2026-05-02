@@ -1,0 +1,10 @@
+{
+  "description": "dynamic import should resolve node: builtin modules and expose their namespace through a Promise",
+  "expect": {
+    "parse": true,
+    "compile": true,
+    "run": true,
+    "stdout": "macos\nobject",
+    "exitCode": 0
+  }
+}
